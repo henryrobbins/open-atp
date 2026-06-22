@@ -72,6 +72,44 @@ def _build_image(args: argparse.Namespace) -> int:
     return subprocess.run(cmd).returncode
 
 
+def _build_modal_image(args: argparse.Namespace) -> int:
+    """Build the sandbox image on Modal from images/Dockerfile and publish it.
+
+    Reuses the single Dockerfile (Lean/pipx installed globally so root finds them)
+    via ``modal.Image.from_dockerfile``, then publishes a named image the
+    ``ModalBackend`` looks up with ``modal.Image.from_name(name)``.
+    """
+    try:
+        import modal
+    except ModuleNotFoundError:
+        print(
+            "the modal compute backend requires the `modal` package; "
+            "install it with `pip install open-afps`.",
+            file=sys.stderr,
+        )
+        return 1
+
+    images_dir = Path(__file__).resolve().parents[2] / "images"
+    dockerfile = images_dir / "Dockerfile"
+    if not dockerfile.is_file():
+        print(f"No Dockerfile at {dockerfile}", file=sys.stderr)
+        return 1
+
+    app = modal.App.lookup(name=args.app, create_if_missing=True)
+    # context_dir is images/ so the Dockerfile's `COPY lean/ ...` resolves.
+    image = modal.Image.from_dockerfile(
+        str(dockerfile), context_dir=images_dir, force_build=args.force
+    )
+    with modal.enable_output():
+        built = image.build(app)
+    built.publish(args.name)
+
+    print(f"Published Modal image {args.name!r} (app {args.app!r}).")
+    print("Reference it from a Sandbox with:")
+    print(f"    modal.Image.from_name({args.name!r})")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="open-afps")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -123,11 +161,34 @@ def main(argv: list[str] | None = None) -> int:
         "--no-cache", action="store_true", help="Pass --no-cache to docker build."
     )
 
+    build_modal = sub.add_parser(
+        "build-modal-image",
+        help="Build the sandbox image on Modal (from images/Dockerfile) and publish.",
+    )
+    build_modal.add_argument(
+        "--name",
+        default="open-afps",
+        help="Name to publish the Modal image under (default: open-afps). "
+        "ModalConfig.image (sans :tag) must match this.",
+    )
+    build_modal.add_argument(
+        "--app",
+        default="open-afps",
+        help="Modal app to associate the image build with (default: open-afps).",
+    )
+    build_modal.add_argument(
+        "--force",
+        action="store_true",
+        help="Force a rebuild even if Modal has cached layers.",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "solve":
         return _solve(args)
     if args.command == "build-image":
         return _build_image(args)
+    if args.command == "build-modal-image":
+        return _build_modal_image(args)
     parser.error(f"unknown command: {args.command}")
     return 2
 

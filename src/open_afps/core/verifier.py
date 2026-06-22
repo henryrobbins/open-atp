@@ -18,6 +18,7 @@ import re
 
 from open_afps.backends.base import ComputeBackend
 from open_afps.backends.docker import DockerBackend, DockerConfig
+from open_afps.backends.modal import ModalBackend, ModalConfig
 from open_afps.core.result import VerificationReport
 from open_afps.core.task import LeanProject, ToolchainMismatch
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
@@ -31,6 +32,18 @@ def docker_verifier(
 ) -> Verifier:
     """A :class:`Verifier` backed by a local Docker sandbox running ``image``."""
     backend = DockerBackend(DockerConfig(image=image))
+    return Verifier(backend, supported_toolchain=toolchain)
+
+
+def modal_verifier(
+    image: str = DEFAULT_IMAGE, toolchain: str = DEFAULT_TOOLCHAIN
+) -> Verifier:
+    """A :class:`Verifier` backed by a Modal Sandbox running the published ``image``.
+
+    Needs Modal credentials and the image published via ``open-afps
+    build-modal-image``. The image's ``:tag`` is dropped for the Modal name lookup.
+    """
+    backend = ModalBackend(ModalConfig(image=image))
     return Verifier(backend, supported_toolchain=toolchain)
 
 

@@ -65,6 +65,21 @@ class BackendConfig:
     env: Mapping[str, str] = field(default_factory=dict)
 
 
+def wrap_command(workdir_mount: str, baked_lake: str, command: str) -> str:
+    """``cd`` into the workdir mount and wire the warm Mathlib cache before ``command``.
+
+    The one image-layout convention the backends own (mirroring milp_flare's
+    ``entrypoint.sh``): symlink the workdir's ``.lake`` to the image-baked olean cache
+    so uploaded projects reuse it. Identical for Docker (bind mount) and Modal (pushed
+    dir), so it lives here rather than in either backend. ``baked_lake`` empty skips
+    the symlink.
+    """
+    prep = f"cd {workdir_mount}"
+    if baked_lake:
+        prep += f" && {{ [ -e {baked_lake} ] && ln -sfn {baked_lake} .lake || true; }}"
+    return f"{prep}; {command}"
+
+
 class ComputeBackend(abc.ABC):
     """Runs commands over a workdir in a sandbox carrying Lean + Mathlib."""
 

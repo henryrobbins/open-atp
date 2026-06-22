@@ -16,8 +16,9 @@ The public surface is:
 
 Backends: the verifier (cheap final check) and the agent (generation) backends are
 kept separate -- the split already exists in ``AgentProver`` -- so a job can run
-generation on Modal and the check on local Docker. Today only Docker is wired;
-``backend="modal"`` is accepted but blocks on the still-stubbed ``ModalBackend``.
+generation on Modal and the check on local Docker. Both ``backend="docker"`` and
+``backend="modal"`` are wired (Modal needs a published image; see
+``open-afps build-modal-image``).
 """
 
 from __future__ import annotations

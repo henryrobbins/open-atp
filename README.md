@@ -33,13 +33,15 @@ verifier **rejects** projects whose toolchain doesn't match the sandbox image's 
 (`ToolchainMismatch`) rather than failing deep in a build. One Mathlib image to start;
 `image` is a config field so more can be added without refactoring.
 
-## Status: Docker spine + Aristotle + AgentProver + NuminaProver done
+## Status: two compute backends + Aristotle + AgentProver + NuminaProver done
 
-`DockerBackend` + `Verifier` work end-to-end against the Mathlib image; the
-AristotleProver, AgentProver (claude/codex/opencode + lean-lsp-mcp), and
-NuminaProver (claude_code + vendored Numina assets + round loop) are implemented.
-The Modal backend is still a stub with `TODO`s pointing at the milp_flare source to
-port from.
+`DockerBackend` and `ModalBackend` both run the shared `Verifier` and the agentic
+provers end-to-end against the Mathlib image; the AristotleProver, AgentProver
+(claude/codex/opencode + lean-lsp-mcp), and NuminaProver (claude_code + vendored
+Numina assets + round loop) are implemented. Docker bind-mounts the workdir; Modal
+pushes/pulls it around an isolated Sandbox filesystem. A single `images/Dockerfile`
+(Lean/pipx installed globally) serves both: Docker runs as the `agent` user, Modal
+ignores `USER` and runs as root.
 
 ```bash
 # Build the Mathlib base image (pins Lean/Mathlib v4.28.0).
@@ -47,6 +49,15 @@ docker build -t open-afps:latest images/
 
 # Run the phase-1 verifier test (compiles a trivial Mathematics-in-Lean file).
 uv run pytest -m docker
+
+# Modal backend: publish the same image to Modal, then run its parity suite.
+uv run open-afps build-modal-image --name open-afps --app open-afps
+uv run pytest -m modal   # needs MODAL_TOKEN_ID / MODAL_TOKEN_SECRET
+
+# Pick a backend (or split: Modal for generation, Docker for the cheap verify).
+uv run open-afps solve path/to/project --provers agent --backend modal
+uv run open-afps solve path/to/project --provers agent \
+    --agent-backend modal --backend docker
 ```
 
 ```python
@@ -59,9 +70,10 @@ print(report.verified, report.sorry_free, report.axioms)
 
 ### Build order
 
-1. ~~**Backend + verifier (the spine).**~~ ✅ Docker done: `DockerBackend` ported from
-   milp_flare, `images/Dockerfile` builds Mathlib with a warm olean cache, `Verifier`
-   compiles file-by-file and checks sorry/axioms. (Modal backend still to port.)
+1. ~~**Backend + verifier (the spine).**~~ ✅ Done: `DockerBackend` and `ModalBackend`
+   both ported from milp_flare, `images/Dockerfile` builds Mathlib with a warm olean
+   cache (and installs Lean globally so the one image serves both backends), `Verifier`
+   compiles file-by-file and checks sorry/axioms.
 2. ~~**AristotleProver.**~~ ✅ Done: submits the lake project via `aristotlelib`
    (submit → wait → download), unpacks the result over the workdir, and funnels it
    through the shared Docker verifier. Needs `ARISTOTLE_API_KEY` for real runs; tests
@@ -87,14 +99,15 @@ print(report.verified, report.sorry_free, report.axioms)
    `SolveResult` with `verified()`/`best()` (verified → cheapest → fastest) +
    `total_cost_usd` and `to_dict()` JSON. Driven by the `open-afps solve <project>
    --provers aristotle,agent,numina [--json]` CLI. The verify/generation backend split
-   is wired (Docker now; `backend="modal"` blocks on the still-stubbed `ModalBackend`).
+   is wired across both backends (`--backend`/`--agent-backend`, e.g. Modal for
+   generation + local Docker for the cheap verify).
 
 ## Layout
 
 ```
 src/open_afps/
   api.py     Platform + prover registry (the dispatch/orchestration layer)
-  __main__.py  `open-afps solve` / `build-image` CLI
+  __main__.py  `open-afps solve` / `build-image` / `build-modal-image` CLI
   core/      task.py result.py prover.py verifier.py
   backends/  base.py docker.py modal.py
   provers/   agent.py numina.py aristotle.py

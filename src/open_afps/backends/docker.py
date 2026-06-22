@@ -26,6 +26,7 @@ from open_afps.backends.base import (
     CommandHandle,
     CommandResult,
     ComputeBackend,
+    wrap_command,
 )
 
 
@@ -90,13 +91,7 @@ class DockerBackend(ComputeBackend):
 
     def _wrap(self, command: str) -> str:
         """cd into the mount and wire up the warm Mathlib cache before ``command``."""
-        prep = f"cd {self.config.workdir_mount}"
-        if self.config.baked_lake:
-            prep += (
-                f" && {{ [ -e {self.config.baked_lake} ] "
-                f"&& ln -sfn {self.config.baked_lake} .lake || true; }}"
-            )
-        return f"{prep}; {command}"
+        return wrap_command(self.config.workdir_mount, self.config.baked_lake, command)
 
     def _build_cmd(
         self,
