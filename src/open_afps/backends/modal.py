@@ -8,8 +8,6 @@ Port target: milp_flare ``harness/runner/modal.py``. Notable details to carry ov
   warm-up ``lake build`` before timing real work, to dodge cold-cache latency.
 * Sync the workdir in/out via tar.gz.
 * Pin ``LEAN_NUM_THREADS`` to the allocated CPU count.
-
-Requires the ``modal`` extra (``pip install open-afps[modal]``).
 """
 
 from __future__ import annotations

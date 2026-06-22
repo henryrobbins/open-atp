@@ -1,4 +1,4 @@
-"""Concrete provers. Import lazily-friendly: heavy deps live behind install extras."""
+"""Concrete provers."""
 
 from open_afps.provers.agent import AgentProver, AgentProverConfig
 from open_afps.provers.aristotle import AristotleProver, AristotleProverConfig

@@ -12,7 +12,7 @@ different behaviours:
   theorems it was asked to prove (ported from ``scripts/statement_tracker.py``).
 
 Numina's helper skills call Leandex / Gemini / GPT, so its config carries those API
-keys to forward into the sandbox (the ``numina`` install extra).
+keys to forward into the sandbox.
 """
 
 from __future__ import annotations

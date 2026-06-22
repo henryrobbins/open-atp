@@ -5,13 +5,16 @@ description = "Open Automated Formal Proof Synthesis: upload Lean files with sor
 requires-python = ">=3.12"
 dependencies = [
     "jinja2>=3.1",
+    "modal>=1.5",
+    "aristotlelib",
+    # Numina helper skills call out to these providers.
+    "lean-explore>=1.2.1",
+    "google-genai>=1.44.0",
+    "openai>=2.7.1",
+    "anthropic>=0.75.0",
 ]
 
 [project.optional-dependencies]
-modal = ["modal>=1.5"]
-aristotle = ["aristotlelib"]
-# Numina helper skills call out to these providers; only needed when running NuminaProver.
-numina = ["lean-explore>=1.2.1", "google-genai>=1.44.0", "openai>=2.7.1", "anthropic>=0.75.0"]
 dev = ["mypy", "pytest", "pytest-cov", "ruff", "python-dotenv"]
 
 [build-system]
