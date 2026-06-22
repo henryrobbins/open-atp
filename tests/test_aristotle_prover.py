@@ -45,13 +45,15 @@ def _fake_result(*, solved: bool) -> object:
     async def _stub(
         self: AristotleProver, project_dir: Path, prompt: str, dest_tar: Path
     ) -> tuple[Path, dict[str, object]]:
+        # Real Aristotle archives wrap everything under a single top-level dir;
+        # mirror that so the test exercises _extract_over's unwrapping.
         with tarfile.open(dest_tar, "w:gz") as tar:
             for name, text in (
                 ("MILExample.lean", body),
                 ("ARISTOTLE_SUMMARY.md", SUMMARY),
             ):
                 data = text.encode()
-                info = tarfile.TarInfo(name)
+                info = tarfile.TarInfo(f"{project_dir.name}_aristotle/{name}")
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
         return dest_tar, {"project_id": "test-123", "task_status": "COMPLETE"}

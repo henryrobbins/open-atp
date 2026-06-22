@@ -15,6 +15,7 @@ import asyncio
 import os
 import shutil
 import tarfile
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -136,6 +137,24 @@ class AristotleProver(AutomatedProver):
 
     @staticmethod
     def _extract_over(tar_path: Path, workdir: Path) -> None:
-        """Unpack Aristotle's archive over the workdir (completed files win)."""
-        with tarfile.open(tar_path, "r:gz") as tar:
-            tar.extractall(workdir, filter="data")
+        """Unpack Aristotle's archive over the workdir (completed files win).
+
+        Aristotle wraps its result in a single top-level directory (e.g.
+        ``<name>_aristotle/``); we unwrap that so files land at the workdir root and
+        overwrite the originals, rather than nesting a second copy one level down.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = Path(tmp)
+            with tarfile.open(tar_path, "r:gz") as tar:
+                tar.extractall(staging, filter="data")
+
+            # Unwrap iff everything sits under exactly one top-level directory.
+            entries = list(staging.iterdir())
+            wrapped = len(entries) == 1 and entries[0].is_dir()
+            source = entries[0] if wrapped else staging
+
+            for item in source.rglob("*"):
+                if item.is_file():
+                    dest = workdir / item.relative_to(source)
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(item, dest)
