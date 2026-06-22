@@ -66,16 +66,9 @@ def _find_top_level_assign(text: str) -> int | None:
     return None
 
 
-def extract_proof_body(output_text: str) -> str | None:
-    """Extract the proof body (tactic block after ``by``) from the model output.
-
-    Takes the last fenced Lean block that carries a top-level ``:=`` (the complete
-    proof), splits at that delimiter, and returns everything after ``by`` -- the
-    portion that replaces a ``sorry``. Returns ``None`` if no usable proof is found.
-    The leading whitespace/newline is preserved so the body drops in after a header
-    ending in ``by``; trailing whitespace is trimmed.
-    """
-    blocks = [m.group(1) for m in _FENCE_RE.finditer(output_text)]
+def _body_from_blocks(text: str) -> str | None:
+    """Last fenced Lean block in ``text`` with a top-level ``:=`` -> its proof body."""
+    blocks = [m.group(1) for m in _FENCE_RE.finditer(text)]
     for block in reversed(blocks):
         assign = _find_top_level_assign(block)
         if assign is None:
@@ -87,6 +80,28 @@ def extract_proof_body(output_text: str) -> str | None:
         if body:
             return body
     return None
+
+
+def extract_proof_body(output_text: str) -> str | None:
+    """Extract the proof body (tactic block after ``by``) from the model output.
+
+    Returns everything after ``by`` in the final complete proof -- the portion that
+    replaces a ``sorry`` -- with leading whitespace/newline preserved (so it drops in
+    after a header ending in ``by``) and trailing whitespace trimmed. ``None`` if no
+    usable proof is found.
+
+    The model emits a ``<think>...</think>`` reasoning trace -- which itself contains
+    draft code fences and sometimes a stray, unbalanced fence -- followed by the final
+    answer. Naively pairing fences across the whole output misaligns on those drafts
+    (and can grab a wrong draft proof), so we anchor on the region *after* the last
+    ``</think>`` and only fall back to the whole text if that yields nothing.
+    """
+    if "</think>" in output_text:
+        answer = output_text.rsplit("</think>", 1)[1]
+        body = _body_from_blocks(answer)
+        if body is not None:
+            return body
+    return _body_from_blocks(output_text)
 
 
 def generate(

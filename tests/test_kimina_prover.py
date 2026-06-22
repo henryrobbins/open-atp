@@ -350,6 +350,23 @@ def test_extract_proof_body_handles_inline_and_missing() -> None:
     assert gen.extract_proof_body("```lean\n#check Nat\n```") is None
 
 
+def test_extract_proof_body_anchors_on_final_answer() -> None:
+    """The real model shape: a <think> trace with draft fences, then the answer.
+
+    The reasoning's draft proof (`simp`) and a stray fence must NOT be picked up; only
+    the answer after the last </think> counts.
+    """
+    gen = _load_gen()
+    output = (
+        "<think>\nDraft:\n```lean\ntheorem foo := by simp\n```\nstray ```\noddly.\n"
+        "</think>\n"
+        "```lean4\nimport Mathlib\n\n"
+        "theorem mul_comm_assoc (a b c : ℝ) : a * b * c = b * (a * c) := by\n"
+        "  ring\n```\n"
+    )
+    assert gen.extract_proof_body(output) == "\n  ring"
+
+
 # --- real generation end-to-end on a Modal GPU (slow, opt-in) ---------------
 
 
