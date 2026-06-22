@@ -35,6 +35,6 @@ class AristotleProver(AutomatedProver):
         #   1. Stage task.project into workdir.
         #   2. Run `aristotle submit "<instructions>" --project-dir {workdir} --wait
         #      --destination result.tar.gz` (via aristotlelib or subprocess).
-        #   3. Unpack result.tar.gz over workdir (completed .lean + ARISTOTLE_SUMMARY.md).
+        #   3. Unpack result.tar.gz over workdir (completed .lean + summary).
         #   4. Return the changed files. Cost is currently undocumented -> leave None.
         raise NotImplementedError("AristotleProver.prove not yet implemented")

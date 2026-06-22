@@ -59,7 +59,8 @@ class LeanProject:
         data = json.loads(manifest.read_text())
         for pkg in data.get("packages", []):
             if pkg.get("name") == "mathlib":
-                return pkg.get("rev")
+                rev = pkg.get("rev")
+                return rev if isinstance(rev, str) else None
         return None
 
     def lean_files(self) -> list[Path]:

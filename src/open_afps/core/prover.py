@@ -34,7 +34,7 @@ class AutomatedProverConfig:
     # Sandbox image carrying the supported Lean toolchain + Mathlib. Also the image
     # the shared verifier checks every project against.
     image: str
-    # Toolchain pinned inside ``image``; projects must match it (verifier rejects otherwise).
+    # Toolchain pinned inside ``image``; projects must match it (else verifier rejects).
     supported_toolchain: str
     timeout_s: int = 1800
     env: dict[str, str] = field(default_factory=dict)
@@ -45,7 +45,9 @@ class AutomatedProver(abc.ABC):
 
     name: str = "base"
 
-    def __init__(self, config: AutomatedProverConfig, verification_backend: ComputeBackend) -> None:
+    def __init__(
+        self, config: AutomatedProverConfig, verification_backend: ComputeBackend
+    ) -> None:
         self.config = config
         # The backend used for the *final check*. Agentic provers additionally run
         # their generation in a backend; that is the subclass's concern.
@@ -70,7 +72,7 @@ class AutomatedProver(abc.ABC):
         completed = self.prove(task, workdir)
         duration = time.monotonic() - start
 
-        # Verify against the project now living in workdir (subclasses sync results there).
+        # Verify the project now living in workdir (subclasses sync results there).
         from open_afps.core.task import LeanProject
 
         report = self.verifier.verify(LeanProject(workdir))

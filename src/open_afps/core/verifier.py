@@ -25,9 +25,11 @@ _AXIOMS_RE = re.compile(r"depends on axioms: \[([^\]]*)\]")
 
 
 class Verifier:
-    """Compiles projects in a :class:`ComputeBackend` and reports verification status."""
+    """Compiles projects in a :class:`ComputeBackend` and reports their status."""
 
-    def __init__(self, backend: ComputeBackend, *, supported_toolchain: str | None = None) -> None:
+    def __init__(
+        self, backend: ComputeBackend, *, supported_toolchain: str | None = None
+    ) -> None:
         self.backend = backend
         # The toolchain baked into ``backend.config.image``. When set, projects whose
         # pin differs are rejected up front (the "reject if the image isn't correct"

@@ -11,8 +11,9 @@ The architecture rests on two reusable primitives:
 * :class:`~open_afps.core.verifier.Verifier` -- compile a project in a backend and
   report whether it is sorry-free and axiom-clean.
 
-Everything else is a candidate generator (:class:`~open_afps.core.prover.AutomatedProver`)
-that produces completed files, which are then funnelled through the shared verifier.
+Everything else is a candidate generator
+(:class:`~open_afps.core.prover.AutomatedProver`) that produces completed files, which
+are then funnelled through the shared verifier.
 """
 
 from open_afps.core.prover import AutomatedProver, AutomatedProverConfig

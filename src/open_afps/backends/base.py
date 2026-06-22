@@ -32,7 +32,7 @@ class CommandResult:
 
 
 @dataclass
-class CommandHandle(AbstractContextManager):
+class CommandHandle(AbstractContextManager["CommandHandle"]):
     """A live, streaming command. Concrete backends subclass and fill the hooks.
 
     Streaming matters for agents (we want incremental stdout for cost/progress
