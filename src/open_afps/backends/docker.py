@@ -17,7 +17,7 @@ from __future__ import annotations
 import subprocess
 import time
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -77,6 +77,10 @@ class DockerCommandHandle(CommandHandle):
 class DockerBackend(ComputeBackend):
     config: DockerConfig
 
+    # The image runs as the non-root ``agent`` user (Lean's elan + Claude Code
+    # both live under this HOME); credential mounts land here.
+    container_home = "/home/agent"
+
     def __init__(self, config: DockerConfig) -> None:
         super().__init__(config)
 
@@ -95,11 +99,16 @@ class DockerBackend(ComputeBackend):
         return f"{prep}; {command}"
 
     def _build_cmd(
-        self, workdir: Path, container: str, env: Mapping[str, str]
+        self,
+        workdir: Path,
+        container: str,
+        env: Mapping[str, str],
+        mounts: Sequence[tuple[str, str]],
     ) -> list[str]:
         cmd = ["docker", "run", "--rm", "--name", container]
         cmd += ["-v", f"{workdir.resolve()}:{self.config.workdir_mount}"]
-        for host, dest in self.config.volumes:
+        # Config-level mounts (baked in) then per-call mounts (e.g. credential dirs).
+        for host, dest in (*self.config.volumes, *mounts):
             cmd += ["-v", f"{host}:{dest}"]
         for key, value in {**self.config.env, **env}.items():
             cmd += ["-e", f"{key}={value}"]
@@ -112,10 +121,11 @@ class DockerBackend(ComputeBackend):
         command: str,
         *,
         env: Mapping[str, str] | None = None,
+        mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
         container = f"afps-{uuid.uuid4().hex[:12]}"
-        argv = self._build_cmd(workdir, container, env or {})
+        argv = self._build_cmd(workdir, container, env or {}, mounts or ())
         argv += ["bash", "-lc", self._wrap(command)]
         popen = subprocess.Popen(
             argv,

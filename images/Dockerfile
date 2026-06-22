@@ -1,8 +1,9 @@
 # Base sandbox image for open-afps: Lean + Mathlib, with the olean cache pre-baked.
 #
 # Mirrors milp_flare's assets/docker/Dockerfile, minus the MILP-specific Lean
-# skeleton and (for phase 1) the agent CLIs -- this image only needs to *verify*.
-# Agent CLIs (claude-code/codex/opencode) + lean-lsp-mcp get layered on in phase 3.
+# skeleton. As of phase 3 it also carries the agent CLIs (claude-code / codex /
+# opencode) and the lean-lsp-mcp MCP server so the AgentProver can drive an agent
+# in the sandbox -- the same image still serves as the verification image.
 #
 # The toolchain pinned in images/lean/lean-toolchain is the contract: the verifier
 # rejects any uploaded project whose lean-toolchain differs. Bump it (and the mathlib
@@ -14,18 +15,30 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ripgrep is recommended for lean-lsp-mcp's local search (used in later phases).
+# ripgrep is recommended for lean-lsp-mcp's local search; pipx installs the MCP
+# server and uv (the agents invoke `uvx lean-lsp-mcp`).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         git \
+        unzip \
         build-essential \
         python3 \
+        python3-pip \
+        pipx \
         ripgrep \
         procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root user (matches milp_flare; Lean's elan lives under this user's HOME).
+# Node 20 + agent CLIs (Claude Code, Codex, OpenCode). Installed as root, before
+# we drop to the non-root user, so they land on the global PATH.
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai \
+ && rm -rf /var/lib/apt/lists/*
+
+# Non-root user (matches milp_flare; Lean's elan lives under this user's HOME and
+# Claude Code refuses to run as root).
 RUN useradd -m -s /bin/bash agent
 USER agent
 WORKDIR /home/agent
@@ -35,6 +48,11 @@ WORKDIR /home/agent
 RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf \
         | sh -s -- -y --default-toolchain none --no-modify-path
 ENV PATH="/home/agent/.elan/bin:/home/agent/.local/bin:${PATH}"
+
+# lean-lsp MCP server (matches the `uvx lean-lsp-mcp` invocation the harnesses
+# render) + uv. https://github.com/oOo0oOo/lean-lsp-mcp
+RUN pipx install lean-lsp-mcp \
+ && pipx install uv
 
 WORKDIR /workspace
 

@@ -33,11 +33,12 @@ verifier **rejects** projects whose toolchain doesn't match the sandbox image's 
 (`ToolchainMismatch`) rather than failing deep in a build. One Mathlib image to start;
 `image` is a config field so more can be added without refactoring.
 
-## Status: phase 1 done (Docker spine)
+## Status: Docker spine + Aristotle + AgentProver done
 
-`DockerBackend` + `Verifier` work end-to-end against the Mathlib image; the Modal
-backend and the three provers are still stubs with `TODO`s pointing at the
-milp_flare / numina source to port from.
+`DockerBackend` + `Verifier` work end-to-end against the Mathlib image; the
+AristotleProver and AgentProver (claude/codex/opencode + lean-lsp-mcp) are
+implemented. The Modal backend and the NuminaProver are still stubs with `TODO`s
+pointing at the milp_flare / numina source to port from.
 
 ```bash
 # Build the Mathlib base image (pins Lean/Mathlib v4.28.0).
@@ -64,8 +65,11 @@ print(report.verified, report.sorry_free, report.axioms)
    (submit → wait → download), unpacks the result over the workdir, and funnels it
    through the shared Docker verifier. Needs `ARISTOTLE_API_KEY` for real runs; tests
    stub the remote call and verify a real proof locally.
-3. **AgentProver.** Port milp_flare's `harness/` (claude/opencode/codex + lean-lsp-mcp,
-   `cost.py`) onto the backend; generic "fill the sorrys" prompt.
+3. ~~**AgentProver.**~~ ✅ Done: ports milp_flare's `harness/` (claude/opencode/codex
+   + lean-lsp-mcp, `cost.py`) onto the backend with a generic "fill the sorrys" prompt.
+   The agent edits the staged project in place; `prove` diffs the `.lean` files and the
+   shared verifier does the final check. Needs `CLAUDE_CODE_OAUTH_TOKEN` (or a provider
+   key) for real runs; the fast tests mock the launch and parse a captured stream.
 4. **NuminaProver.** Vendor Numina's `skills/`+`prompts/` (see `vendor/numina/VENDOR.md`),
    extend `AgentProver` with the round-continuation loop + statement tracker.
 5. **Common API surface** (`api.py`): files + chosen provers + configs → `ProofResult`s;

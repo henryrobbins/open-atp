@@ -12,7 +12,7 @@ Port target: milp_flare ``harness/runner/modal.py``. Notable details to carry ov
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +41,7 @@ class ModalBackend(ComputeBackend):
         command: str,
         *,
         env: Mapping[str, str] | None = None,
+        mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
         # TODO(phase 1): create modal.Sandbox(image=..., cpu=..., memory=...),

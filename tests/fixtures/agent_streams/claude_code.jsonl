@@ -1,0 +1,6 @@
+{"type":"system","subtype":"init","session_id":"abc123","model":"claude-opus-4-8","mcp_servers":[{"name":"lean-lsp","status":"connected"}]}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll check the diagnostics on MILExample.lean first."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"mcp__lean-lsp__lean_diagnostic_messages","input":{"file":"MILExample.lean"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"success: true, items: []"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The sorry is filled and the file compiles cleanly."}]}}
+{"type":"result","subtype":"success","is_error":false,"stop_reason":"end_turn","num_turns":5,"total_cost_usd":0.4231,"usage":{"input_tokens":18432,"output_tokens":2096,"cache_read_input_tokens":12000}}

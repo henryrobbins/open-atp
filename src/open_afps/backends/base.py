@@ -15,7 +15,7 @@ command runner. Concrete backends (Docker, Modal) are ports of milp_flare's
 from __future__ import annotations
 
 import abc
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,6 +68,10 @@ class BackendConfig:
 class ComputeBackend(abc.ABC):
     """Runs commands over a workdir in a sandbox carrying Lean + Mathlib."""
 
+    #: Absolute ``$HOME`` inside the sandbox; per-run credential dirs (an agent's
+    #: ``~/.codex``, say) are mounted under it. Overridden per backend.
+    container_home: str = "/root"
+
     def __init__(self, config: BackendConfig) -> None:
         self.config = config
 
@@ -83,12 +87,17 @@ class ComputeBackend(abc.ABC):
         command: str,
         *,
         env: Mapping[str, str] | None = None,
+        mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
         """Launch ``command`` with ``workdir`` mounted/synced into the sandbox.
 
         The workdir is synced in before launch and synced back out on completion so
         that file mutations (completed proofs) are visible to the caller.
+
+        ``mounts`` are extra ``(host_path, container_path)`` bind mounts beyond the
+        workdir -- used to forward agent credential dirs (e.g. Codex's ``~/.codex``)
+        per run, without baking them into the backend config.
         """
 
     def run(
@@ -97,8 +106,11 @@ class ComputeBackend(abc.ABC):
         command: str,
         *,
         env: Mapping[str, str] | None = None,
+        mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> CommandResult:
         """Convenience: :meth:`start` then block via :meth:`CommandHandle.wait`."""
-        with self.start(workdir, command, env=env, timeout_s=timeout_s) as handle:
+        with self.start(
+            workdir, command, env=env, mounts=mounts, timeout_s=timeout_s
+        ) as handle:
             return handle.wait()

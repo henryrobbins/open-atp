@@ -24,6 +24,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/open_afps"]
 
+# Vendored agent assets (launch scripts, MCP config, skills) are package data the
+# AgentProver copies into each workdir; ship them in the wheel.
+[tool.hatch.build.targets.wheel.force-include]
+"src/open_afps/provers/agent/assets" = "open_afps/provers/agent/assets"
+
 [tool.ruff]
 line-length = 88
 
@@ -41,7 +46,11 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Exclude the live (billable) credentialed tests by default; opt in by marker.
+addopts = "-m 'not aristotle_api and not agent_api'"
 markers = [
     "docker: tests that require the open-afps Docker image (opt-out: -m 'not docker')",
     "modal: tests that launch a Modal sandbox (opt-out: -m 'not modal')",
+    "aristotle_api: live Aristotle API test (opt-in: run with -m aristotle_api)",
+    "agent_api: live agent CLI test, billable + needs creds (opt-in: -m agent_api)",
 ]
