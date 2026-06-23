@@ -27,7 +27,7 @@ Other supported keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`.
 ## Using the harness
 
 ```python
-from open_afps.provers.agent import AgentProverConfig
+from open_afps.provers import AgentProverConfig
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 
 config = AgentProverConfig(
@@ -43,4 +43,4 @@ config = AgentProverConfig(
 
 The OpenCode CLI reports a per-step cost for each provider call; the harness sums
 these into `cost_usd` in
-{class}`~open_afps.provers.agent.harness.HarnessRunResult`.
+{class}`~open_afps.harness.base.HarnessRunResult`.

@@ -6,15 +6,17 @@ tocdepth: 3
 
 The concrete provers. Each subclasses {class}`~open_afps.core.prover.AutomatedProver`
 and funnels its output through the shared {class}`~open_afps.core.verifier.Verifier`.
+The agentic provers compose an {doc}`agent harness <harness>` (the *agent* concern)
+with a {class}`~open_afps.backends.base.ComputeBackend` (the *compute* concern).
 
 ## AgentProver
 
 ```{eval-rst}
-.. autoclass:: open_afps.provers.agent.prover.AgentProver
+.. autoclass:: open_afps.provers.agent_prover.AgentProver
    :show-inheritance:
    :exclude-members: name
 
-.. autoclass:: open_afps.provers.agent.prover.AgentProverConfig
+.. autoclass:: open_afps.provers.agent_prover.AgentProverConfig
    :show-inheritance:
    :no-members:
 ```
@@ -41,43 +43,4 @@ and funnels its output through the shared {class}`~open_afps.core.verifier.Verif
 .. autoclass:: open_afps.provers.aristotle.AristotleProverConfig
    :show-inheritance:
    :no-members:
-```
-
-(agent-harnesses)=
-## Agent harnesses
-
-A {class}`~open_afps.provers.agent.harness.Harness` is the *agent* concern of the
-{class}`~open_afps.provers.agent.prover.AgentProver`: launch script, credential
-forwarding, and output parsing for one agent CLI. See {doc}`../agent_harness/index`
-for setup.
-
-```{eval-rst}
-.. autoclass:: open_afps.provers.agent.harness.Harness
-   :exclude-members: name
-
-.. autoclass:: open_afps.provers.agent.harness.HarnessRunResult
-   :no-members:
-
-.. autoclass:: open_afps.provers.agent.harness.AuthSpec
-   :no-members:
-
-.. autoclass:: open_afps.provers.agent.harness.ClaudeCodeHarness
-   :show-inheritance:
-   :exclude-members: configure_wd, name
-
-.. autoclass:: open_afps.provers.agent.harness.CodexHarness
-   :show-inheritance:
-   :exclude-members: configure_wd, name
-
-.. autoclass:: open_afps.provers.agent.harness.OpenCodeHarness
-   :show-inheritance:
-   :exclude-members: configure_wd, name
-
-.. autodata:: open_afps.provers.agent.harness.HARNESSES
-```
-
-## Pricing
-
-```{eval-rst}
-.. autodata:: open_afps.provers.agent.cost.COST_PER_MTOK
 ```

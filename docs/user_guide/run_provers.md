@@ -32,7 +32,7 @@ print("axioms:", report.axioms)
 
 ## Filling sorrys with the AgentProver
 
-The {class}`~open_afps.provers.agent.prover.AgentProver` runs a coding agent
+The {class}`~open_afps.provers.agent_prover.AgentProver` runs a coding agent
 (Claude Code, Codex, or OpenCode) with the [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp)
 server inside the sandbox, then diffs the `.lean` files it changed:
 
@@ -42,7 +42,7 @@ from pathlib import Path
 from open_afps.backends.docker import DockerBackend, DockerConfig
 from open_afps.core.task import LeanProject, ProofTask
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
-from open_afps.provers.agent import AgentProver, AgentProverConfig
+from open_afps.provers import AgentProver, AgentProverConfig
 
 backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
 config = AgentProverConfig(

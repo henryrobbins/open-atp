@@ -26,7 +26,7 @@ sandbox at run time so Codex can refresh its access token mid-session.
 ## Using the harness
 
 ```python
-from open_afps.provers.agent import AgentProverConfig
+from open_afps.provers import AgentProverConfig
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 
 config = AgentProverConfig(
@@ -42,6 +42,6 @@ config = AgentProverConfig(
 
 The Codex CLI does not report per-run USD, so the harness estimates it from token
 totals using the pricing table in
-{data}`~open_afps.provers.agent.cost.COST_PER_MTOK`, populating `cost_usd` in
-{class}`~open_afps.provers.agent.harness.HarnessRunResult`. Ensure the pricing table
+{data}`~open_afps.harness.cost.COST_PER_MTOK`, populating `cost_usd` in
+{class}`~open_afps.harness.base.HarnessRunResult`. Ensure the pricing table
 reflects current OpenAI API prices.

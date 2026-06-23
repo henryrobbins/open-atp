@@ -32,7 +32,7 @@ your Claude plan rather than the API.
 ## Using the harness
 
 ```python
-from open_afps.provers.agent import AgentProverConfig
+from open_afps.provers import AgentProverConfig
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 
 config = AgentProverConfig(
@@ -47,4 +47,4 @@ config = AgentProverConfig(
 ## Cost tracking
 
 The Claude Code CLI JSON output stream reports per-run USD directly. This populates
-`cost_usd` in {class}`~open_afps.provers.agent.harness.HarnessRunResult`.
+`cost_usd` in {class}`~open_afps.harness.base.HarnessRunResult`.

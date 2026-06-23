@@ -2,7 +2,7 @@
 # NuminaProver
 
 The {class}`~open_afps.provers.numina.NuminaProver` is a configured variant of the
-{class}`~open_afps.provers.agent.prover.AgentProver`. Structurally, Numina is
+{class}`~open_afps.provers.agent_prover.AgentProver`. Structurally, Numina is
 "Claude Code + a specific skills/prompts/search toolkit, run in a multi-round loop in
 a sandbox", so rather than re-implement it, `open-afps` extends `AgentProver` pinned
 to the `claude_code` harness with Numina's vendored assets and adds the two genuinely
@@ -20,7 +20,7 @@ into the sandbox.
 
 The `discussion_partner` skill (Gemini/GPT) appends a per-call token-usage record
 to a workdir ledger (`.claude/helper_usage.jsonl`); after the run `prove()` prices
-it via the {mod}`~open_afps.provers.agent.cost` table and folds it into
+it via the {mod}`~open_afps.harness.cost` table and folds it into
 `cost_usd`, so the reported cost includes discussion-partner spend rather than only
 the Claude agent. The split is preserved in metadata (`agent_cost_usd`,
 `helper_cost_usd`, `helper_breakdown`). Helper models absent from the price table

@@ -1,12 +1,12 @@
 (prover-agent)=
 # AgentProver
 
-The {class}`~open_afps.provers.agent.prover.AgentProver` runs a coding agent
+The {class}`~open_afps.provers.agent_prover.AgentProver` runs a coding agent
 (Claude Code, Codex, or OpenCode) with the
 [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp) server inside a
 {class}`~open_afps.backends.base.ComputeBackend`. It composes two concerns:
 
-- a {class}`~open_afps.provers.agent.harness.Harness` — the *agent* concern: launch
+- a {class}`~open_afps.harness.base.Harness` — the *agent* concern: launch
   script, credential forwarding, and output parsing (see
   {doc}`../agent_harness/index`); and
 - a {class}`~open_afps.backends.base.ComputeBackend` — the *compute* concern: where
@@ -22,7 +22,7 @@ compile / sorry / axiom check.
 ```python
 from open_afps.backends.docker import DockerBackend, DockerConfig
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
-from open_afps.provers.agent import AgentProver, AgentProverConfig
+from open_afps.provers import AgentProver, AgentProverConfig
 
 backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
 config = AgentProverConfig(
@@ -37,12 +37,12 @@ prover = AgentProver(config, verification_backend=backend)
 
 See {doc}`../user_guide/run_provers` for an end-to-end run and
 {doc}`../agent_harness/index` for per-harness credential setup. Configuration fields
-are documented under {class}`~open_afps.provers.agent.prover.AgentProverConfig` in the
+are documented under {class}`~open_afps.provers.agent_prover.AgentProverConfig` in the
 {doc}`../api/provers` reference.
 
 ## Cost tracking
 
 How a run's `cost_usd` is determined depends on the harness: Claude Code reports USD
 directly, OpenCode sums provider step costs, and Codex is estimated from token totals
-via {data}`~open_afps.provers.agent.cost.COST_PER_MTOK`. See each
+via {data}`~open_afps.harness.cost.COST_PER_MTOK`. See each
 {doc}`harness page <../agent_harness/index>` for details.

@@ -65,6 +65,10 @@ numpydoc_show_class_members = False
 numpydoc_xref_param_type = True
 numpydoc_xref_ignore = {"of", "or", "optional", "default"}
 numpydoc_xref_aliases = {
+    # Platform
+    "Platform": "open_afps.api.Platform",
+    "SolveResult": "open_afps.api.SolveResult",
+    "build_prover": "open_afps.api.build_prover",
     # Core
     "LeanProject": "open_afps.core.task.LeanProject",
     "ProofTask": "open_afps.core.task.ProofTask",
@@ -85,20 +89,24 @@ numpydoc_xref_aliases = {
     "ModalBackend": "open_afps.backends.modal.ModalBackend",
     "ModalConfig": "open_afps.backends.modal.ModalConfig",
     # Provers
-    "AgentProver": "open_afps.provers.agent.prover.AgentProver",
-    "AgentProverConfig": "open_afps.provers.agent.prover.AgentProverConfig",
+    "AgentProver": "open_afps.provers.agent_prover.AgentProver",
+    "AgentProverConfig": "open_afps.provers.agent_prover.AgentProverConfig",
     "AristotleProver": "open_afps.provers.aristotle.AristotleProver",
     "AristotleProverConfig": "open_afps.provers.aristotle.AristotleProverConfig",
     "NuminaProver": "open_afps.provers.numina.NuminaProver",
     "NuminaProverConfig": "open_afps.provers.numina.NuminaProverConfig",
     # Harnesses
-    "Harness": "open_afps.provers.agent.harness.Harness",
-    "HarnessRunResult": "open_afps.provers.agent.harness.HarnessRunResult",
-    "AuthSpec": "open_afps.provers.agent.harness.AuthSpec",
-    "ClaudeCodeHarness": "open_afps.provers.agent.harness.ClaudeCodeHarness",
-    "CodexHarness": "open_afps.provers.agent.harness.CodexHarness",
-    "OpenCodeHarness": "open_afps.provers.agent.harness.OpenCodeHarness",
-    "COST_PER_MTOK": "open_afps.provers.agent.cost.COST_PER_MTOK",
+    "Harness": "open_afps.harness.base.Harness",
+    "HarnessRunResult": "open_afps.harness.base.HarnessRunResult",
+    "AuthSpec": "open_afps.harness.base.AuthSpec",
+    "ClaudeCodeHarness": "open_afps.harness.claude_code.ClaudeCodeHarness",
+    "CodexHarness": "open_afps.harness.codex.CodexHarness",
+    "OpenCodeHarness": "open_afps.harness.opencode.OpenCodeHarness",
+    "VibeHarness": "open_afps.harness.vibe.VibeHarness",
+    "AxProverHarness": "open_afps.harness.axprover.AxProverHarness",
+    "AssetBundle": "open_afps.harness.bundles.AssetBundle",
+    "COST_PER_MTOK": "open_afps.harness.cost.COST_PER_MTOK",
+    "compute_cost_usd": "open_afps.harness.cost.compute_cost_usd",
     # Modal SDK types referenced in ModalBackend docstrings. Resolved to the Modal
     # docs by the ``missing-reference`` handler in ``setup`` below.
     "Sandbox": "modal.Sandbox",
