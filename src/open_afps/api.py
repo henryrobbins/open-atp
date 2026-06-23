@@ -61,7 +61,12 @@ class _Entry:
 REGISTRY: dict[str, _Entry] = {
     "aristotle": _Entry(AristotleProver, AristotleProverConfig),
     "agent": _Entry(AgentProver, AgentProverConfig),
-    "agent:codex": _Entry(AgentProver, AgentProverConfig, {"harness": "codex"}),
+    # codex authenticates via ChatGPT/OpenAI (``codex login``), so it must run an
+    # OpenAI model -- not the AgentProverConfig default (``claude-opus-4-8``), which
+    # codex can't serve without an Anthropic ``model_providers`` entry.
+    "agent:codex": _Entry(
+        AgentProver, AgentProverConfig, {"harness": "codex", "model": "gpt-5.5"}
+    ),
     "agent:opencode": _Entry(AgentProver, AgentProverConfig, {"harness": "opencode"}),
     # ax-prover-base runs as an AgentProver on the ``axprover`` harness: its own
     # LangGraph proposer->builder->reviewer loop edits the .lean in place, while
