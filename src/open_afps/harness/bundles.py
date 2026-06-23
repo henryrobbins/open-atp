@@ -26,19 +26,14 @@ from pathlib import Path
 from typing import Any
 
 from open_afps.harness._paths import (
-    _SKILLS,
     _vendor_lean4_skills_dir,
     _vendor_leanprover_skills_dir,
     _vendor_numina_dir,
 )
 
-#: Directories searched (in order) when a skill is named rather than given as a
-#: path: the package's own ``assets/skills`` (e.g. ``filling-sorrys``) then the
+#: Directories searched when a skill is named rather than given as a path: the
 #: vendored ``leanprover/skills`` catalog (``lean-proof``, ``lean-setup``, ...).
-_SKILL_CATALOGS: tuple[Path, ...] = (
-    _SKILLS,
-    _vendor_leanprover_skills_dir() / "skills",
-)
+_SKILL_CATALOGS: tuple[Path, ...] = (_vendor_leanprover_skills_dir() / "skills",)
 
 #: Directories searched when a plugin is named rather than given as a path: the
 #: vendored ``lean4-skills`` plugins (``lean4``).

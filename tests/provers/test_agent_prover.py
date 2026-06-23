@@ -126,15 +126,12 @@ def test_claude_code_configure_wd_writes_assets(tmp_path: Path) -> None:
 
 
 def test_skills_resolve_by_name_and_path(tmp_path: Path) -> None:
-    # By catalog name (package `filling-sorrys` and vendored `lean-proof`).
+    # By catalog name (vendored `lean-proof`).
     assert resolve_skill("lean-proof").name == "lean-proof"
-    assert resolve_skill("filling-sorrys").name == "filling-sorrys"
     assert resolve_plugin("lean4").name == "lean4"
-    # By full path: a local skill dir resolves to itself.
-    local = tmp_path / "my-skill"
-    local.mkdir()
-    (local / "SKILL.md").write_text("---\nname: my-skill\n---\n")
-    assert resolve_skill(str(local)) == local.resolve()
+    # By full path: a skill dir resolves to itself (the dummy probe-skill fixture).
+    probe = Path(__file__).parents[1] / "fixtures" / "skills" / "probe-skill"
+    assert resolve_skill(str(probe)) == probe.resolve()
     # Unknown names are a clear error, not a silent miss.
     with pytest.raises(ValueError, match="unknown skill"):
         resolve_skill("no-such-skill")

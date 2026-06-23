@@ -15,7 +15,6 @@ import open_afps
 _HARNESS_DIR = Path(__file__).parent
 _ASSETS = _HARNESS_DIR / "assets"
 _SCRIPTS = _ASSETS / "scripts"
-_SKILLS = _ASSETS / "skills"
 _MCP_JSON = _ASSETS / "configs" / "mcp.json"
 #: Vibe-specific assets: the vendored stand-in agent profile (lean scaffold on a
 #: non-Labs model) copied into the sandbox's per-workdir VIBE_HOME/agents.
