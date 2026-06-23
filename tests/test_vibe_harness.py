@@ -152,13 +152,17 @@ def test_configure_wd_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None
     # Ungate mutating tools in `vibe -p` (otherwise `edit` is denied) and wire in the
     # lean-lsp compile-check loop -- both live on the base config so they cover the
     # builtin `lean` agent and the stand-ins alike.
-    assert "auto_approve = true" in config
+    assert "bypass_tool_permissions = true" in config
     assert "[[mcp_servers]]" in config
-    assert 'args = ["lean-lsp-mcp"]' in config
+    assert 'command = "lean-lsp-mcp"' in config
 
     standin = tmp_path / ".vibe" / "agents" / "lean-devstral.toml"
     assert standin.is_file()
     assert 'system_prompt_id = "lean"' in standin.read_text()
+
+    # The filling-sorrys skill is staged under VIBE_HOME/skills (vibe's user skills
+    # dir, loaded without project-folder trust), matching the other harnesses.
+    assert (tmp_path / ".vibe" / "skills" / "filling-sorrys" / "SKILL.md").is_file()
 
     # parse() looks here for the session log written back from the sandbox.
     assert harness._session_log_dir == tmp_path / ".vibe" / "logs" / "session"

@@ -517,28 +517,29 @@ class VibeHarness(Harness):
         vibe_home = wd / self.VIBE_HOME_DIR
         agents_dir = vibe_home / "agents"
         agents_dir.mkdir(parents=True, exist_ok=True)
-        # ``auto_approve`` is the *only* thing that ungates mutating tools (``edit``,
-        # ``write_file``) in ``vibe -p`` programmatic mode: there is no approval
-        # callback, so any tool that resolves to ``ASK`` is answered "Tool execution
-        # not permitted" and silently skipped. Folder trust is never consulted on this
-        # path. The builtin ``lean`` profile sets no ``auto_approve``, so without this
-        # even the real Leanstral cannot write its proof. Set it on the base config so
-        # it applies to ``--agent lean`` and the vendored stand-ins alike.
+        # ``bypass_tool_permissions`` is the *only* thing that ungates mutating tools
+        # (``edit``, ``write_file``) in ``vibe -p`` programmatic mode: there is no
+        # approval callback, so any tool that resolves to ``ASK`` is answered "Tool
+        # execution not permitted" and silently skipped (agent_loop.py short-circuits
+        # to EXECUTE when this is set). The ``--auto-approve``/``--yolo`` CLI flag can't
+        # be used instead -- it forces ``--agent auto-approve``, discarding the ``lean``
+        # scaffold. The builtin ``lean`` profile sets no permission bypass, so without
+        # this even the real Leanstral cannot write its proof. Set it on the base config
+        # so it applies to ``--agent lean`` and the vendored stand-ins alike.
         #
-        # ``mcp_servers`` wires in lean-lsp-mcp (the same ``uvx lean-lsp-mcp`` server
-        # the other harnesses mount via .mcp.json) so the agent actually gets the
-        # compile/diagnostic feedback loop the prompt assumes. Vibe publishes its tools
-        # as ``lean-lsp_<tool>``; discovery failure is non-fatal (logged, agent runs
+        # ``mcp_servers`` wires in lean-lsp-mcp (the same server the other harnesses
+        # mount via .mcp.json) so the agent actually gets the compile/diagnostic
+        # feedback loop the prompt assumes. Vibe publishes its tools as
+        # ``lean-lsp_<tool>``; discovery failure is non-fatal (logged, agent runs
         # without them) so this is safe even if the server is missing.
         (vibe_home / "config.toml").write_text(
             'installed_agents = ["lean"]\n'
-            "auto_approve = true\n\n"
+            "bypass_tool_permissions = true\n\n"
             "[session_logging]\nenabled = true\n\n"
             "[[mcp_servers]]\n"
             'transport = "stdio"\n'
             'name = "lean-lsp"\n'
-            'command = "uvx"\n'
-            'args = ["lean-lsp-mcp"]\n'
+            'command = "lean-lsp-mcp"\n'
         )
         # Vendored stand-in profiles live as ``<agent>.toml`` (e.g. ``lean-devstral``,
         # ``lean-magistral``). The builtin ``lean`` agent (real Leanstral) ships with
@@ -546,6 +547,12 @@ class VibeHarness(Harness):
         if self.agent != "lean":
             profile = _VIBE_ASSETS / f"{self.agent}.toml"
             shutil.copy2(profile, agents_dir / profile.name)
+        # Mount the selected bundle's skills (the generic ``filling-sorrys`` skill)
+        # under VIBE_HOME/skills -- vibe's *user* skills dir, which loads regardless
+        # of project-folder trust. The other harnesses copy into ``.claude/skills`` /
+        # ``.agents/skills`` (project dirs); those are gated behind ``--trust`` in
+        # ``vibe -p``, so the VIBE_HOME-relative location is the parity-preserving spot.
+        self._copy_skills(wd, f"{self.VIBE_HOME_DIR}/skills")
         self._session_log_dir = vibe_home / "logs" / "session"
 
     def _agent_command(self) -> str:
