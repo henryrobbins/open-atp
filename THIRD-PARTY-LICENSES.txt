@@ -1,0 +1,46 @@
+THIRD-PARTY LICENSES
+====================
+
+open-afps itself is distributed under the MIT License (see LICENSE). It
+incorporates and/or distributes code from the following open source projects,
+which retain their own licenses:
+
+================================================================================
+
+1. ax-prover
+   Upstream:  https://github.com/Axiomatic-AI/ax-prover-base
+   Fork used: https://github.com/henryrobbins/ax-prover-base
+
+   GNU Affero General Public License, Version 3 (AGPL-3.0-only)
+
+   Copyright (c) Axiomatic-AI (Borja Requena, Austin Letson, Krystian
+   Nowakowski, Izan Beltran Ferreiro, Leopoldo Sarra, and contributors).
+
+   open-afps does not link against or import ax-prover in-process. It is
+   installed in an isolated environment (pipx) and invoked at arm's length as a
+   separate `ax-prover` CLI process; the open-afps sandbox image distributes
+   that binary (see images/Dockerfile). This separation keeps open-afps's own
+   MIT-licensed source unaffected by the AGPL's copyleft; the AGPL obligations
+   below attach to the ax-prover component only.
+
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU Affero General Public License as published by the
+   Free Software Foundation, either version 3 of the License, or (at your
+   option) any later version.
+
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+   FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+   details.
+
+   The full license text is available at https://www.gnu.org/licenses/agpl-3.0.txt
+   and in the LICENSE file of the source repositories above.
+
+   Source offer (AGPL sections 6 and 13): the complete corresponding source for
+   the version of ax-prover distributed by open-afps -- including the local
+   modifications carried by the fork -- is publicly available at the fork URL
+   above. The exact revision distributed is pinned as AX_PROVER_REF in
+   images/Dockerfile and src/open_afps/__main__.py. Where open-afps is operated
+   as a network service, this notice and that repository constitute the offer of
+   source required by AGPL section 13 for users interacting with ax-prover
+   remotely.
