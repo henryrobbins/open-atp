@@ -129,11 +129,14 @@ def _build_modal_image(args: argparse.Namespace) -> int:
             "elan-init.sh -sSf | sh -s -- -y --default-toolchain none "
             "--no-modify-path"
         )
-        # pipx tools (lean-lsp-mcp, uv) to global dirs so their entrypoints land on
-        # PATH. Shared uv cache for the Numina skills' `uv run` deps.
+        # pipx tools (lean-lsp-mcp, uv, mistral-vibe) to global dirs so their
+        # entrypoints land on PATH. mistral-vibe provides the `vibe` CLI the
+        # VibeHarness drives. Shared uv cache for the Numina skills' `uv run` deps.
         .env({"PIPX_HOME": "/opt/pipx", "PIPX_BIN_DIR": "/usr/local/bin"})
         .env({"UV_CACHE_DIR": "/opt/uv-cache"})
-        .run_commands("pipx install lean-lsp-mcp && pipx install uv")
+        .run_commands(
+            "pipx install lean-lsp-mcp && pipx install uv && pipx install mistral-vibe"
+        )
         # Modal's .env() sets literal values (no ${PATH} expansion like Dockerfile
         # ENV), so set an explicit PATH with /opt/elan/bin ahead of the standard dirs.
         .env(
