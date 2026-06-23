@@ -14,7 +14,7 @@
 codex exec --json --skip-git-repo-check \
     --sandbox danger-full-access \
     --model '<<MODEL>>' \
-    -c 'mcp_servers.lean-lsp.command="uvx"' \
-    -c 'mcp_servers.lean-lsp.args=["lean-lsp-mcp"]' \
+    -c 'mcp_servers.lean-lsp.command="lean-lsp-mcp"' \
+    -c 'mcp_servers.lean-lsp.args=[]' \
     -c 'model_reasoning_effort="<<EFFORT>>"' \
     "$PROMPT"

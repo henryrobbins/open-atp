@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["mypy", "pytest", "pytest-cov", "ruff", "python-dotenv"]
+dev = ["mypy", "pytest", "pytest-cov", "pytest-xdist>=3.5", "ruff", "python-dotenv"]
 docs = [
     "sphinx>=7",
     "myst-parser>=3",
@@ -67,7 +67,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Exclude the live (billable) credentialed tests by default; opt in by marker.
-addopts = "-m 'not aristotle_api and not agent_api and not numina_api'"
+# Run across 5 workers (pytest-xdist) so the slow Docker/Modal/agent suites
+# parallelise; mirrors flare. Override with e.g. `-n 0` for serial debugging.
+addopts = "-m 'not aristotle_api and not agent_api and not numina_api' -n 5"
 markers = [
     "docker: tests that require the open-afps Docker image (opt-out: -m 'not docker')",
     "modal: tests that launch a Modal sandbox (opt-out: -m 'not modal')",

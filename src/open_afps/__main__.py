@@ -78,7 +78,7 @@ def _build_modal_image(args: argparse.Namespace) -> int:
     Built programmatically (rather than from images/Dockerfile) so the Modal image
     can install the Lean toolchain + tools *globally as root*: Modal ignores a
     container ``USER`` and runs everything as root, so the agent-user layout the
-    Docker image uses doesn't apply. Installing globally keeps `lake`/`lean`/`uvx` on
+    Docker image uses doesn't apply. Installing globally keeps `lake`/`lean`/`uv` on
     root's PATH and -- crucially -- leaves the baked Mathlib package git repos
     root-owned, so `lake` reads them cleanly instead of re-cloning (which would wipe
     the warm cache). Kept in sync with images/Dockerfile; the two notable differences

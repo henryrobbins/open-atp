@@ -104,12 +104,31 @@ class ModalCommandHandle(CommandHandle):
     workdir: Path
     started_at: float
     _stdout_lines: list[str] = field(default_factory=list)
+    _buf: str = ""
 
     def stream(self) -> Iterator[str]:
-        for line in self.proc.stdout:
-            line = line.rstrip("\n")
+        # Modal's StreamReader defaults to by_line=False, so iterating proc.stdout
+        # yields arbitrary chunks (a chunk may hold several JSON objects, or split
+        # one). Re-buffer and split on newlines so we honour the line-delimited
+        # JSONL contract the harness parsers rely on (json.loads per line) -- and
+        # so a chunked `result` event is never lost (would zero cost/tokens).
+        for chunk in self.proc.stdout:
+            self._buf += chunk
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                self._stdout_lines.append(line)
+                yield line
+
+    def _flush(self) -> None:
+        """Drain any unread chunks, then emit the final newline-less partial line."""
+        for chunk in self.proc.stdout:
+            self._buf += chunk
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
             self._stdout_lines.append(line)
-            yield line
+        if self._buf:
+            self._stdout_lines.append(self._buf)
+            self._buf = ""
 
     def cancel(self) -> None:
         # No per-exec kill on a Sandbox, so pull partial artifacts (best effort) and
@@ -119,10 +138,9 @@ class ModalCommandHandle(CommandHandle):
         _terminate(self.sb)
 
     def wait(self) -> CommandResult:
-        # Draining stdout (above) usually fills _stdout_lines; wait() returns the
-        # exit code and releases the process.
-        for line in self.proc.stdout:
-            self._stdout_lines.append(line.rstrip("\n"))
+        # Draining stdout (above) usually fills _stdout_lines; flush any unread
+        # chunks plus the trailing partial line, then return the exit code.
+        self._flush()
         exit_code = self.proc.wait()
         stderr = _pull_stderr(self.sb)
         _pull_wd(self.sb, self.workdir)

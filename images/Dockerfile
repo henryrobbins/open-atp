@@ -21,7 +21,7 @@ FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ripgrep is recommended for lean-lsp-mcp's local search; pipx installs the MCP
-# server and uv (the agents invoke `uvx lean-lsp-mcp`).
+# server and uv.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -54,8 +54,8 @@ RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -
         | sh -s -- -y --default-toolchain none --no-modify-path
 ENV PATH="/home/agent/.elan/bin:/home/agent/.local/bin:${PATH}"
 
-# lean-lsp MCP server (matches the `uvx lean-lsp-mcp` invocation the harnesses
-# render) + uv. https://github.com/oOo0oOo/lean-lsp-mcp
+# lean-lsp MCP server (invoked directly as `lean-lsp-mcp` by the harnesses) + uv.
+# https://github.com/oOo0oOo/lean-lsp-mcp
 RUN pipx install lean-lsp-mcp \
  && pipx install uv
 

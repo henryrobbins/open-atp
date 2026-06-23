@@ -1,6 +1,9 @@
 # Reference symlinks — for development context only, never committed.
 refs/
 
+# Integration test artifacts (agent logs, workdirs from test_agent_capabilities)
+tests/.runs/
+
 # Sphinx docs build
 docs/_build/
 
