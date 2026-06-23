@@ -63,6 +63,15 @@ REGISTRY: dict[str, _Entry] = {
     "agent": _Entry(AgentProver, AgentProverConfig),
     "agent:codex": _Entry(AgentProver, AgentProverConfig, {"harness": "codex"}),
     "agent:opencode": _Entry(AgentProver, AgentProverConfig, {"harness": "opencode"}),
+    # ax-prover-base runs as an AgentProver on the ``axprover`` harness: its own
+    # LangGraph proposer->builder->reviewer loop edits the .lean in place, while
+    # AgentProver.prove handles staging/diff/auth and the shared Verifier does the
+    # final compile/sorry/axiom check (we don't trust ax-prover's own reviewer).
+    "agent:axprover": _Entry(
+        AgentProver,
+        AgentProverConfig,
+        {"harness": "axprover", "model": "claude-opus-4-8", "effort": "high"},
+    ),
     "numina": _Entry(NuminaProver, NuminaProverConfig),
     # Leanstral runs as an AgentProver on the ``vibe`` harness: Mistral Vibe's
     # builtin ``lean`` agent *is* Leanstral (api-hosted, no GPU). The bare model id

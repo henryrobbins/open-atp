@@ -62,6 +62,14 @@ RUN pipx install lean-lsp-mcp \
  && pipx install uv \
  && pipx install mistral-vibe
 
+# ax-prover (LangGraph Lean agent) backing the AxProverHarness. pipx keeps its heavy
+# stack (langgraph, langchain-*, lean-interact, omegaconf, tavily) fully isolated
+# from open-afps and the other CLIs. Bump AX_PROVER_VERSION to a release that emits
+# token usage so AxProverHarness.parse can report cost (AX_PROVER_HARNESS_PLAN.md
+# step 3); until then cost is unreported.
+ARG AX_PROVER_VERSION=0.1.1
+RUN pipx install "ax-prover==${AX_PROVER_VERSION}"
+
 WORKDIR /workspace
 
 # Bake the lake project skeleton: a bare "require mathlib" project. lake update

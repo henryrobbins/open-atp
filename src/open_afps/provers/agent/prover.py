@@ -53,6 +53,9 @@ class AgentProverConfig(AutomatedProverConfig):
     agent: str = "lean"
     max_turns: int | None = None
     max_price: float | None = None
+    # AxProver-only knob (ignored by the other harnesses): cap on ax-prover's own
+    # proposer->builder->reviewer loop. ``None`` keeps ax-prover's default (50).
+    max_iterations: int | None = None
 
 
 class AgentProver(AutomatedProver):

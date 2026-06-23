@@ -23,6 +23,10 @@ from open_afps.api import (
 from open_afps.core.task import ProofTask
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 
+#: ax-prover PyPI version baked into the Modal image (mirrors the images/Dockerfile
+#: ARG AX_PROVER_VERSION). Bump to a release that emits token usage to report cost.
+AX_PROVER_VERSION = "0.1.1"
+
 
 def _solve(args: argparse.Namespace) -> int:
     inputs = [Path(p) for p in args.inputs]
@@ -137,6 +141,11 @@ def _build_modal_image(args: argparse.Namespace) -> int:
         .run_commands(
             "pipx install lean-lsp-mcp && pipx install uv && pipx install mistral-vibe"
         )
+        # ax-prover (LangGraph Lean agent) backing the AxProverHarness, pipx-isolated
+        # from open-afps and the CLIs. Keep AX_PROVER_VERSION in sync with the
+        # images/Dockerfile ARG; bump to a release that emits token usage so cost is
+        # reported (AX_PROVER_HARNESS_PLAN.md step 3).
+        .run_commands(f"pipx install 'ax-prover=={AX_PROVER_VERSION}'")
         # Modal's .env() sets literal values (no ${PATH} expansion like Dockerfile
         # ENV), so set an explicit PATH with /opt/elan/bin ahead of the standard dirs.
         .env(

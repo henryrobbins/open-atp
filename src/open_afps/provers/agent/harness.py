@@ -609,10 +609,173 @@ class VibeHarness(Harness):
         return result
 
 
+class AxProverHarness(Harness):
+    """ax-prover-base (LangGraph Lean agent), driven by ``ax-prover prove`` in-sandbox.
+
+    ax-prover is a self-contained proving agent (its own
+    proposer->builder->reviewer->memory loop) that edits the target ``.lean`` file
+    in place. It slots in as a harness rather than a standalone prover because
+    :meth:`AgentProver.prove` already supplies everything around the edges (staging,
+    snapshot/diff, sandbox run, key forwarding) and the shared ``Verifier`` -- not
+    ax-prover's own reviewer -- remains the source of truth for compile/sorry/axiom.
+
+    Two things differ from the CLI harnesses (it mirrors :class:`VibeHarness` here):
+
+    * **Config lives in a workdir YAML, not flags.** :meth:`configure_wd` writes
+      ``axprover.yaml`` selecting the model/effort/iterations; it layers on top of
+      ax-prover's bundled ``default.yaml`` (auto-prepended by the CLI), so it only
+      needs to override the deltas.
+    * **Cost is not on stdout.** ax-prover streams human-readable logs, and its ``-o``
+      JSON carries only ``{success, error, summary}``. Token totals come from the
+      per-target ``ax_usage.*.json`` files written by the launch script (see
+      ``axprover_agent.sh``); :meth:`parse` sums them and leaves ``cost_usd`` ``None``
+      so the prover converts tokens->USD via the fallback table, exactly like
+      :class:`CodexHarness`. Emitting those usage files requires a small upstream
+      ax-prover patch (see ``AX_PROVER_HARNESS_PLAN.md`` step 3); until it lands the
+      files are absent and the run reports zero tokens / no cost.
+    """
+
+    name = "axprover"
+
+    #: open-afps provider name -> ax-prover's LangChain ``provider:model`` prefix.
+    _AX_PROVIDER_PREFIX: ClassVar[dict[str, str]] = {
+        "anthropic": "anthropic",
+        "openai": "openai",
+        "google": "google_genai",
+        "deepseek": "deepseek",
+    }
+
+    def __init__(
+        self,
+        model: str,
+        effort: str = "medium",
+        *,
+        max_iterations: int | None = None,
+        assets: AssetBundle | None = None,
+    ) -> None:
+        super().__init__(model, effort, assets)
+        self.max_iterations = max_iterations
+        #: Set in :meth:`configure_wd`; where :meth:`parse` looks for usage files.
+        self._wd: Path | None = None
+
+    @classmethod
+    def from_config(cls, config: Any, *, assets: AssetBundle | None = None) -> Harness:
+        return cls(
+            config.model,
+            config.effort,
+            max_iterations=getattr(config, "max_iterations", None),
+            assets=assets,
+        )
+
+    def auth_spec(self) -> AuthSpec:
+        # Raw provider keys, exactly like OpenCodeHarness; ax-prover reads them from
+        # the process env (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY).
+        env = [
+            key
+            for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY")
+            if key in os.environ
+        ]
+        if not env:
+            raise RuntimeError(
+                "axprover harness requires one of ANTHROPIC_API_KEY / "
+                "OPENAI_API_KEY / GOOGLE_API_KEY"
+            )
+        return AuthSpec(env=env)
+
+    def configure_wd(self, wd: Path, prompt: str) -> None:
+        # The free-text prompt is ignored: ax-prover has its own prompts. We still let
+        # the base write agent.sh + agent_prompt.txt for a uniform contract.
+        super().configure_wd(wd, prompt)
+        (wd / "axprover.yaml").write_text(self._render_config())
+        self._wd = wd
+
+    def _ax_model(self) -> str:
+        """``self.model`` as ax-prover's ``provider:model`` string."""
+        provider = _infer_provider(self.model)
+        prefix = self._AX_PROVIDER_PREFIX.get(provider, "openai")
+        return f"{prefix}:{self.model}"
+
+    def _provider_config(self) -> dict[str, Any]:
+        """Provider-specific LLM kwargs mapping ``effort`` to each API's knob."""
+        provider = _infer_provider(self.model)
+        if provider == "anthropic":
+            return {
+                "temperature": 1.0,  # required when thinking is enabled
+                "max_tokens": None,
+                "effort": self.effort,
+                "thinking": {"type": "adaptive"},
+            }
+        if provider == "google":
+            return {
+                "temperature": 1.0,
+                "max_tokens": None,
+                "include_thoughts": True,
+                "thinking_level": self.effort,
+            }
+        return {  # openai / deepseek (OpenAI-compatible)
+            "temperature": None,
+            "max_tokens": None,
+            "reasoning": {"effort": self.effort},
+        }
+
+    def _render_config(self) -> str:
+        """The ``axprover.yaml`` overrides layered over ax-prover's ``default.yaml``.
+
+        JSON is valid YAML, so we emit JSON to avoid a YAML dependency. Only the
+        deltas are set: ``prover_llm`` (which the bundled config's ``memory_config``
+        and ``summarize_output`` interpolate from) and, when capped, ``max_iterations``.
+        The bundled ``proposer_tools`` (lean + web search) are left untouched -- a
+        missing TAVILY_API_KEY or blocked egress degrades a tool to a no-op rather
+        than failing the run.
+        """
+        prover: dict[str, Any] = {
+            "prover_llm": {
+                "model": self._ax_model(),
+                "provider_config": self._provider_config(),
+            }
+        }
+        if self.max_iterations is not None:
+            prover["max_iterations"] = int(self.max_iterations)
+        return json.dumps({"prover": prover}, indent=2)
+
+    def _agent_command(self) -> str:
+        # No <<MODEL>>/<<EFFORT>> substitution: those live in axprover.yaml.
+        return (_SCRIPTS / "axprover_agent.sh").read_text()
+
+    def parse(self, lines: list[str]) -> HarnessRunResult:
+        # Tokens come from the per-target usage files (the stream has none); cost is
+        # left None so the prover derives USD from the token table (like Codex).
+        result = self._parse_lines(lines)
+        if self._wd is not None and self._wd.is_dir():
+            for path in sorted(self._wd.glob("ax_usage.*.json")):
+                try:
+                    data = json.loads(path.read_text())
+                except (OSError, json.JSONDecodeError):
+                    continue
+                result.input_tokens += int(
+                    data.get("input_tokens", data.get("prompt_tokens", 0)) or 0
+                )
+                result.output_tokens += int(
+                    data.get("output_tokens", data.get("completion_tokens", 0)) or 0
+                )
+        return result
+
+    def _parse_lines(self, lines: list[str]) -> HarnessRunResult:
+        # ax-prover's stdout is human-readable logs, not a JSON event stream; keep the
+        # last non-empty line as result text for debugging and read tokens elsewhere.
+        result = HarnessRunResult()
+        for line in lines:
+            stripped = line.strip()
+            if stripped:
+                result.result_text = stripped
+        return result
+
+
 #: Harness registry selected by ``AgentProverConfig.harness``.
 HARNESSES: dict[str, type[Harness]] = {
     ClaudeCodeHarness.name: ClaudeCodeHarness,
     CodexHarness.name: CodexHarness,
     OpenCodeHarness.name: OpenCodeHarness,
     VibeHarness.name: VibeHarness,
+    AxProverHarness.name: AxProverHarness,
 }
