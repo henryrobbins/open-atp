@@ -21,16 +21,16 @@ set -euo pipefail
 #   * --overwrite re-proves even files ax-prover thinks are already done.
 #   * `|| true` keeps one unprovable file from aborting the rest; the final
 #     Verifier pass is the source of truth either way.
-#   * AX_PROVER_USAGE_FILE is forward-compat: once the upstream usage patch lands
-#     (AX_PROVER_HARNESS_PLAN.md step 3), ax-prover writes per-target token totals
-#     there and AxProverHarness.parse sums every ax_usage.*.json after the run.
+#   * -o writes ax_output.<target>.json: per-target {success, error, summary,
+#     input_tokens, output_tokens, ...}. AxProverHarness.parse sums the token fields
+#     across these files for cost (the pinned fork commit adds the usage fields).
 #   * ax-prover logs are human-readable (not the JSONL the parsers consume), so we
 #     tee each run's stdout+stderr to ax_prover.<target>.log. The file lands in the
 #     workdir and is pulled back with it (Modal) / lives on the bind mount (Docker),
 #     so the logs survive even when the harness discards the stream. PYTHONUNBUFFERED
 #     defeats CPython's block-buffering of a piped stdout so the tee is line-fresh.
 #
-# https://github.com/Axiomatic-AI/ax-prover-base
+# https://github.com/henryrobbins/ax-prover-base
 
 export PYTHONUNBUFFERED=1
 
@@ -41,7 +41,6 @@ while IFS= read -r f; do
   # which then resolves to a bogus file and hides every sorry ("No unproven found").
   f="${f#./}"
   safe=$(printf '%s' "$f" | tr '/.' '__')
-  export AX_PROVER_USAGE_FILE="ax_usage.${safe}.json"
   # `|| true` is on the pipeline: with `set -o pipefail` a failing ax-prover still
   # lets the loop continue, and tee captures the full log either way.
   ax-prover --config axprover.yaml prove "$f" \

@@ -23,15 +23,19 @@ from open_afps.api import (
 from open_afps.core.task import ProofTask
 from open_afps.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 
-#: ax-prover git commit baked into the Modal image (mirrors the images/Dockerfile
-#: ARG AX_PROVER_REF). Pinned past the 0.1.1 PyPI release to a commit with the
-#: lean_interact-based target discovery: 0.1.1 lists `import Mathlib` as a theorem
-#: named ``Mathlib`` and flags it "unproven" whenever a nearby docstring contains the
-#: word ``sorry`` (regex discovery), wasting a full prove loop on a phantom target.
-#: The rewrite asks the Lean server for real declarations + ``Sorry`` terms instead.
-#: Repo is public; HTTPS clone needs no credentials in the image build.
-AX_PROVER_REF = "822d598c8fb2c99e694bc88de0eb89391e7f1a88"
-AX_PROVER_SPEC = f"git+https://github.com/Axiomatic-AI/ax-prover-base@{AX_PROVER_REF}"
+#: ax-prover baked into the Modal image (mirrors the images/Dockerfile ARG). Pinned
+#: to a commit on our fork (henryrobbins/ax-prover-base) rather than the 0.1.1 PyPI
+#: release, for two fixes the release lacks:
+#:   * lean_interact-based target discovery -- 0.1.1's regex discovery lists
+#:     ``import Mathlib`` as a theorem ``Mathlib`` and flags it "unproven" whenever a
+#:     nearby docstring contains the word ``sorry``, wasting a prove loop on a phantom
+#:     target; the rewrite asks the Lean server for real declarations + ``Sorry`` terms.
+#:   * per-target token usage in the ``-o`` JSON, which ``AxProverHarness.parse`` reads
+#:     to report cost (the PyPI release emits no usage).
+#: Fork is public; HTTPS clone needs no credentials in the image build.
+AX_PROVER_REPO = "https://github.com/henryrobbins/ax-prover-base"
+AX_PROVER_REF = "361e5b3451267785bfd70f173e7ab0be667d4987"
+AX_PROVER_SPEC = f"git+{AX_PROVER_REPO}@{AX_PROVER_REF}"
 
 
 def _solve(args: argparse.Namespace) -> int:

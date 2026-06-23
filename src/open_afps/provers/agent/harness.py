@@ -625,14 +625,14 @@ class AxProverHarness(Harness):
       ``axprover.yaml`` selecting the model/effort/iterations; it layers on top of
       ax-prover's bundled ``default.yaml`` (auto-prepended by the CLI), so it only
       needs to override the deltas.
-    * **Cost is not on stdout.** ax-prover streams human-readable logs, and its ``-o``
-      JSON carries only ``{success, error, summary}``. Token totals come from the
-      per-target ``ax_usage.*.json`` files written by the launch script (see
-      ``axprover_agent.sh``); :meth:`parse` sums them and leaves ``cost_usd`` ``None``
-      so the prover converts tokens->USD via the fallback table, exactly like
-      :class:`CodexHarness`. Emitting those usage files requires a small upstream
-      ax-prover patch (see ``AX_PROVER_HARNESS_PLAN.md`` step 3); until it lands the
-      files are absent and the run reports zero tokens / no cost.
+    * **Cost is not on stdout.** ax-prover streams human-readable logs; token usage
+      comes from its ``-o`` JSON (the per-target ``ax_output.<target>.json`` files the
+      launch script writes), which carries ``input_tokens``/``output_tokens`` alongside
+      ``{success, error, summary}`` as of the pinned fork commit (see ``AX_PROVER_REF``
+      in ``__main__.py``). :meth:`parse` sums those across every target and leaves
+      ``cost_usd`` ``None`` so the prover converts tokens->USD via the fallback table,
+      exactly like :class:`CodexHarness`. (On an ax-prover build without those fields
+      the tokens are simply absent and the run reports zero cost.)
     """
 
     name = "axprover"
@@ -760,21 +760,24 @@ class AxProverHarness(Harness):
         return (_SCRIPTS / "axprover_agent.sh").read_text()
 
     def parse(self, lines: list[str]) -> HarnessRunResult:
-        # Tokens come from the per-target usage files (the stream has none); cost is
-        # left None so the prover derives USD from the token table (like Codex).
+        # Tokens come from the per-target ``-o`` files (ax_output.<target>.json), each
+        # a ``{location: {success, ..., input_tokens, output_tokens, ...}}`` map written
+        # by the launch script. Sum across every target in every file; the stream itself
+        # carries no usage. Leave cost_usd None so the prover derives USD from the token
+        # table (like CodexHarness).
         result = self._parse_lines(lines)
         if self._wd is not None and self._wd.is_dir():
-            for path in sorted(self._wd.glob("ax_usage.*.json")):
+            for path in sorted(self._wd.glob("ax_output.*.json")):
                 try:
                     data = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):
                     continue
-                result.input_tokens += int(
-                    data.get("input_tokens", data.get("prompt_tokens", 0)) or 0
-                )
-                result.output_tokens += int(
-                    data.get("output_tokens", data.get("completion_tokens", 0)) or 0
-                )
+                entries = data.values() if isinstance(data, dict) else []
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    result.input_tokens += int(entry.get("input_tokens", 0) or 0)
+                    result.output_tokens += int(entry.get("output_tokens", 0) or 0)
         return result
 
     def _parse_lines(self, lines: list[str]) -> HarnessRunResult:

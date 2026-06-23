@@ -7,10 +7,10 @@ Fast unit layer (no Docker, no creds, no API):
 * ``_render_config`` maps the open-afps model id to ax-prover's ``provider:model``
   string and ``effort`` to each provider's reasoning knob.
 * ``_agent_command`` is the self-discovering launch script (no <<MODEL>> subst).
-* ``parse`` sums tokens from the per-target ``ax_usage.*.json`` side-channel files
-  (the stdout stream carries none) and leaves cost None for the prover to derive.
+* ``parse`` sums tokens from the per-target ``ax_output.*.json`` ``-o`` files (the
+  stdout stream carries none) and leaves cost None for the prover to derive.
 * ``prove`` diffs the workdir after a stubbed run that writes a solved file and a
-  synthetic usage file, with no Docker.
+  synthetic ``-o`` output file, with no Docker.
 
 The live path reuses the ``agent_api`` marker (opt-in, billable, needs an
 ANTHROPIC_API_KEY) and runs ax-prover end-to-end in the sandbox.
@@ -49,9 +49,21 @@ STREAM_LINES = [
 
 
 def _write_usage(wd: Path, target: str, input_tokens: int, output_tokens: int) -> None:
-    """Emulate the upstream usage patch: ax_usage.<target>.json in the workdir."""
-    (wd / f"ax_usage.{target}.json").write_text(
-        json.dumps({"input_tokens": input_tokens, "output_tokens": output_tokens})
+    """Emulate ax-prover's ``-o`` output: ax_output.<target>.json, a {location:
+    {success, ..., input_tokens, output_tokens}} map (parse sums across entries)."""
+    (wd / f"ax_output.{target}.json").write_text(
+        json.dumps(
+            {
+                f"MILExample:{target}": {
+                    "success": True,
+                    "error": None,
+                    "summary": "",
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": input_tokens + output_tokens,
+                }
+            }
+        )
     )
 
 
