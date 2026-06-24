@@ -35,6 +35,27 @@ class LeanProject:
     root:
         Directory containing ``lakefile.toml`` (or ``lakefile.lean``),
         ``lean-toolchain``, and ``lake-manifest.json``.
+
+    Examples
+    --------
+
+    Point :class:`LeanProject` at a lake project directory and inspect it (here a
+    minimal project is written to a temp dir to keep the example self-contained):
+
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> from open_atp.lean import LeanProject
+    >>> root = Path(tempfile.mkdtemp())
+    >>> _ = (root / "lakefile.toml").write_text('name = "demo"\\n')
+    >>> _ = (root / "lean-toolchain").write_text("leanprover/lean4:v4.31.0\\n")
+    >>> _ = (root / "Demo.lean").write_text("theorem t : True := by sorry\\n")
+    >>> project = LeanProject(root)
+    >>> project.toolchain
+    'leanprover/lean4:v4.31.0'
+    >>> [p.name for p in project.lean_files()]
+    ['Demo.lean']
+    >>> [p.name for p in project.files_with_sorry()]
+    ['Demo.lean']
     """
 
     root: Path
@@ -121,6 +142,28 @@ def stage_files(
     files at its root. Limitation: this only works for the pinned toolchain/deps the
     skeleton (and the baked image) provide -- a file needing a different Mathlib
     revision or extra deps must arrive as a full lake project instead.
+
+    Examples
+    --------
+
+    Stage a bare ``.lean`` file into a skeleton to get a complete
+    :class:`LeanProject` (here a minimal skeleton is written to a temp dir; in
+    practice ``skeleton`` defaults to the baked image's ``SKELETON_DIR``):
+
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> from open_atp.lean import stage_files
+    >>> skeleton = Path(tempfile.mkdtemp())
+    >>> _ = (skeleton / "lakefile.toml").write_text('name = "demo"\\n')
+    >>> _ = (skeleton / "lean-toolchain").write_text("leanprover/lean4:v4.31.0\\n")
+    >>> bare = Path(tempfile.mkdtemp()) / "Bare.lean"
+    >>> _ = bare.write_text("theorem t : True := by sorry\\n")
+    >>> dest = Path(tempfile.mkdtemp()) / "project"
+    >>> project = stage_files([bare], dest, skeleton=skeleton)
+    >>> project.toolchain
+    'leanprover/lean4:v4.31.0'
+    >>> [p.name for p in project.lean_files()]
+    ['Bare.lean']
     """
     if not (skeleton / "lean-toolchain").is_file():
         raise FileNotFoundError(

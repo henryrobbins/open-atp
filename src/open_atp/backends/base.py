@@ -67,6 +67,25 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
     Lifecycle invariant: teardown lives in :meth:`close` (not in the handle's
     ``wait``), so a session MUST be used as a context manager and :meth:`close` MUST be
     idempotent -- otherwise an error between exec and close leaks the sandbox.
+
+    Examples
+    --------
+
+    Open a session over a workdir and run several commands against the same hot
+    sandbox -- here generation followed by the compile, with one spin-up (needs a
+    live backend, so this is illustrative rather than a doctest):
+
+    .. code-block:: python
+
+        from open_atp.backends.docker import DockerBackend, DockerConfig
+        from open_atp.images import DEFAULT_IMAGE
+
+        backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
+        with backend.session(workdir) as session:
+            with session.exec("lake env lean Demo.lean") as handle:
+                result = handle.wait()
+            session.sync_out()   # pull the agent's edits back to the host
+        # the sandbox is torn down on exit, even if exec raised
     """
 
     def exec(

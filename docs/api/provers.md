@@ -34,12 +34,6 @@ the verify backend, and (for agentic provers) the agent backend.
 .. autofunction:: open_atp.provers.available_provers
 ```
 
-## Staging input
-
-A full lake project on disk is just `LeanProject(Path(path))`.
-{func}`~open_atp.lean.stage_files` stages one or more bare `.lean` files into the
-pinned Mathlib skeleton (documented under {doc}`lean`).
-
 ## Base
 
 The base prover abstraction. An {class}`~open_atp.provers.base.AutomatedProver` is a

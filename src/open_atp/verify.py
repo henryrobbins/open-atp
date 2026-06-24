@@ -205,6 +205,39 @@ class Verifier:
         self.supported_toolchain = supported_toolchain
 
     def check_compatible(self, project: LeanProject) -> None:
+        """Reject a project whose toolchain differs from the backend image's pin.
+
+        A no-op when no ``supported_toolchain`` was set or the project's pin matches
+        it; otherwise raises :class:`~open_atp.lean.ToolchainMismatch`.
+
+        Examples
+        --------
+
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> from open_atp.backends.docker import DockerBackend, DockerConfig
+        >>> from open_atp.images import DEFAULT_IMAGE
+        >>> from open_atp.lean import LeanProject
+        >>> from open_atp.verify import Verifier
+        >>> root = Path(tempfile.mkdtemp())
+        >>> _ = (root / "lakefile.toml").write_text('name = "demo"\\n')
+        >>> _ = (root / "lean-toolchain").write_text("leanprover/lean4:v4.31.0\\n")
+        >>> project = LeanProject(root)
+        >>> backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
+
+        A matching pin passes silently:
+
+        >>> ok = Verifier(backend, supported_toolchain="leanprover/lean4:v4.31.0")
+        >>> ok.check_compatible(project)
+
+        A differing pin is rejected up front:
+
+        >>> bad = Verifier(backend, supported_toolchain="leanprover/lean4:v4.28.0")
+        >>> bad.check_compatible(project)  # doctest: +ELLIPSIS
+        Traceback (most recent call last):
+            ...
+        open_atp.lean.ToolchainMismatch: Project pins ...
+        """
         if self.supported_toolchain and project.toolchain != self.supported_toolchain:
             raise ToolchainMismatch(
                 f"Project pins {project.toolchain!r} but backend image supports "
@@ -220,6 +253,26 @@ class Verifier:
         ``backend.run`` -- the path Aristotle and the split-backend case take. When a
         caller passes a live ``session`` (the agent/verify backend-reuse path), the
         compile runs in that already-hot sandbox instead, avoiding a second spin-up.
+
+        Examples
+        --------
+
+        A real project compiles in the backend; a project with no ``.lean`` files
+        short-circuits to a trivial passing report without touching the sandbox:
+
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> from open_atp.backends.docker import DockerBackend, DockerConfig
+        >>> from open_atp.images import DEFAULT_IMAGE
+        >>> from open_atp.lean import LeanProject
+        >>> from open_atp.verify import Verifier
+        >>> root = Path(tempfile.mkdtemp())
+        >>> _ = (root / "lakefile.toml").write_text('name = "demo"\\n')
+        >>> _ = (root / "lean-toolchain").write_text("leanprover/lean4:v4.31.0\\n")
+        >>> verifier = Verifier(DockerBackend(DockerConfig(image=DEFAULT_IMAGE)))
+        >>> report = verifier.verify(LeanProject(root))
+        >>> report.verified
+        True
         """
         self.check_compatible(project)
 

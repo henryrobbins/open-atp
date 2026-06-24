@@ -259,6 +259,26 @@ def _pull_stderr(sb: modal.Sandbox) -> str:
 
 
 class ModalBackend(ComputeBackend):
+    """Run sandboxes as Modal Sandboxes, pushing the workdir up and pulling it back.
+
+    Unlike the bind-mounted Docker backend, the workdir is synced into the remote
+    Sandbox and synced back out on completion. Construction is offline -- it just
+    holds the :class:`ModalConfig`; Modal is only contacted when a command runs.
+
+    Examples
+    --------
+
+    >>> from open_atp.backends.modal import ModalBackend, ModalConfig
+    >>> from open_atp.images import DEFAULT_IMAGE
+    >>> backend = ModalBackend(ModalConfig(image=DEFAULT_IMAGE, cpu=4.0))
+    >>> backend.name
+    'modal'
+    >>> backend.config.cpu
+    4.0
+    >>> backend.config.app
+    'open-atp'
+    """
+
     config: ModalConfig
 
     # Modal ignores the image USER and runs everything as root; credential mounts

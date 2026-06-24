@@ -140,6 +140,30 @@ class NuminaProverConfig(AgentProverConfig):
 
 
 class NuminaProver(AgentProver):
+    """Run the Numina coordinator/subagent scaffold as an :class:`AgentProver`.
+
+    A specialization of :class:`AgentProver` wired to the Numina asset bundle
+    (coordinator prompt + vendored skills + subagent prompts); generation and the
+    shared :class:`~open_atp.verify.Verifier` work exactly as in the base agent prover.
+
+    Examples
+    --------
+
+    Build the config and construct the prover directly:
+
+    >>> from open_atp.backends.docker import DockerBackend, DockerConfig
+    >>> from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
+    >>> from open_atp.provers.numina import NuminaProver, NuminaProverConfig
+    >>> backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
+    >>> config = NuminaProverConfig(
+    ...     image=DEFAULT_IMAGE,
+    ...     supported_toolchain=DEFAULT_TOOLCHAIN,
+    ... )
+    >>> prover = NuminaProver(config, verification_backend=backend)
+    >>> prover.config.max_rounds
+    20
+    """
+
     name = "numina"
 
     config: NuminaProverConfig

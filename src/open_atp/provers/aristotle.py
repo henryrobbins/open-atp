@@ -99,6 +99,32 @@ class AristotleProverConfig(AutomatedProverConfig):
 
 
 class AristotleProver(AutomatedProver):
+    """Prove by handing the whole project to Harmonic's hosted Aristotle agent.
+
+    Generation happens over the network (submit the lake project, wait, download the
+    result archive, unpack it over the workdir); the shared
+    :class:`~open_atp.verify.Verifier` then runs the same local compile/sorry/axiom
+    check. Network-only, so it takes just the verify backend -- no ``agent_backend``.
+
+    Examples
+    --------
+
+    Build the config and construct the prover directly (network-only, so it takes
+    just the verify backend):
+
+    >>> from open_atp.backends.docker import DockerBackend, DockerConfig
+    >>> from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
+    >>> from open_atp.provers.aristotle import AristotleProver, AristotleProverConfig
+    >>> backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
+    >>> config = AristotleProverConfig(
+    ...     image=DEFAULT_IMAGE,
+    ...     supported_toolchain=DEFAULT_TOOLCHAIN,
+    ... )
+    >>> prover = AristotleProver(config, verification_backend=backend)
+    >>> prover.config.api_key_env
+    'ARISTOTLE_API_KEY'
+    """
+
     name = "aristotle"
 
     config: AristotleProverConfig

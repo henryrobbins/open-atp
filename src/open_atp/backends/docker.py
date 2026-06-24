@@ -105,6 +105,24 @@ class DockerSessionHandle(DockerCommandHandle):
 
 
 class DockerBackend(ComputeBackend):
+    """Run sandboxes as local ``docker`` containers over a bind-mounted workdir.
+
+    The workdir is bind-mounted (not copied), so a command's file edits land directly
+    on the host. Construction is offline -- it just holds the :class:`DockerConfig`;
+    the daemon is only contacted when a command runs.
+
+    Examples
+    --------
+
+    >>> from open_atp.backends.docker import DockerBackend, DockerConfig
+    >>> from open_atp.images import DEFAULT_IMAGE
+    >>> backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
+    >>> backend.name
+    'docker'
+    >>> backend.config.workdir_mount
+    '/workspace/wd'
+    """
+
     config: DockerConfig
 
     # The image runs as the non-root ``agent`` user (Lean's elan + Claude Code

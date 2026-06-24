@@ -127,6 +127,77 @@ def get_prover(
     (per-prover knobs: model, effort, max_rounds, ...). Agentic provers also receive
     ``agent_backend`` for generation (defaults to the verify backend), keeping the
     agent-vs-verify backend split available.
+
+    Parameters
+    ----------
+    name : PROVERS or str
+        The prover to build -- a :class:`PROVERS` member or its registry-key string
+        (e.g. ``PROVERS.CLAUDE`` or ``"agent"``). Raises :class:`ValueError` for an
+        unknown name.
+    image : str, optional
+        The sandbox image the prover compiles/verifies against. Defaults to
+        :data:`~open_atp.images.DEFAULT_IMAGE`.
+    toolchain : str, optional
+        The Lean toolchain the prover supports. Defaults to
+        :data:`~open_atp.images.DEFAULT_TOOLCHAIN`.
+    verification_backend : ComputeBackend
+        The backend that runs the shared :class:`~open_atp.verify.Verifier` (the cheap
+        final compile/sorry/axiom check).
+    agent_backend : ComputeBackend, optional
+        The backend agentic provers run generation on. Defaults to
+        ``verification_backend``, so generation and verification share a backend unless
+        you split them (e.g. generate on Modal, verify on local Docker). Ignored by
+        non-agentic provers (e.g. :class:`~open_atp.provers.aristotle.AristotleProver`).
+    overrides : Mapping[str, object], optional
+        Per-prover config knobs layered over the name's baked-in defaults (model,
+        effort, max_rounds, ...). Keys must be fields of the prover's config class.
+
+    Returns
+    -------
+    prover : AutomatedProver
+        The constructed prover, ready to drive via
+        :meth:`~open_atp.provers.base.AutomatedProver.prove`.
+
+    Examples
+    --------
+
+    Construction is cheap and offline (the backend is wired in, not called), so the
+    factory builds a ready-to-drive prover directly. ``overrides`` layer per-prover
+    knobs over the name's baked-in defaults:
+
+    >>> from open_atp import PROVERS, get_prover
+    >>> from open_atp.backends.docker import DockerBackend, DockerConfig
+    >>> from open_atp.images import DEFAULT_IMAGE
+    >>> backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
+    >>> prover = get_prover(
+    ...     PROVERS.CLAUDE,
+    ...     verification_backend=backend,
+    ...     overrides={"model": "claude-sonnet-4-6", "effort": "low"},
+    ... )
+    >>> prover.config.model
+    'claude-sonnet-4-6'
+
+    See each prover class for a family-specific construction example
+    (:class:`~open_atp.provers.agent_prover.AgentProver`,
+    :class:`~open_atp.provers.numina.NuminaProver`,
+    :class:`~open_atp.provers.aristotle.AristotleProver`).
+
+    Drive a constructed prover with
+    :meth:`~open_atp.provers.base.AutomatedProver.prove` (this step runs the sandbox,
+    so it needs a working Docker backend):
+
+    .. code-block:: python
+
+        from pathlib import Path
+        from open_atp.lean import LeanProject, ProofTask
+
+        task = ProofTask(project=LeanProject("path/to/lake/project"))
+        result = prover.prove(task, output_dir=Path("runs/demo"))
+        result.success      # compiles, sorry-free, no foreign axioms
+        result.cost_usd     # estimated USD, when the prover reports it
+        result.duration_s   # wall-clock seconds
+
+    See :doc:`/user_guide/run_provers` for more example usage.
     """
     try:
         prover = name if isinstance(name, PROVERS) else PROVERS(name)

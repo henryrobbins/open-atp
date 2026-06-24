@@ -147,6 +147,37 @@ class AgentProverConfig(AutomatedProverConfig):
 
 
 class AgentProver(AutomatedProver):
+    """Generate proofs by driving an agent CLI harness in a compute backend.
+
+    Composes an :doc:`agent harness </api/harness>` (the *agent* concern) with a
+    :class:`~open_atp.backends.base.ComputeBackend` (the *compute* concern): the
+    harness edits the staged ``.lean`` files in place, then the shared
+    :class:`~open_atp.verify.Verifier` does the final compile/sorry/axiom check.
+    ``codex``, ``opencode``, ``axprover``, and ``vibe`` are this prover on a
+    different harness.
+
+    Examples
+    --------
+
+    Build the config and construct the prover directly (the agent backend defaults
+    to the verify backend):
+
+    >>> from open_atp.backends.docker import DockerBackend, DockerConfig
+    >>> from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
+    >>> from open_atp.provers.agent_prover import AgentProver, AgentProverConfig
+    >>> backend = DockerBackend(DockerConfig(image=DEFAULT_IMAGE))
+    >>> config = AgentProverConfig(
+    ...     image=DEFAULT_IMAGE,
+    ...     supported_toolchain=DEFAULT_TOOLCHAIN,
+    ...     harness="claude_code",
+    ...     model="claude-opus-4-8",
+    ...     effort="high",
+    ... )
+    >>> prover = AgentProver(config, verification_backend=backend)
+    >>> prover.config.harness
+    'claude_code'
+    """
+
     name = "agent"
 
     config: AgentProverConfig

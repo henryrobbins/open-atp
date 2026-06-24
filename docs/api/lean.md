@@ -15,6 +15,12 @@ and the staging helper. A project is a *full lake project* carrying its own
 .. autofunction:: open_atp.lean.stage_files
 ```
 
+## Staging input
+
+A full lake project on disk is just `LeanProject(Path(path))`.
+{func}`~open_atp.lean.stage_files` stages one or more bare `.lean` files into the
+pinned Mathlib skeleton.
+
 ## Image defaults
 
 The constants describing the baked sandbox image (the contract the verifier

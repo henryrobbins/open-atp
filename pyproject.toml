@@ -70,11 +70,13 @@ module = ["aristotlelib.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "src/open_atp"]
 # Exclude the live (billable) credentialed tests by default; opt in by marker.
 # Run across 5 workers (pytest-xdist) so the slow Docker/Modal/agent suites
 # parallelise; mirrors flare. Override with e.g. `-n 0` for serial debugging.
-addopts = "-m 'not aristotle_api and not agent_api and not numina_api' -n 5"
+# ``--doctest-modules`` runs the ``>>>`` examples in source docstrings (e.g.
+# get_prover); construction-only examples stay offline. Mirrors flare.
+addopts = "-m 'not aristotle_api and not agent_api and not numina_api' -n 5 --doctest-modules --import-mode=importlib"
 markers = [
     "docker: tests that require the open-atp Docker image (opt-out: -m 'not docker')",
     "modal: tests that launch a Modal sandbox (opt-out: -m 'not modal')",
