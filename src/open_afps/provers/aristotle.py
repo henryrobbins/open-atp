@@ -65,15 +65,33 @@ def _is_transient(exc: BaseException) -> bool:
 
 @dataclass
 class AristotleProverConfig(AutomatedProverConfig):
+    """Configuration for :class:`AristotleProver`.
+
+    Extends :class:`~open_afps.core.prover.AutomatedProverConfig` (``image``,
+    ``supported_toolchain``, ``timeout_s``, ``env``) with the hosted-API knobs.
+
+    Attributes
+    ----------
+    api_key_env : str
+        Name of the environment variable holding the Harmonic API key. Default
+        ``ARISTOTLE_API_KEY``.
+    allow_agent_questions : bool
+        Whether to let the hosted agent ask clarifying questions. Off by default:
+        this is a headless API path and a prompt for stdin would hang the run.
+    max_connection_retries : int
+        Bounds per-call retries (list/refresh/download) when a connection drops.
+        The hosted run lives server-side, so a dropped connection is recoverable:
+        re-fetch rather than reporting the run failed. Default ``5``.
+    max_resume_attempts : int
+        Bounds how many times we re-attach to the event stream when it drops
+        mid-run. Default ``20``.
+    resume_backoff_seconds : float
+        Initial sleep between retries/resumes, doubling (capped) between tries.
+        Default ``5.0``.
+    """
+
     api_key_env: str = "ARISTOTLE_API_KEY"
-    # Allow the hosted agent to ask clarifying questions? Off by default: this is a
-    # headless API path and a prompt for stdin would hang the run.
     allow_agent_questions: bool = False
-    # The hosted run lives server-side, so a dropped connection is recoverable: re-fetch
-    # and resume rather than reporting the run failed. ``max_connection_retries`` bounds
-    # per-call retries (list/refresh/download); ``max_resume_attempts`` bounds how many
-    # times we re-attach to the event stream when it drops mid-run; backoff is the
-    # initial sleep, doubling (capped) between tries.
     max_connection_retries: int = 5
     max_resume_attempts: int = 20
     resume_backoff_seconds: float = 5.0

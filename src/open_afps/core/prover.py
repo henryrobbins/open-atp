@@ -39,15 +39,28 @@ class AutomatedProverConfig:
 
     Subclasses extend with their own knobs:
 
-    * ``AgentProverConfig``: harness (claude/opencode/codex), effort, skills, MCP.
-    * ``NuminaProverConfig``: extends the agent config + max_rounds, helper API keys.
-    * ``AristotleProverConfig``: api key, mode, poll interval.
+    * :class:`~open_afps.provers.agent_prover.AgentProverConfig`: harness
+      (claude/opencode/codex), effort, skills, MCP.
+    * :class:`~open_afps.provers.numina.NuminaProverConfig`: extends the agent config
+      + max_rounds, helper API keys.
+    * :class:`~open_afps.provers.aristotle.AristotleProverConfig`: api key, mode,
+      poll interval.
+
+    Attributes
+    ----------
+    image : str
+        Sandbox image carrying the supported Lean toolchain + Mathlib. Also the
+        image the shared verifier checks every project against.
+    supported_toolchain : str
+        Toolchain pinned inside ``image``; projects must match it or the verifier
+        rejects them.
+    timeout_s : int
+        Wall-clock budget for the generation run, in seconds. Default ``1800``.
+    env : dict[str, str]
+        Extra environment variables exported into the run. Default empty.
     """
 
-    # Sandbox image carrying the supported Lean toolchain + Mathlib. Also the image
-    # the shared verifier checks every project against.
     image: str
-    # Toolchain pinned inside ``image``; projects must match it (else verifier rejects).
     supported_toolchain: str
     timeout_s: int = 1800
     env: dict[str, str] = field(default_factory=dict)

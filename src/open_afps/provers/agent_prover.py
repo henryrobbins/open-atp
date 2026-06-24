@@ -83,26 +83,59 @@ _IGNORE = shutil.ignore_patterns(".lake", ".git", "*.tar.gz")
 
 @dataclass
 class AgentProverConfig(AutomatedProverConfig):
-    harness: str = "claude_code"  # one of: claude_code | opencode | codex | vibe
+    """Configuration for :class:`AgentProver`.
+
+    Extends :class:`~open_afps.core.prover.AutomatedProverConfig` (``image``,
+    ``supported_toolchain``, ``timeout_s``, ``env``) with the agent-harness knobs.
+
+    Attributes
+    ----------
+    harness : str
+        Which agent CLI to drive: one of ``claude_code`` | ``opencode`` | ``codex``
+        | ``vibe``. Default ``claude_code``.
+    model : str
+        Model id passed to the harness. Default ``claude-opus-4-8``.
+    effort : str
+        Reasoning-effort level passed to harnesses that support it. Default
+        ``high``.
+    assets : str
+        Vendored skill/prompt/MCP asset bundle to mount into the workdir. Default
+        ``default``.
+    skills : list[str], optional
+        Per-run override of the bundle's skills, each a name (resolved from a
+        vendored catalog) or a full path. ``None`` keeps the bundle's own skills;
+        an empty list mounts none. Applies to every harness.
+    plugins : list[str], optional
+        Per-run override of the bundle's plugins, same resolution as ``skills``.
+        Claude-only; ignored by the other harnesses.
+    extra_env : dict[str, str]
+        Additional environment variables forwarded into the agent sandbox. Default
+        empty.
+    agent : str
+        Vibe-only: which vibe agent profile to drive (``lean`` is Leanstral;
+        ``lean-standin`` the non-Labs, model-templated stand-in). Ignored by the
+        other harnesses. Default ``lean``.
+    max_turns : int, optional
+        Vibe-only programmatic-run guard passed straight to ``vibe -p``. ``None``
+        leaves it unset. Ignored by the other harnesses.
+    max_price : float, optional
+        Vibe-only programmatic-run guard passed straight to ``vibe -p``. ``None``
+        leaves it unset. Ignored by the other harnesses.
+    max_iterations : int, optional
+        AxProver-only cap on ax-prover's proposer->builder->reviewer loop. ``None``
+        keeps ax-prover's default (50). Ignored by the other harnesses.
+    """
+
+    harness: str = "claude_code"
     model: str = "claude-opus-4-8"
     effort: str = "high"
-    # Vendored skill/prompt/MCP asset bundle to mount into the workdir.
     assets: str = "default"
-    # Per-run overrides of the bundle's assets, each a list of names (resolved from
-    # a vendored catalog) or full paths. ``None`` keeps the bundle's own assets; an
-    # empty list mounts none. ``skills`` apply to every harness; ``plugins`` are
-    # Claude-only (ignored by the others).
     skills: list[str] | None = None
     plugins: list[str] | None = None
     extra_env: dict[str, str] = field(default_factory=dict)
-    # Vibe-only knobs (ignored by the other harnesses): which vibe agent profile to
-    # drive (``lean`` is Leanstral; ``lean-standin`` the non-Labs, model-templated
-    # stand-in) and the programmatic-run guards passed straight to ``vibe -p``.
     agent: str = "lean"
     max_turns: int | None = None
     max_price: float | None = None
-    # AxProver-only knob (ignored by the other harnesses): cap on ax-prover's own
-    # proposer->builder->reviewer loop. ``None`` keeps ax-prover's default (50).
     max_iterations: int | None = None
 
 

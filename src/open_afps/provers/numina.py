@@ -92,14 +92,43 @@ _HELPER_USAGE_FILE = Path(".claude") / "helper_usage.jsonl"
 
 @dataclass
 class NuminaProverConfig(AgentProverConfig):
-    harness: str = "claude_code"  # Numina is claude-CLI driven; not configurable.
+    """Configuration for :class:`NuminaProver`.
+
+    Extends :class:`~open_afps.provers.agent_prover.AgentProverConfig` with the
+    Numina coordinator's round-loop and helper-skill knobs.
+
+    Attributes
+    ----------
+    harness : str
+        Fixed to ``claude_code``: Numina is claude-CLI driven and not configurable.
+    assets : str
+        Asset bundle to mount. Default ``numina`` (coordinator prompt + vendored
+        skills + subagent prompts).
+    max_rounds : int
+        Maximum number of coordinator rounds before the run stops. Default ``20``.
+    max_consecutive_limits : int
+        Reset (start a fresh session) after this many consecutive LIMIT rounds.
+        Default ``2``.
+    helper_env_keys : tuple[str, ...]
+        Helper-skill credentials forwarded into the sandbox when present in the host
+        env; skills degrade/skip when their key is absent. ``ANTHROPIC_API_KEY``
+        backs the informal-prover skill's Claude calls.
+    guard_statements : bool
+        Whether to snapshot the target theorems and reject runs that weaken or
+        delete them. Default ``True``.
+    on_statement_change : {"error", "warn"}
+        Behavior on a weakened/deleted target theorem: ``error`` stops the run and
+        restores the originals; ``warn`` restores and continues. Default ``error``
+        (rejects; safe).
+    extra_env : dict[str, str]
+        Additional environment variables forwarded into the agent sandbox. Default
+        empty.
+    """
+
+    harness: str = "claude_code"
     assets: str = "numina"
     max_rounds: int = 20
-    # Reset (start a fresh session) after this many consecutive LIMIT rounds.
     max_consecutive_limits: int = 2
-    # Helper-skill credentials forwarded into the sandbox (when present in the host
-    # env); skills degrade/skip when their key is absent. ANTHROPIC_API_KEY backs
-    # the informal-prover skill's Claude calls.
     helper_env_keys: tuple[str, ...] = (
         "GEMINI_API_KEY",
         "OPENAI_API_KEY",
@@ -107,8 +136,6 @@ class NuminaProverConfig(AgentProverConfig):
         "ANTHROPIC_API_KEY",
     )
     guard_statements: bool = True
-    # On a weakened/deleted target theorem: "error" stops the run and restores the
-    # originals; "warn" restores and continues. Default rejects (safe).
     on_statement_change: Literal["error", "warn"] = "error"
     extra_env: dict[str, str] = field(default_factory=dict)
 
