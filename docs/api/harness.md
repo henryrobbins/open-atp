@@ -10,7 +10,7 @@ launch script, credential forwarding, asset staging, and token/cost parsing. The
 *compute* concern (where the command runs, with Lean+Mathlib) lives in the injected
 {class}`~open_afps.backends.base.ComputeBackend`.
 
-See {doc}`../agent_harness/index` for per-harness credential setup.
+See the per-harness prover pages under {doc}`../provers/index` for credential setup.
 
 ## Base
 

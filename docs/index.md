@@ -37,6 +37,6 @@ API reference.
 installation
 user_guide/index
 provers/index
-agent_harness/index
+compute_backend/index
 api/index
 ```

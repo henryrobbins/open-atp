@@ -9,11 +9,12 @@ via the shared {class}`~open_afps.core.verifier.Verifier`.
 
 ## Prerequisites
 
-- Docker running and the `open-afps:latest` image built (see {doc}`docker`).
+- Docker running and the `open-afps:latest` image built (see
+  {doc}`../compute_backend/docker`).
 - A credential for the prover you choose:
   - **AristotleProver** — `ARISTOTLE_API_KEY`.
-  - **AgentProver / NuminaProver** — a harness credential (see
-    {doc}`../agent_harness/index`).
+  - **AgentProver / NuminaProver** — a harness credential (see the per-harness prover
+    pages under {doc}`../provers/index`).
 
 ## Verifying without a prover
 
@@ -63,7 +64,7 @@ print("duration_s:", result.duration_s)
 ```
 
 Swap `harness` for `"codex"` or `"opencode"` (and the matching `model`) to use a
-different agent CLI — see {doc}`../agent_harness/index`.
+different agent CLI — see the per-harness prover pages under {doc}`../provers/index`.
 
 ## Filling sorrys with Aristotle
 
