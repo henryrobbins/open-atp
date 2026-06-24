@@ -1,11 +1,11 @@
 # Running a prover
 
-A prover takes a {class}`~open_atp.core.task.ProofTask` (a lake project plus
+A prover takes a {class}`~open_atp.lean.ProofTask` (a lake project plus
 optional instructions and target files) and returns a
-{class}`~open_atp.core.result.ProofResult` (the completed files, a
-{class}`~open_atp.core.result.VerificationReport`, cost, and duration). Every prover
+{class}`~open_atp.verify.ProofResult` (the completed files, a
+{class}`~open_atp.verify.VerificationReport`, cost, and duration). Every prover
 shares the same lifecycle: **generate candidate files, then verify them in a sandbox**
-via the shared {class}`~open_atp.core.verifier.Verifier`.
+via the shared {class}`~open_atp.verify.Verifier`.
 
 ## Prerequisites
 
@@ -22,8 +22,8 @@ If your project already contains candidate proofs, you can skip generation and r
 the shared verifier directly:
 
 ```python
-from open_atp.core.task import LeanProject
-from open_atp.core.verifier import docker_verifier
+from open_atp.lean import LeanProject
+from open_atp.verify import docker_verifier
 
 report = docker_verifier().verify(LeanProject("path/to/lake/project"))
 print("verified:", report.verified)
@@ -41,7 +41,7 @@ server inside the sandbox, then diffs the `.lean` files it changed:
 from pathlib import Path
 
 from open_atp.backends.docker import DockerBackend, DockerConfig
-from open_atp.core.task import LeanProject, ProofTask
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 from open_atp.provers import AgentProver, AgentProverConfig
 
@@ -79,7 +79,7 @@ result over the workdir, and runs the same shared verifier locally:
 from pathlib import Path
 
 from open_atp.backends.docker import DockerBackend, DockerConfig
-from open_atp.core.task import LeanProject, ProofTask
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 from open_atp.provers.aristotle import AristotleProver, AristotleProverConfig
 
@@ -95,7 +95,7 @@ result = prover.prove(task, output_dir=Path("runs/aristotle_demo"))
 
 ## Inspecting the result
 
-A {class}`~open_atp.core.result.ProofResult` records everything a run produced:
+A {class}`~open_atp.verify.ProofResult` records everything a run produced:
 
 ```python
 result.prover            # "agent" | "aristotle" | "numina"
@@ -109,8 +109,8 @@ result.wd                # output_dir/wd  -- the completed lake project
 result.logs_dir          # output_dir/logs -- stdout.txt, stderr.txt, result.json
 ```
 
-The {class}`~open_atp.core.result.VerificationReport` exposes the individual
+The {class}`~open_atp.verify.VerificationReport` exposes the individual
 sub-checks behind `success`: whether the project `compiles`, whether it is
 `sorry_free`, and which `axioms` the proofs depend on (anything outside
-{data}`~open_atp.core.result.STANDARD_AXIOMS` means the proof is not actually
+{data}`~open_atp.verify.STANDARD_AXIOMS` means the proof is not actually
 complete).

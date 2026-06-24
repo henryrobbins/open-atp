@@ -1,4 +1,4 @@
-# open-atp
+# OpenATP
 
 **Open Automated Formal Proof Synthesis.** Upload one or more
 [Lean](https://lean-lang.org/) files containing `sorry`, run them through leading
@@ -10,7 +10,7 @@ generators:
 
 1. A {class}`~open_atp.backends.base.ComputeBackend` (`docker` | `modal`) — run a
    command over a working directory in a Lean+Mathlib sandbox.
-2. A {class}`~open_atp.core.verifier.Verifier` — compile a candidate project in a
+2. A {class}`~open_atp.verify.Verifier` — compile a candidate project in a
    backend and report whether it compiles, is `sorry`-free, and is axiom-clean.
 
 Every prover funnels its output through the **shared verifier**, including the

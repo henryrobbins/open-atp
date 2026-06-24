@@ -7,7 +7,7 @@ The AxProver prover is the {class}`~open_atp.provers.agent_prover.AgentProver` o
 LangGraph Lean agent with its own proposer → builder → reviewer → memory loop, via the
 `ax-prover prove` CLI in a sandbox. ax-prover edits the target `.lean` file in place;
 {class}`~open_atp.provers.agent_prover.AgentProver` supplies the staging, snapshot /
-diff, key forwarding, and the shared {class}`~open_atp.core.verifier.Verifier` remains
+diff, key forwarding, and the shared {class}`~open_atp.verify.Verifier` remains
 the source of truth for the compile / sorry / axiom check (we do not trust ax-prover's
 own reviewer). See {doc}`index` for the lifecycle every agent harness shares.
 

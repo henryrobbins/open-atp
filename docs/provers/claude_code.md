@@ -6,7 +6,7 @@ the {class}`~open_atp.harness.claude_code.ClaudeCodeHarness` — Anthropic's
 [Claude Code](https://claude.com/claude-code) CLI driving the `sorry`s in a sandbox
 with the [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp) server. It is the
 default harness: the bare `agent` registry spec selects it, and the shared
-{class}`~open_atp.core.verifier.Verifier` does the final compile / sorry / axiom
+{class}`~open_atp.verify.Verifier` does the final compile / sorry / axiom
 check. See {doc}`index` for the staging/diff lifecycle every agent harness shares.
 
 ## Usage

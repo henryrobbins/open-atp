@@ -15,9 +15,9 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.docker import DockerBackend, DockerConfig
-from open_atp.core.result import ProofResult
 from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
 from open_atp.provers.aristotle import AristotleProver, AristotleProverConfig
+from open_atp.verify import ProofResult
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 
@@ -85,7 +85,7 @@ def test_generate_extracts_result_and_reports_changed_files(
     The public ``prove`` runs the shared Docker verify, so the no-Docker unit test
     drives the generation half directly and asserts on the filled result.
     """
-    from open_atp.core.task import LeanProject, ProofTask
+    from open_atp.lean import LeanProject, ProofTask
 
     monkeypatch.setattr(
         AristotleProver, "_submit_and_download", _fake_result(solved=True)
@@ -194,7 +194,7 @@ def test_prove_end_to_end_verifies_completed_proof(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Full run(): mocked remote returns a real proof; Docker verifier confirms it."""
-    from open_atp.core.task import LeanProject, ProofTask
+    from open_atp.lean import LeanProject, ProofTask
 
     monkeypatch.setattr(
         AristotleProver, "_submit_and_download", _fake_result(solved=True)
@@ -214,7 +214,7 @@ def test_prove_reports_unverified_when_sorry_remains(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """If Aristotle returns the file still sorry'd, the verifier catches it."""
-    from open_atp.core.task import LeanProject, ProofTask
+    from open_atp.lean import LeanProject, ProofTask
 
     monkeypatch.setattr(
         AristotleProver, "_submit_and_download", _fake_result(solved=False)

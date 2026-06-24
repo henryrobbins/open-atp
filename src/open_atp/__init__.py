@@ -8,7 +8,7 @@ The architecture rests on two reusable primitives:
 
 * :class:`~open_atp.backends.base.ComputeBackend` -- run a command over a working
   directory in a Lean+Mathlib sandbox (Docker or Modal).
-* :class:`~open_atp.core.verifier.Verifier` -- compile a project in a backend and
+* :class:`~open_atp.verify.Verifier` -- compile a project in a backend and
   report whether it is sorry-free and axiom-clean.
 
 Everything else is a candidate generator
@@ -16,11 +16,10 @@ Everything else is a candidate generator
 are then funnelled through the shared verifier.
 """
 
-from open_atp.core.result import ProofResult, VerificationReport
-from open_atp.core.task import LeanProject, ProofTask
+from open_atp.lean import LeanProject, ProofTask, stage_files
 from open_atp.provers import PROVERS, available_provers, get_prover
 from open_atp.provers.base import AutomatedProver, AutomatedProverConfig
-from open_atp.utils import stage_files
+from open_atp.verify import ProofResult, VerificationReport
 
 __all__ = [
     "AutomatedProver",

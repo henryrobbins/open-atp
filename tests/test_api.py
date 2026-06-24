@@ -24,16 +24,14 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.docker import DockerBackend, DockerConfig
-from open_atp.core.result import ProofResult, VerificationReport
-from open_atp.core.task import LeanProject, ProofTask, ToolchainMismatch
-from open_atp.core.verifier import Verifier
 from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
+from open_atp.lean import LeanProject, ProofTask, ToolchainMismatch, stage_files
 from open_atp.provers import PROVERS, available_provers, get_prover
 from open_atp.provers.agent_prover import AgentProver, AgentProverConfig
 from open_atp.provers.aristotle import AristotleProver, AristotleProverConfig
 from open_atp.provers.base import AutomatedProver
 from open_atp.provers.numina import NuminaProver, NuminaProverConfig
-from open_atp.utils import stage_files
+from open_atp.verify import ProofResult, VerificationReport, Verifier
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mil_trivial"
 

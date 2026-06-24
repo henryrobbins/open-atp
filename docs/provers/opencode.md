@@ -7,7 +7,7 @@ The OpenCode prover is the {class}`~open_atp.provers.agent_prover.AgentProver` o
 [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp) server. Unlike Claude Code and
 Codex, OpenCode is provider-agnostic: one CLI fronts Anthropic, OpenAI, Google, or
 DeepSeek, billed directly against that provider's API. The shared
-{class}`~open_atp.core.verifier.Verifier` does the final compile / sorry / axiom
+{class}`~open_atp.verify.Verifier` does the final compile / sorry / axiom
 check. See {doc}`index` for the staging/diff lifecycle every agent harness shares.
 
 ## Usage

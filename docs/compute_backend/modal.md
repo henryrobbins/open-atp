@@ -55,12 +55,12 @@ backend = ModalBackend(ModalConfig(image=DEFAULT_IMAGE, cpu=4.0, memory_mib=4096
 is in MiB. See the {doc}`/api/backends` reference for the full set of options.
 
 For the common case of verifying against the published image, the
-{func}`~open_atp.core.verifier.modal_verifier` helper wires up a
-{class}`~open_atp.core.verifier.Verifier` for you — the Modal counterpart of
-{func}`~open_atp.core.verifier.docker_verifier`:
+{func}`~open_atp.verify.modal_verifier` helper wires up a
+{class}`~open_atp.verify.Verifier` for you — the Modal counterpart of
+{func}`~open_atp.verify.docker_verifier`:
 
 ```python
-from open_atp.core.verifier import modal_verifier
+from open_atp.verify import modal_verifier
 
 verifier = modal_verifier()
 ```

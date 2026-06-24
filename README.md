@@ -1,4 +1,4 @@
-# open-atp
+# OpenATP
 
 [![CI](https://github.com/henryrobbins/open-atp/actions/workflows/ci-python.yml/badge.svg)](https://github.com/henryrobbins/open-atp/actions/workflows/ci-python.yml)
 [![codecov](https://codecov.io/gh/henryrobbins/open-atp/branch/main/graph/badge.svg?flag=src)](https://codecov.io/gh/henryrobbins/open-atp)
@@ -86,8 +86,8 @@ uv run open-atp solve path/to/project --provers agent \
 ```
 
 ```python
-from open_atp.core.task import LeanProject
-from open_atp.core.verifier import docker_verifier
+from open_atp.lean import LeanProject
+from open_atp.verify import docker_verifier
 
 report = docker_verifier().verify(LeanProject("path/to/lake/project"))
 print(report.verified, report.sorry_free, report.axioms)

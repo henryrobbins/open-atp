@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.modal import _modal_image_name, _tar_dir
-from open_atp.core.task import LeanProject, ToolchainMismatch
+from open_atp.lean import LeanProject, ToolchainMismatch
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 
@@ -110,7 +110,7 @@ def test_backend_run_smoke(tmp_path: Path) -> None:
 
 @_live
 def test_sorry_theorem_compiles_but_is_not_verified(tmp_path: Path) -> None:
-    from open_atp.core.verifier import modal_verifier
+    from open_atp.verify import modal_verifier
 
     project = LeanProject(_stage(tmp_path))
     report = modal_verifier().verify(project)
@@ -122,7 +122,7 @@ def test_sorry_theorem_compiles_but_is_not_verified(tmp_path: Path) -> None:
 
 @_live
 def test_completed_theorem_is_verified(tmp_path: Path) -> None:
-    from open_atp.core.verifier import modal_verifier
+    from open_atp.verify import modal_verifier
 
     proj = _stage(tmp_path)
     (proj / "MILExample.lean").write_text("import Mathlib\n\n" + SOLVED_PROOF)
@@ -136,7 +136,7 @@ def test_completed_theorem_is_verified(tmp_path: Path) -> None:
 
 @_live
 def test_toolchain_mismatch_is_rejected(tmp_path: Path) -> None:
-    from open_atp.core.verifier import modal_verifier
+    from open_atp.verify import modal_verifier
 
     proj = _stage(tmp_path)
     (proj / "lean-toolchain").write_text("leanprover/lean4:v4.99.0\n")
@@ -149,8 +149,8 @@ def test_toolchain_mismatch_is_rejected(tmp_path: Path) -> None:
 def test_session_runs_many_commands_in_one_sandbox(tmp_path: Path) -> None:
     """One Sandbox, two execs: an edit then an in-session verify, terminated once."""
     from open_atp.backends.modal import ModalBackend, ModalConfig
-    from open_atp.core.verifier import Verifier
     from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
+    from open_atp.verify import Verifier
 
     proj = _stage(tmp_path)
     (proj / "MILExample.lean").write_text("import Mathlib\n\n" + SOLVED_PROOF)

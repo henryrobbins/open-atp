@@ -1,7 +1,7 @@
 # Provers
 
 A prover is a *candidate generator*: it takes a
-{class}`~open_atp.core.task.ProofTask` and produces completed Lean files. The base
+{class}`~open_atp.lean.ProofTask` and produces completed Lean files. The base
 {class}`~open_atp.provers.base.AutomatedProver` owns the shared lifecycle — generate,
 then verify in the sandbox — so every prover gets the same final check for free.
 
@@ -20,7 +20,7 @@ The Claude Code, Codex, OpenCode, AxProver, and Vibe provers are all the same
 {class}`~open_atp.harness.base.Harness`; `Spec` is the
 {func}`~open_atp.provers.get_prover` registry name. Every prover subclasses
 {class}`~open_atp.provers.base.AutomatedProver` and funnels its output through the
-shared {class}`~open_atp.core.verifier.Verifier`.
+shared {class}`~open_atp.verify.Verifier`.
 
 ## How the agent provers work
 
@@ -34,7 +34,7 @@ An {class}`~open_atp.provers.agent_prover.AgentProver` composes two concerns:
 
 `prove` stages the project into the workdir, lets the agent fill the `sorry`s in
 place, then diffs the `.lean` files against the staged originals to report what
-changed. The shared {class}`~open_atp.core.verifier.Verifier` does the final
+changed. The shared {class}`~open_atp.verify.Verifier` does the final
 compile / sorry / axiom check. Configuration fields are documented under
 {class}`~open_atp.provers.agent_prover.AgentProverConfig` in the
 {doc}`../api/provers` reference.

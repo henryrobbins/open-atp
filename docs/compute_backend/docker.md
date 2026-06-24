@@ -49,12 +49,12 @@ the `Dockerfile` below.
 
 ## Using the Docker backend
 
-The {func}`~open_atp.core.verifier.docker_verifier` helper wires up a verifier
+The {func}`~open_atp.verify.docker_verifier` helper wires up a verifier
 against a local Docker sandbox running `open-atp:latest`:
 
 ```python
-from open_atp.core.task import LeanProject
-from open_atp.core.verifier import docker_verifier
+from open_atp.lean import LeanProject
+from open_atp.verify import docker_verifier
 
 report = docker_verifier().verify(LeanProject("path/to/lake/project"))
 ```

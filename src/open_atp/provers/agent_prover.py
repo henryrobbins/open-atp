@@ -9,7 +9,7 @@ An ``AgentProver`` composes:
 
 ``prove`` stages the project into the workdir, lets the agent fill the sorrys in
 place, then diffs the ``.lean`` files against the staged originals to report what
-changed. The shared :class:`~open_atp.core.verifier.Verifier` (owned by the base
+changed. The shared :class:`~open_atp.verify.Verifier` (owned by the base
 ``run``) does the final compile/sorry/axiom check.
 """
 
@@ -28,10 +28,10 @@ from open_atp.backends.base import (
     ComputeBackend,
     ComputeSession,
 )
-from open_atp.core.result import ProofResult
-from open_atp.core.task import LeanProject, ProofTask
 from open_atp.harness import HARNESSES, Harness, bundle_for_config, compute_cost_usd
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import AutomatedProver, AutomatedProverConfig
+from open_atp.verify import ProofResult
 
 log = logging.getLogger(__name__)
 

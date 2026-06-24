@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.docker import DockerBackend, DockerConfig
-from open_atp.core.task import LeanProject, ToolchainMismatch
-from open_atp.core.verifier import Verifier, docker_verifier
 from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
+from open_atp.lean import LeanProject, ToolchainMismatch
+from open_atp.verify import Verifier, docker_verifier
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 

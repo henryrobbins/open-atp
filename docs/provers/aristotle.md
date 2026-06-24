@@ -5,7 +5,7 @@ The {class}`~open_atp.provers.aristotle.AristotleProver` wraps Harmonic's hosted
 [Aristotle](https://www.harmonic.fun/) API. No agentic sandbox is needed for
 generation — the lake project is handed to the hosted agent via `aristotlelib`
 (submit → wait → download), the returned archive is unpacked over the workdir, and
-the shared {class}`~open_atp.core.verifier.Verifier` does the final check in a local
+the shared {class}`~open_atp.verify.Verifier` does the final check in a local
 Docker sandbox. This is the platform's simplest end-to-end slice.
 
 ## Authentication

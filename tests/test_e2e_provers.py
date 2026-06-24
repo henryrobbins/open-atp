@@ -32,8 +32,8 @@ import pytest
 from open_atp.backends.base import ComputeBackend
 from open_atp.backends.docker import DockerBackend, DockerConfig
 from open_atp.backends.modal import ModalBackend, ModalConfig
-from open_atp.core.task import LeanProject, ProofTask
 from open_atp.images import DEFAULT_IMAGE
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers import available_provers, get_prover
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mil_trivial"

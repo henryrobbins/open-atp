@@ -17,8 +17,6 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.docker import DockerBackend, DockerConfig
-from open_atp.core.result import ProofResult
-from open_atp.core.task import LeanProject, ProofTask
 from open_atp.harness import (
     HARNESSES,
     AssetBundle,
@@ -30,7 +28,9 @@ from open_atp.harness import (
     resolve_skill,
 )
 from open_atp.images import DEFAULT_IMAGE, DEFAULT_TOOLCHAIN
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver, AgentProverConfig
+from open_atp.verify import ProofResult
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 STREAM = Path(__file__).parents[1] / "fixtures" / "agent_streams" / "claude_code.jsonl"

@@ -23,9 +23,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
-from open_atp.core.result import ProofResult
-from open_atp.core.task import ProofTask
+from open_atp.lean import ProofTask
 from open_atp.provers.base import AutomatedProver, AutomatedProverConfig
+from open_atp.verify import ProofResult
 
 if TYPE_CHECKING:
     from aristotlelib import AgentTask, Project

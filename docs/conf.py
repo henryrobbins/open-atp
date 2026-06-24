@@ -4,7 +4,7 @@ from docutils import nodes
 from sphinx.application import Sphinx
 from sphinx.environment import BuildEnvironment
 
-project = "open-atp"
+project = "OpenATP"
 author = "Henry Robbins"
 copyright = "2026, Henry Robbins"
 release = _pkg_version("open-atp")
@@ -54,7 +54,7 @@ templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "PHASE*.md"]
 
 html_theme = "furo"
-html_title = "open-atp"
+html_title = "OpenATP"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 
@@ -98,14 +98,15 @@ numpydoc_xref_aliases = {
     # Registry
     "PROVERS": "open_atp.provers.PROVERS",
     "get_prover": "open_atp.provers.get_prover",
-    "stage_files": "open_atp.utils.stage_files",
-    # Core
-    "LeanProject": "open_atp.core.task.LeanProject",
-    "ProofTask": "open_atp.core.task.ProofTask",
-    "ToolchainMismatch": "open_atp.core.task.ToolchainMismatch",
-    "VerificationReport": "open_atp.core.result.VerificationReport",
-    "ProofResult": "open_atp.core.result.ProofResult",
-    "Verifier": "open_atp.core.verifier.Verifier",
+    "stage_files": "open_atp.lean.stage_files",
+    # Lean input contract
+    "LeanProject": "open_atp.lean.LeanProject",
+    "ProofTask": "open_atp.lean.ProofTask",
+    "ToolchainMismatch": "open_atp.lean.ToolchainMismatch",
+    # Verification
+    "VerificationReport": "open_atp.verify.VerificationReport",
+    "ProofResult": "open_atp.verify.ProofResult",
+    "Verifier": "open_atp.verify.Verifier",
     "AutomatedProver": "open_atp.provers.base.AutomatedProver",
     "AutomatedProverConfig": "open_atp.provers.base.AutomatedProverConfig",
     # Backends

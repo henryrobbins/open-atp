@@ -5,7 +5,7 @@ The Codex prover is the {class}`~open_atp.provers.agent_prover.AgentProver` on t
 {class}`~open_atp.harness.codex.CodexHarness` — OpenAI's
 [Codex](https://chatgpt.com/codex) CLI driving the `sorry`s in a sandbox with the
 [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp) server. The shared
-{class}`~open_atp.core.verifier.Verifier` does the final compile / sorry / axiom
+{class}`~open_atp.verify.Verifier` does the final compile / sorry / axiom
 check. See {doc}`index` for the staging/diff lifecycle every agent harness shares.
 
 ## Usage

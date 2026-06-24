@@ -34,8 +34,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 from open_atp.backends.base import ComputeSession
-from open_atp.core.result import ProofResult
-from open_atp.core.task import LeanProject, ProofTask
 from open_atp.harness import (
     HARNESSES,
     Harness,
@@ -43,8 +41,10 @@ from open_atp.harness import (
     compute_cost_usd,
     resolve_bundle,
 )
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver, AgentProverConfig
 from open_atp.provers.numina_tracker import StatementTracker
+from open_atp.verify import ProofResult
 
 # Directories never worth copying into the agent workdir (mirrors AgentProver).
 _IGNORE = shutil.ignore_patterns(".lake", ".git", "*.tar.gz")

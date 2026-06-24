@@ -1,9 +1,9 @@
 """Base prover abstraction.
 
 An :class:`AutomatedProver` is a *candidate generator*: it takes a
-:class:`~open_atp.core.task.ProofTask` and a caller-chosen output directory, fills
+:class:`~open_atp.lean.ProofTask` and a caller-chosen output directory, fills
 the project's ``sorry``\\s, verifies the result in a shared sandbox, and returns a
-:class:`~open_atp.core.result.ProofResult`. The base class owns the shared lifecycle
+:class:`~open_atp.verify.ProofResult`. The base class owns the shared lifecycle
 -- stage the output layout, generate, then verify -- so subclasses only implement
 ``_generate`` and every prover (including Aristotle) gets the same final check for
 free. Concrete provers live alongside this base in ``open_atp.provers``.
@@ -26,9 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from open_atp.backends.base import ComputeBackend
-from open_atp.core.result import ProofResult
-from open_atp.core.task import LeanProject, ProofTask
-from open_atp.core.verifier import Verifier
+from open_atp.lean import LeanProject, ProofTask
+from open_atp.verify import ProofResult, Verifier
 
 
 @dataclass

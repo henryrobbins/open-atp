@@ -6,7 +6,7 @@ The Vibe prover is the {class}`~open_atp.provers.agent_prover.AgentProver` on th
 [Vibe](https://docs.mistral.ai/mistral-vibe/)'s builtin `lean` agent in a sandbox.
 Vibe's `lean` agent *is* Leanstral (`vibe -p ... --agent lean` pins the model to
 `leanstral`; there is no `--model` flag). The shared
-{class}`~open_atp.core.verifier.Verifier` does the final compile / sorry / axiom
+{class}`~open_atp.verify.Verifier` does the final compile / sorry / axiom
 check. See {doc}`index` for the lifecycle every agent harness shares.
 
 ## The Leanstral stand-in

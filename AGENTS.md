@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Developer guide for **open-afps** (Open Automated Formal Proof Synthesis). Read this
+Developer guide for **open-atp** (Open Automated Formal Proof Synthesis). Read this
 before making changes. The user-facing overview lives in [README.md](README.md);
 this file is the engineering reference.
 
@@ -16,7 +16,7 @@ sandbox and checks it compiles, is sorry-free, and is axiom-clean.
 
 1. **`ComputeBackend`** (`backends/`) — run a command over a working directory inside a
    Lean+Mathlib sandbox. Two impls: `DockerBackend`, `ModalBackend`.
-2. **`Verifier`** (`core/verifier.py`) — compile a candidate project in a backend and
+2. **`Verifier`** (`verify.py`) — compile a candidate project in a backend and
    report `verified` / `sorry_free` / `axioms`.
 
 ```
@@ -41,11 +41,12 @@ verifier **rejects** projects whose toolchain doesn't match the sandbox image's 
 ## Project structure (high-level)
 
 ```
-src/open_afps/
+src/open_atp/
   api.py            Platform + prover registry — the dispatch/orchestration layer
-  __main__.py       `open-afps solve | build-image | build-modal-image` CLI
+  __main__.py       `open-atp solve | build-image | build-modal-image` CLI
   images/           image name + toolchain pins (DEFAULT_IMAGE, DEFAULT_TOOLCHAIN)
-  core/             task.py  result.py  prover.py  verifier.py
+  lean.py           LeanProject, ProofTask, stage_files (the Lean input contract)
+  verify.py         VerificationReport, ProofResult, Verifier (the shared final check)
   backends/         base.py  docker.py  modal.py            (ComputeBackend impls)
   provers/          agent_prover.py  numina.py  numina_tracker.py  aristotle.py
   harness/          coding-agent CLIs staged into the sandbox:
@@ -71,7 +72,7 @@ The README's `Layout` section predates the `harness/` split — trust the tree a
 Ruff is configured with `extend-exclude = ["vendor"]` — **do not reformat or lint
 vendored code**, and keep its upstream style. It ships in the wheel via
 `force-include` and is resolved at runtime by `harness/_paths.py` (wheel:
-`open_afps/vendor/<name>`; checkout: repo-root `vendor/<name>`).
+`open_atp/vendor/<name>`; checkout: repo-root `vendor/<name>`).
 
 ## Provers
 
@@ -94,13 +95,13 @@ does the final compile/sorry/axiom check regardless of which tool generated the 
 
 - **Python ≥ 3.12**, packaged with **hatchling**, deps managed by **uv** (`uv.lock`).
 - **ruff** — lint (`E,F,I,UP`) + format, line length 88, excludes `vendor`.
-- **mypy** — `strict`, `files = ["src/open_afps"]`.
+- **mypy** — `strict`, `files = ["src/open_atp"]`.
 - **pytest** — `pytest-cov`, `pytest-xdist` (default `-n 5`).
 - **lefthook** — pre-commit runs ruff check, ruff format --check, and mypy on staged
   `*.py` (with `--force-exclude` so vendored code is skipped). Install with
   `uv run lefthook install`.
 - **Sphinx** (furo + myst) for docs; Read the Docs config in `.readthedocs.yaml`.
-- CLI entry point: `open-afps` → `open_afps.__main__:main`.
+- CLI entry point: `open-atp` → `open_atp.__main__:main`.
 
 ## Makefile commands
 
@@ -118,7 +119,7 @@ make lint            ruff check src tests
 make format          ruff format + ruff check --fix on src tests
 make typecheck       mypy
 make check           lint + typecheck + test
-make build-image     docker build -t open-afps:latest images/
+make build-image     docker build -t open-atp:latest images/
 make docs            sphinx-build -W -b html docs docs/_build/html
 make docs-serve      live-reload docs
 make docs-clean      remove built docs
@@ -133,7 +134,7 @@ Default `addopts`: `-m 'not aristotle_api and not agent_api and not numina_api' 
 The live/billable credentialed suites are **opt-out by default** and run only when you
 select their marker. Markers (`pyproject.toml`):
 
-- `docker` — needs the `open-afps` Docker image (opt-out: `-m 'not docker'`)
+- `docker` — needs the `open-atp` Docker image (opt-out: `-m 'not docker'`)
 - `modal` — launches a Modal sandbox (opt-out: `-m 'not modal'`)
 - `aristotle_api` — live Aristotle API (opt-in: `-m aristotle_api`)
 - `agent_api` — live agent CLI, billable + creds (opt-in: `-m agent_api`)
@@ -155,29 +156,29 @@ verify with `--agent-backend`.
 - **Docker** (`DockerBackend`) — bind-mounts the workdir; uses `images/Dockerfile`,
   runs as the `agent` user. Local; build the image first:
   ```bash
-  docker build -t open-afps:latest images/      # or: make build-image / open-afps build-image
+  docker build -t open-atp:latest images/      # or: make build-image / open-atp build-image
   uv run pytest -m docker
   ```
 - **Modal** (`ModalBackend`) — pushes/pulls the workdir around an isolated Sandbox
   filesystem; runs as **root**, so its image is built programmatically with the same
   toolchain installed globally. Publish the image, then run the parity suite:
   ```bash
-  uv run open-afps build-modal-image --name open-afps --app open-afps
+  uv run open-atp build-modal-image --name open-atp --app open-atp
   uv run pytest -m modal          # needs MODAL_TOKEN_ID / MODAL_TOKEN_SECRET
   ```
   `ModalConfig.image` (sans `:tag`) must match the `--name` you publish under.
 
 Example splits:
 ```bash
-uv run open-afps solve path/to/project --provers agent --backend modal
-uv run open-afps solve path/to/project --provers agent \
+uv run open-atp solve path/to/project --provers agent --backend modal
+uv run open-atp solve path/to/project --provers agent \
     --agent-backend modal --backend docker   # Modal generates, Docker does cheap verify
 ```
 
 ## CLI quick reference
 
 ```
-open-afps solve <inputs...> [options]      # lake project dir, or bare .lean files
+open-atp solve <inputs...> [options]      # lake project dir, or bare .lean files
   --provers   comma-separated names (default: agent)
   --instructions TEXT                       # guidance forwarded to provers
   --targets   comma-separated files relative to project
@@ -188,14 +189,14 @@ open-afps solve <inputs...> [options]      # lake project dir, or bare .lean fil
   --max-workers N
   --json                          emit SolveResult as JSON
 
-open-afps build-image       [--tag TAG] [--no-cache]
-open-afps build-modal-image [--name N] [--app A] [--force]
+open-atp build-image       [--tag TAG] [--no-cache]
+open-atp build-modal-image [--name N] [--app A] [--force]
 ```
 
 Programmatic verify:
 ```python
-from open_afps.core.task import LeanProject
-from open_afps.core.verifier import docker_verifier
+from open_atp.lean import LeanProject
+from open_atp.verify import docker_verifier
 report = docker_verifier().verify(LeanProject("path/to/lake/project"))
 print(report.verified, report.sorry_free, report.axioms)
 ```

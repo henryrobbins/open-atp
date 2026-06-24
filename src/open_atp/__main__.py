@@ -18,8 +18,8 @@ import sys
 from pathlib import Path
 
 from open_atp.backends.docker import DockerBackend, DockerConfig
-from open_atp.core.task import LeanProject, ProofTask
 from open_atp.images import DEFAULT_IMAGE
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers import PROVERS, available_provers, get_prover
 
 #: ax-prover baked into the Modal image (mirrors the images/Dockerfile ARG). Pinned

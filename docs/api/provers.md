@@ -6,7 +6,7 @@ tocdepth: 3
 
 The concrete provers and the registry/factory over them. Each prover subclasses
 {class}`~open_atp.provers.base.AutomatedProver` and funnels its output through the
-shared {class}`~open_atp.core.verifier.Verifier`. The agentic provers compose an
+shared {class}`~open_atp.verify.Verifier`. The agentic provers compose an
 {doc}`agent harness <harness>` (the *agent* concern) with a
 {class}`~open_atp.backends.base.ComputeBackend` (the *compute* concern).
 
@@ -16,7 +16,7 @@ The `open_atp.provers` registry maps a prover name to a constructed
 {class}`~open_atp.provers.base.AutomatedProver`, wired to a shared sandbox
 image/toolchain and compute backend. A caller then drives the prover directly
 via {meth}`~open_atp.provers.base.AutomatedProver.prove`, which returns a
-{class}`~open_atp.core.result.ProofResult` with verification and cost. This is the
+{class}`~open_atp.verify.ProofResult` with verification and cost. This is the
 top-level surface re-exported from `open_atp` itself.
 
 {class}`~open_atp.provers.PROVERS` enumerates the available provers (e.g.
@@ -37,12 +37,8 @@ the verify backend, and (for agentic provers) the agent backend.
 ## Staging input
 
 A full lake project on disk is just `LeanProject(Path(path))`.
-{func}`~open_atp.utils.stage_files` stages one or more bare `.lean` files into the
-pinned Mathlib skeleton.
-
-```{eval-rst}
-.. autofunction:: open_atp.utils.stage_files
-```
+{func}`~open_atp.lean.stage_files` stages one or more bare `.lean` files into the
+pinned Mathlib skeleton (documented under {doc}`lean`).
 
 ## Base
 
