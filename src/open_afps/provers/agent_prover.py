@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from open_afps.backends.base import CommandResult, ComputeBackend, ComputeSession
-from open_afps.core.prover import AutomatedProver, AutomatedProverConfig
+from open_afps.core.prover import AutomatedProver, AutomatedProverConfig, logs_dir_for
 from open_afps.core.result import GenerationOutput
 from open_afps.core.task import LeanProject, ProofTask
 from open_afps.harness import HARNESSES, Harness, bundle_for_config, compute_cost_usd
@@ -149,18 +149,18 @@ class AgentProver(AutomatedProver):
             with self.agent_backend.session(
                 workdir, mounts=mounts, timeout_s=self.config.timeout_s
             ) as session:
-                lines = self._run_agent(workdir, harness, session=session)
+                lines, stderr = self._run_agent(workdir, harness, session=session)
                 # Bring the agent's edits back to the host so the diff sees them
                 # (no-op for bind-mounted Docker; a tar pull for Modal).
                 session.sync_out()
-                output = self._build_output(workdir, harness, lines, original)
+                output = self._build_output(workdir, harness, lines, original, stderr)
                 output.verification = self.verifier.verify(
                     LeanProject(workdir), session=session
                 )
                 return output
 
-        lines = self._run_agent(workdir, harness)
-        return self._build_output(workdir, harness, lines, original)
+        lines, stderr = self._run_agent(workdir, harness)
+        return self._build_output(workdir, harness, lines, original, stderr)
 
     def _build_output(
         self,
@@ -168,6 +168,7 @@ class AgentProver(AutomatedProver):
         harness: Harness,
         lines: list[str],
         original: dict[str, str],
+        stderr: str = "",
     ) -> GenerationOutput:
         """Token totals -> cost, then diff the workdir against the staged originals."""
         parsed = harness.parse(lines)
@@ -186,10 +187,15 @@ class AgentProver(AutomatedProver):
             if original.get(rel) != content:
                 completed[rel] = content
 
+        # Relocate any harness-specific rich logs out of the workdir into the run's
+        # logs dir (no-op for the CLI harnesses, whose record is the stdout stream).
+        harness.collect_logs(workdir, logs_dir_for(workdir))
+
         return GenerationOutput(
             completed_files=completed,
             cost_usd=cost,
             logs="\n".join(lines),
+            stderr=stderr,
             metadata={
                 "harness": harness.name,
                 "model": self.config.model,
@@ -217,8 +223,12 @@ class AgentProver(AutomatedProver):
 
     def _run_agent(
         self, workdir: Path, harness: Harness, session: ComputeSession | None = None
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         """Resolve auth, launch the agent in the backend, and drain its stdout.
+
+        Returns ``(stdout_lines, stderr)`` -- the streamed event lines plus the run's
+        captured stderr (Modal's ``modal_stderr.txt`` / the one-shot run's stderr),
+        which the prover writes to ``logs/stderr.txt``.
 
         Isolated (it owns credential resolution + the backend call) so tests can
         stand in a fake run -- write a solved file, return a captured stream --
@@ -234,8 +244,9 @@ class AgentProver(AutomatedProver):
             # Mounts were pinned at session creation; only per-command env here.
             handle = session.exec(harness.command, env=env)
             lines.extend(handle.stream())
-            self._log_agent_result(harness, handle.wait(), lines)
-            return lines
+            result = handle.wait()
+            self._log_agent_result(harness, result, lines)
+            return lines, result.stderr
         with self.agent_backend.start(
             workdir,
             harness.command,
@@ -244,8 +255,9 @@ class AgentProver(AutomatedProver):
             timeout_s=self.config.timeout_s,
         ) as handle:
             lines.extend(handle.stream())
-            self._log_agent_result(harness, handle.wait(), lines)
-        return lines
+            result = handle.wait()
+            self._log_agent_result(harness, result, lines)
+        return lines, result.stderr
 
     def _log_agent_result(
         self, harness: Harness, result: CommandResult, lines: list[str]

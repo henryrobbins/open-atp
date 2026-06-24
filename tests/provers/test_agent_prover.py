@@ -207,10 +207,10 @@ def test_prove_reports_files_the_agent_changed(
 
     def _fake_run_agent(
         self: AgentProver, workdir: Path, harness: Harness
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         # The real agent would edit files in place; emulate that.
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
-        return STREAM.read_text().splitlines()
+        return STREAM.read_text().splitlines(), ""
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     # No CLAUDE_CODE_OAUTH_TOKEN needed: _run_agent (which calls auth) is stubbed.
@@ -235,8 +235,8 @@ def test_prove_reports_no_changes_when_agent_does_nothing(
 ) -> None:
     def _noop_run_agent(
         self: AgentProver, workdir: Path, harness: Harness
-    ) -> list[str]:
-        return []
+    ) -> tuple[list[str], str]:
+        return [], ""
 
     monkeypatch.setattr(AgentProver, "_run_agent", _noop_run_agent)
     prover = _make_prover()
@@ -261,9 +261,9 @@ def test_run_end_to_end_verifies_mocked_agent_result(
 
     def _fake_run_agent(
         self: AgentProver, workdir: Path, harness: Harness
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
-        return STREAM.read_text().splitlines()
+        return STREAM.read_text().splitlines(), ""
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     prover = _make_prover()
@@ -292,11 +292,11 @@ def test_run_reuses_one_sandbox_for_generation_and_verify(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         # The reuse path hands the live session through to the agent run.
         assert session is not None
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
-        return STREAM.read_text().splitlines()
+        return STREAM.read_text().splitlines(), ""
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     # No real credential resolution/mounts -- keeps the session sandbox dependency-free.

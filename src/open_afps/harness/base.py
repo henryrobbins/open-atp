@@ -128,6 +128,18 @@ class Harness(ABC):
         """Parse the agent's streamed JSON lines into a :class:`HarnessRunResult`."""
         return self._parse_lines(lines)
 
+    def collect_logs(self, wd: Path, logs_dir: Path) -> None:
+        """Move this harness's rich log files out of ``wd`` into ``logs_dir``.
+
+        The streamed event JSONL the prover captures from stdout *is* the agent's
+        transcript for every CLI harness, so the default does nothing. Harnesses that
+        *also* drop a richer record inside the workdir (Vibe's session log, ax-prover's
+        per-target logs) override this to relocate those files -- so ``download_wd``
+        stays the proof project and ``download_logs`` carries the full record. Called
+        after :meth:`parse` (which may read those files for cost), so moving them is
+        safe.
+        """
+
     def _copy_skills(self, wd: Path, dest: str) -> None:
         """Copy the selected bundle's skills into ``wd/<dest>``.
 

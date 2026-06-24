@@ -167,7 +167,9 @@ def test_solve_fans_out_and_isolates_workdirs(tmp_path: Path) -> None:
     dirs = {r.artifacts_dir for r in result.results}
     assert len(dirs) == 2
     for d in dirs:
-        assert d is not None and d.is_dir() and d.parent == result.run_dir
+        # Each run stages as runs/<id>/<label>/wd, so the workdir's grandparent is
+        # the run dir.
+        assert d is not None and d.is_dir() and d.parent.parent == result.run_dir
 
 
 def test_solve_duplicate_names_get_distinct_workdirs(tmp_path: Path) -> None:
@@ -176,6 +178,64 @@ def test_solve_duplicate_names_get_distinct_workdirs(tmp_path: Path) -> None:
     labels = sorted(r.prover for r in result.results)
     assert labels == ["agent", "agent_1"]
     assert len({r.artifacts_dir for r in result.results}) == 2
+
+
+def test_download_wd_and_logs_copy_each_bucket(tmp_path: Path) -> None:
+    """ProofResult.download_{wd,logs} copy the proof project and run record apart."""
+    wd = tmp_path / "run" / "agent" / "wd"
+    logs = tmp_path / "run" / "agent" / "logs"
+    wd.mkdir(parents=True)
+    logs.mkdir(parents=True)
+    (wd / "MILExample.lean").write_text("theorem t : True := trivial")
+    (logs / "stdout.jsonl").write_text('{"type":"result"}')
+
+    result = ProofResult(
+        prover="agent",
+        verification=VerificationReport(compiles=True, sorry_free=True),
+        artifacts_dir=wd,
+        logs_dir=logs,
+    )
+
+    result.download_wd(tmp_path / "out_wd")
+    result.download_logs(tmp_path / "out_logs")
+
+    assert (tmp_path / "out_wd" / "MILExample.lean").is_file()
+    assert (tmp_path / "out_logs" / "stdout.jsonl").is_file()
+    # The buckets stay separate -- logs never leak into the downloaded workdir.
+    assert not (tmp_path / "out_wd" / "stdout.jsonl").exists()
+
+
+def test_download_raises_without_artifacts(tmp_path: Path) -> None:
+    """A result that produced nothing to download fails loudly, not silently."""
+    result = ProofResult(prover="agent", verification=None)
+    with pytest.raises(FileNotFoundError):
+        result.download_wd(tmp_path / "out_wd")
+    with pytest.raises(FileNotFoundError):
+        result.download_logs(tmp_path / "out_logs")
+
+
+def test_solve_result_download_fans_out_per_prover(tmp_path: Path) -> None:
+    """SolveResult.download_{wd,logs} write one subdir per prover, skipping empties."""
+    a_wd = tmp_path / "a" / "wd"
+    a_logs = tmp_path / "a" / "logs"
+    a_wd.mkdir(parents=True)
+    a_logs.mkdir(parents=True)
+    (a_wd / "P.lean").write_text("x")
+    (a_logs / "stdout.jsonl").write_text("y")
+
+    good = ProofResult(
+        prover="agent", verification=None, artifacts_dir=a_wd, logs_dir=a_logs
+    )
+    empty = ProofResult(prover="aristotle", verification=None)  # nothing to download
+    solve = SolveResult(run_id="r", results=[good, empty])
+
+    solve.download_wd(tmp_path / "wd_out")
+    solve.download_logs(tmp_path / "logs_out")
+
+    assert (tmp_path / "wd_out" / "agent" / "P.lean").is_file()
+    assert (tmp_path / "logs_out" / "agent" / "stdout.jsonl").is_file()
+    # The prover with no artifacts is silently skipped, not errored.
+    assert not (tmp_path / "wd_out" / "aristotle").exists()
 
 
 def test_solve_isolates_a_failing_prover(tmp_path: Path) -> None:
@@ -310,7 +370,11 @@ def _fake_aristotle_remote(*, solved: bool) -> object:
     body = SOLVED_FILE if solved else (FIXTURE / "MILExample.lean").read_text()
 
     async def _stub(
-        self: AristotleProver, project_dir: Path, prompt: str, dest_tar: Path
+        self: AristotleProver,
+        project_dir: Path,
+        prompt: str,
+        dest_tar: Path,
+        logs_dir: Path,
     ) -> tuple[Path, dict[str, object]]:
         with tarfile.open(dest_tar, "w:gz") as tar:
             data = body.encode()

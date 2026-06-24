@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -198,6 +199,17 @@ class AxProverHarness(Harness):
                     result.input_tokens += int(entry.get("input_tokens", 0) or 0)
                     result.output_tokens += int(entry.get("output_tokens", 0) or 0)
         return result
+
+    def collect_logs(self, wd: Path, logs_dir: Path) -> None:
+        # ax-prover's rich record is the per-target ``ax_output.<target>.json`` (usage
+        # + outcome) and the teed ``ax_prover.<target>.log`` (human-readable run log),
+        # both written into the workdir. Move them out to ``logs/`` -- ``parse`` has
+        # already summed the token fields, so relocating is safe.
+        moved = sorted(wd.glob("ax_output.*.json")) + sorted(wd.glob("ax_prover.*.log"))
+        if moved:
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            for path in moved:
+                shutil.move(str(path), str(logs_dir / path.name))
 
     def _parse_lines(self, lines: list[str]) -> HarnessRunResult:
         # ax-prover's stdout is human-readable logs, not a JSON event stream; keep the

@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from open_afps.backends.base import ComputeSession
+from open_afps.core.prover import logs_dir_for
 from open_afps.core.result import GenerationOutput
 from open_afps.core.task import LeanProject, ProofTask
 from open_afps.harness import (
@@ -186,10 +187,15 @@ class NuminaProver(AgentProver):
             if original.get(rel) != content:
                 completed[rel] = content
 
+        # Relocate any harness-specific rich logs out of the workdir (no-op for the
+        # claude_code harness Numina pins, whose record is the stdout stream).
+        harness.collect_logs(workdir, logs_dir_for(workdir))
+
         return GenerationOutput(
             completed_files=completed,
             cost_usd=loop["total_cost_usd"] + helper["cost_usd"],
             logs="\n".join(loop["lines"]),
+            stderr=loop["stderr"],
             metadata={
                 "harness": harness.name,
                 "model": self.config.model,
@@ -236,6 +242,7 @@ class NuminaProver(AgentProver):
         the next round (both no-ops on bind-mounted Docker).
         """
         lines: list[str] = []
+        stderrs: list[str] = []
         round_history: list[dict[str, Any]] = []
         total_cost = 0.0
         input_tokens = 0
@@ -253,8 +260,12 @@ class NuminaProver(AgentProver):
                 consecutive_limits = 0
                 session_resets += 1
 
-            round_lines = self._run_agent(workdir, harness, session=session)
+            round_lines, round_stderr = self._run_agent(
+                workdir, harness, session=session
+            )
             lines.extend(round_lines)
+            if round_stderr:
+                stderrs.append(round_stderr)
             # Pull the round's edits to the host so the statement tracker (and the
             # next round's snapshot) see them (no-op on bind-mounted Docker).
             if session is not None:
@@ -314,6 +325,7 @@ class NuminaProver(AgentProver):
 
         return {
             "lines": lines,
+            "stderr": "\n".join(stderrs),
             "round_history": round_history,
             "rounds": len(round_history),
             "total_cost_usd": total_cost,

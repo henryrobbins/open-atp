@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +156,17 @@ class VibeHarness(Harness):
             result.input_tokens = int(stats.get("session_prompt_tokens", 0) or 0)
             result.output_tokens = int(stats.get("session_completion_tokens", 0) or 0)
         return result
+
+    def collect_logs(self, wd: Path, logs_dir: Path) -> None:
+        # Vibe's per-session record (message log + meta.json with cost) lives under the
+        # workdir-local VIBE_HOME (``.vibe/logs``). Move the whole logs tree out to
+        # ``logs/vibe-session`` -- preserving its internal structure but dropping the
+        # ``.vibe/logs`` prefix -- so it leaves the proof project. The rest of VIBE_HOME
+        # (config.toml, agents/) is scaffolding and stays in the workdir.
+        src = wd / self.VIBE_HOME_DIR / "logs"
+        if src.is_dir():
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(logs_dir / "vibe-session"))
 
     def _read_session_stats(self) -> dict[str, Any] | None:
         """Load ``stats`` from the most recent session ``meta.json``, if present."""

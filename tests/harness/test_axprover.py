@@ -199,12 +199,12 @@ def test_prove_reports_changes_and_token_cost(
 
     def _fake_run_agent(
         self: AgentProver, workdir: Path, harness: Harness
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
         # The real run writes this; emulate it so parse() finds the tokens.
         assert isinstance(harness, AxProverHarness)
         _write_usage(workdir, "MILExample_lean", 1_000_000, 100_000)
-        return STREAM_LINES
+        return STREAM_LINES, ""
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     prover = _make_prover()
@@ -214,6 +214,10 @@ def test_prove_reports_changes_and_token_cost(
 
     assert (workdir / "MILExample.lean").read_text() == SOLVED_FILE
     assert list(output.completed_files) == ["MILExample.lean"]
+    # The per-target usage file was relocated out of the workdir into the logs dir.
+    logs_dir = workdir.parent / "logs"
+    assert not (workdir / "ax_output.MILExample_lean.json").exists()
+    assert (logs_dir / "ax_output.MILExample_lean.json").is_file()
     # cost_usd is derived from the token table for claude-opus-4-8 (5/25 per Mtok).
     expected = 1_000_000 * 5.0 / 1e6 + 100_000 * 25.0 / 1e6
     assert output.cost_usd == pytest.approx(expected)

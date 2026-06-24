@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from open_afps.core.prover import AutomatedProver, AutomatedProverConfig
+from open_afps.core.prover import AutomatedProver, AutomatedProverConfig, logs_dir_for
 from open_afps.core.result import GenerationOutput
 from open_afps.core.task import ProofTask
 
@@ -51,6 +51,11 @@ class AristotleProver(AutomatedProver):
 
     config: AristotleProverConfig
 
+    # Aristotle has no streamed event log; its primary captured output is the hosted
+    # agent's run summary, written to ``logs/summary.md`` (the full event record lands
+    # beside it as ``events.json``/``transcript.txt``).
+    stream_log_name = "summary.md"
+
     def prove(self, task: ProofTask, workdir: Path) -> GenerationOutput:
         # Stage the original project so the workdir is a complete project both for the
         # upload and, after extraction, for verification.
@@ -62,10 +67,14 @@ class AristotleProver(AutomatedProver):
         }
 
         prompt = task.instructions or _DEFAULT_PROMPT
-        result_tar = workdir.parent / f"{workdir.name}_aristotle.tar.gz"
-        run_dir = workdir.parent / f"{workdir.name}_aristotle_run"
+        # The raw result archive and the full run record both belong with the run's
+        # logs, not the proof project. The base ``run`` creates ``logs/`` already; make
+        # it here too so ``prove`` stands alone when called directly.
+        logs_dir = logs_dir_for(workdir)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        result_tar = logs_dir / "aristotle_result.tar.gz"
         downloaded, metadata = asyncio.run(
-            self._submit_and_download(workdir, prompt, result_tar, run_dir)
+            self._submit_and_download(workdir, prompt, result_tar, logs_dir)
         )
 
         if downloaded is not None:
@@ -96,12 +105,12 @@ class AristotleProver(AutomatedProver):
         )
 
     async def _submit_and_download(
-        self, project_dir: Path, prompt: str, dest_tar: Path, run_dir: Path
+        self, project_dir: Path, prompt: str, dest_tar: Path, logs_dir: Path
     ) -> tuple[Path | None, dict[str, object]]:
         """Submit ``project_dir`` to Aristotle, wait, and download the result archive.
 
         Also syncs the full run record (task metadata, every event, a readable
-        transcript, project metadata) to ``run_dir`` on the host.
+        transcript, project metadata) to ``logs_dir`` on the host.
 
         Returns ``(downloaded_tar_or_None, metadata)``. Isolated for testing.
         """
@@ -139,8 +148,8 @@ class AristotleProver(AutomatedProver):
         )
 
         # Sync the full run record to the host before returning.
-        await self._sync_run_info(project, agent_task, run_dir)
-        metadata["run_dir"] = str(run_dir)
+        await self._sync_run_info(project, agent_task, logs_dir)
+        metadata["logs_dir"] = str(logs_dir)
 
         if not project.has_files:
             metadata["error"] = "Aristotle produced no output files."
@@ -151,14 +160,14 @@ class AristotleProver(AutomatedProver):
 
     @staticmethod
     async def _sync_run_info(
-        project: Project, agent_task: AgentTask, run_dir: Path
+        project: Project, agent_task: AgentTask, logs_dir: Path
     ) -> None:
-        """Download the task's metadata and full event log to ``run_dir``.
+        """Download the task's metadata and full event log to ``logs_dir``.
 
         Writes ``project.json``, ``task.json``, ``events.json`` (every event,
         oldest-first), and a human-readable ``transcript.txt``.
         """
-        run_dir.mkdir(parents=True, exist_ok=True)
+        logs_dir.mkdir(parents=True, exist_ok=True)
 
         # Page through every event, oldest-first, so the transcript reads top-down.
         events = []
@@ -174,10 +183,10 @@ class AristotleProver(AutomatedProver):
         def _dump(obj: object) -> str:
             return json.dumps(obj, default=str, indent=2)
 
-        (run_dir / "project.json").write_text(_dump(project.model_dump()))
-        (run_dir / "task.json").write_text(_dump(agent_task.model_dump()))
-        (run_dir / "events.json").write_text(_dump([e.model_dump() for e in events]))
-        (run_dir / "transcript.txt").write_text(
+        (logs_dir / "project.json").write_text(_dump(project.model_dump()))
+        (logs_dir / "task.json").write_text(_dump(agent_task.model_dump()))
+        (logs_dir / "events.json").write_text(_dump([e.model_dump() for e in events]))
+        (logs_dir / "transcript.txt").write_text(
             "\n\n".join(f"[{e.created_at.isoformat()}] {e}" for e in events)
         )
 

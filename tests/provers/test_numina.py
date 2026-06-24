@@ -153,11 +153,11 @@ def _scripted_run_agent(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         i = len(calls)
         calls.append(i)
         reason = reasons[i] if i < len(reasons) else reasons[-1]
-        return [_result_line(reason)]
+        return [_result_line(reason)], ""
 
     return calls, _stub
 
@@ -191,7 +191,7 @@ def test_helper_cost_is_folded_into_total(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         # Simulate the in-sandbox skill appending usage across two rounds' calls.
         ledger = workdir / ".claude" / "helper_usage.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -207,7 +207,7 @@ def test_helper_cost_is_folded_into_total(
                 )
                 + "\n"
             )
-        return [_result_line("COMPLETE")]
+        return [_result_line("COMPLETE")], ""
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _stub)
     prover = _make_prover(max_rounds=20, guard_statements=False)
@@ -232,7 +232,7 @@ def test_helper_cost_flags_unpriced_model(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         ledger = workdir / ".claude" / "helper_usage.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
         ledger.write_text(
@@ -246,7 +246,7 @@ def test_helper_cost_flags_unpriced_model(
             )
             + "\n"
         )
-        return [_result_line("COMPLETE")]
+        return [_result_line("COMPLETE")], ""
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _stub)
     prover = _make_prover(max_rounds=20, guard_statements=False)
@@ -296,9 +296,9 @@ def test_round_loop_falls_back_to_subtype_when_no_marker(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         calls.append(1)
-        return [_result_line(None, subtype="success")]
+        return [_result_line(None, subtype="success")], ""
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _stub)
     prover = _make_prover(max_rounds=20, guard_statements=False)
@@ -321,13 +321,13 @@ def test_guard_error_stops_and_restores_weakened_theorem(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         target = workdir / "MILExample.lean"
         target.write_text(
             "import Mathlib\n\n"
             "theorem mul_comm_assoc (a b c : ℝ) : True := by trivial\n"
         )
-        return [_result_line("COMPLETE")]
+        return [_result_line("COMPLETE")], ""
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _weaken)
     prover = _make_prover(
@@ -372,9 +372,9 @@ def test_run_end_to_end_verifies_mocked_numina_result(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         (workdir / "MILExample.lean").write_text(_SOLVED_FILE)
-        return [_result_line("COMPLETE")]
+        return [_result_line("COMPLETE")], ""
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _solve)
     prover = _make_prover(max_rounds=4)
@@ -404,10 +404,10 @@ def test_run_reuses_one_sandbox_across_rounds_and_verify(
         workdir: Path,
         harness: Harness,
         session: object | None = None,
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         assert session is not None  # rounds exec in the live session
         (workdir / "MILExample.lean").write_text(_SOLVED_FILE)
-        return [_result_line("COMPLETE")]
+        return [_result_line("COMPLETE")], ""
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _solve)
     # Keep the session sandbox dependency-free (no real credential mounts).

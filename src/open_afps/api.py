@@ -184,6 +184,30 @@ class SolveResult:
         """Sum of known per-prover costs (entries without a cost contribute 0)."""
         return sum(r.cost_usd for r in self.results if r.cost_usd is not None)
 
+    def download_wd(self, dest: Path | str) -> Path:
+        """Clone every prover's working directory into ``dest/<prover>/``.
+
+        Convenience fan-out over :meth:`ProofResult.download_wd`; provers that never
+        produced a workdir (failed before generation) are skipped.
+        """
+        dest = Path(dest)
+        for r in self.results:
+            if r.artifacts_dir and Path(r.artifacts_dir).is_dir():
+                r.download_wd(dest / r.prover)
+        return dest
+
+    def download_logs(self, dest: Path | str) -> Path:
+        """Copy every prover's logs into ``dest/<prover>/``.
+
+        Convenience fan-out over :meth:`ProofResult.download_logs`; provers without a
+        logs directory are skipped.
+        """
+        dest = Path(dest)
+        for r in self.results:
+            if r.logs_dir and Path(r.logs_dir).is_dir():
+                r.download_logs(dest / r.prover)
+        return dest
+
     def to_dict(self, *, log_limit: int = 4000) -> dict[str, object]:
         best = self.best()
         return {
@@ -292,7 +316,10 @@ class Platform:
                 label = f"{label}_{seen[label]}"
             else:
                 seen[label] = 0
-            workdir = run_dir / label
+            # Each run stages as ``<run>/<label>/{wd,logs}/``: ``wd`` is the proof
+            # project (``download_wd``), ``logs`` its run record (``download_logs``).
+            # The base ``run`` creates the ``logs`` sibling.
+            workdir = run_dir / label / "wd"
             workdir.mkdir(parents=True, exist_ok=True)
             jobs.append((label, prover, workdir))
 
@@ -324,6 +351,7 @@ class Platform:
                 prover=label,
                 verification=None,
                 artifacts_dir=workdir,
+                logs_dir=workdir.parent / "logs",
                 error=f"{type(exc).__name__}: {exc}",
             )
 

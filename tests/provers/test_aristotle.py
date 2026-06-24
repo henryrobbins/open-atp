@@ -47,7 +47,7 @@ def _fake_result(*, solved: bool) -> object:
         project_dir: Path,
         prompt: str,
         dest_tar: Path,
-        run_dir: Path,
+        logs_dir: Path,
     ) -> tuple[Path, dict[str, object]]:
         # Real Aristotle archives wrap everything under a single top-level dir;
         # mirror that so the test exercises _extract_over's unwrapping.
@@ -60,13 +60,13 @@ def _fake_result(*, solved: bool) -> object:
                 info = tarfile.TarInfo(f"{project_dir.name}_aristotle/{name}")
                 info.size = len(data)
                 tar.addfile(info, io.BytesIO(data))
-        # Stand in for the real run-info sync so prove() sees a populated run_dir.
-        run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "events.json").write_text("[]")
+        # Stand in for the real run-info sync so prove() sees a populated logs dir.
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        (logs_dir / "events.json").write_text("[]")
         return dest_tar, {
             "project_id": "test-123",
             "task_status": "COMPLETE",
-            "run_dir": str(run_dir),
+            "logs_dir": str(logs_dir),
         }
 
     return _stub
@@ -93,7 +93,7 @@ def test_prove_extracts_result_and_reports_changed_files(
     assert output.metadata["project_id"] == "test-123"
     assert "Summary" in output.logs
     # The run record was synced to the host alongside the workdir.
-    assert Path(output.metadata["run_dir"]).joinpath("events.json").is_file()
+    assert Path(output.metadata["logs_dir"]).joinpath("events.json").is_file()
 
 
 @pytest.mark.docker

@@ -212,12 +212,12 @@ def test_prove_reports_changes_and_session_cost(
 
     def _fake_run_agent(
         self: AgentProver, workdir: Path, harness: Harness
-    ) -> list[str]:
+    ) -> tuple[list[str], str]:
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
         # The real vibe run writes this; emulate it so parse() finds the cost.
         assert isinstance(harness, VibeHarness)
         _write_session_log(harness._session_log_dir, _session_stats())
-        return STREAM_LINES
+        return STREAM_LINES, ""
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     prover = _make_prover()
@@ -227,6 +227,12 @@ def test_prove_reports_changes_and_session_cost(
 
     assert (workdir / "MILExample.lean").read_text() == SOLVED_FILE
     assert list(output.completed_files) == ["MILExample.lean"]
+    # The session log was relocated out of the workdir into the run's logs dir, so
+    # download_wd stays the proof project and download_logs carries the record.
+    logs_dir = workdir.parent / "logs"
+    assert not (workdir / ".vibe" / "logs").exists()
+    assert (logs_dir / "vibe-session").is_dir()
+    assert list((logs_dir / "vibe-session").rglob("meta.json"))
     # Cost flows straight from the session log (vibe never self-reports in stdout).
     assert output.cost_usd == pytest.approx(0.0119204)
     assert output.metadata["harness"] == "vibe"
