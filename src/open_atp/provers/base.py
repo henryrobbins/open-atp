@@ -161,9 +161,9 @@ class AutomatedProver(abc.ABC):
         timeout_s: int = 1800,
         env: dict[str, str] | None = None,
     ) -> None:
-        #: Wall-clock budget for the generation run, in seconds.
+        # Documented as a class Parameter above; not a separately documented member.
         self.timeout_s = timeout_s
-        #: Extra environment variables exported into the run.
+        # Documented as a class Parameter above; not a separately documented member.
         self.env = dict(env or {})
         # The backend's image carries the toolchain + Mathlib pins the verifier rejects
         # mismatched projects against. Agentic provers reuse this same backend (via a
@@ -187,10 +187,23 @@ class AutomatedProver(abc.ABC):
     def prove(self, task: ProofTask, output_dir: Path | str) -> ProofResult:
         """Full lifecycle: reject-on-mismatch, generate, verify, write the result.
 
-        ``output_dir`` is caller-chosen and is populated as ``output_dir/{wd,logs}/``:
-        ``wd`` is the completed lake project (the proof output) and ``logs`` is the run
-        record (the agent ``stdout.txt``/``stderr.txt``, ``result.json``, and any
-        harness-specific rich logs).
+        Parameters
+        ----------
+        task : ~open_atp.lean.ProofTask
+            The unit of work: the lake project to complete, the optional
+            :attr:`~open_atp.lean.ProofTask.targets` to focus on, and any
+            :attr:`~open_atp.lean.ProofTask.user_prompt` guidance.
+        output_dir : pathlib.Path or str
+            Caller-chosen output directory, populated as ``output_dir/{wd,logs}/``:
+            ``wd`` is the completed lake project (the proof output) and ``logs`` is
+            the run record (the agent ``stdout.txt``/``stderr.txt``, ``result.json``,
+            and any harness-specific rich logs).
+
+        Returns
+        -------
+        ProofResult
+            The verification verdict and run metadata, pointing at the populated
+            :attr:`~ProofResult.wd` and :attr:`~ProofResult.logs_dir`.
         """
         self.verifier.check_compatible(task.project)
 

@@ -122,8 +122,17 @@ class AgentProver(AutomatedProver):
         tree. Default ``["lean-proof"]``; an empty list mounts none. Staged into
         every skill-supporting harness's location; ignored by ax-prover.
     extra_env : dict[str, str], optional
-        Additional environment variables forwarded into the agent sandbox. Default
-        empty.
+        Additional environment variables forwarded into the agent sandbox, applied
+        after :attr:`env`. Default empty.
+    timeout_s : int
+        Wall-clock budget for the generation run, in seconds. Default ``1800``.
+    env : dict[str, str], optional
+        Extra environment variables exported into the run. Default empty.
+
+    Attributes
+    ----------
+    prover_prompt : str
+        The prover's own prompt handed to the agent, before any user prompt.
 
     Examples
     --------

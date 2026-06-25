@@ -33,7 +33,7 @@ The concrete candidate generators.
 ```{eval-rst}
 .. autoclass:: open_atp.provers.agent_prover.AgentProver
    :show-inheritance:
-   :exclude-members: name
+   :exclude-members: name, harness, skills, extra_env, env, timeout_s, prover_prompt
 ```
 
 `AgentProver`'s `harness` is a {class}`~open_atp.harness.Harness` — pick the
@@ -46,7 +46,7 @@ are documented under {doc}`harness`.
 ```{eval-rst}
 .. autoclass:: open_atp.provers.numina.NuminaProver
    :show-inheritance:
-   :exclude-members: name
+   :exclude-members: name, skills, extra_env, env, timeout_s, max_rounds, max_consecutive_limits, helper_env_keys, guard_statements, on_statement_change, prover_prompt
 ```
 
 ### AristotleProver
@@ -54,7 +54,7 @@ are documented under {doc}`harness`.
 ```{eval-rst}
 .. autoclass:: open_atp.provers.aristotle.AristotleProver
    :show-inheritance:
-   :exclude-members: name
+   :exclude-members: name, api_key_env, allow_agent_questions, max_connection_retries, max_resume_attempts, resume_backoff_seconds, env, timeout_s, prover_prompt
 ```
 
 ## Standard catalog

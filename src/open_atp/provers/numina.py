@@ -143,8 +143,18 @@ class NuminaProver(AgentProver):
         restores the originals; ``warn`` restores and continues. Default ``error``
         (rejects; safe).
     extra_env : dict[str, str], optional
-        Additional environment variables forwarded into the agent sandbox. Default
-        empty.
+        Additional environment variables forwarded into the agent sandbox, applied
+        after :attr:`env`. Default empty.
+    timeout_s : int
+        Wall-clock budget for the generation run, in seconds. Default ``1800``.
+    env : dict[str, str], optional
+        Extra environment variables exported into the run. Default empty.
+
+    Attributes
+    ----------
+    prover_prompt : str
+        The prover's own prompt -- Numina's coordinator scaffold plus the round
+        protocol -- handed to the agent, before any user prompt.
 
     Examples
     --------

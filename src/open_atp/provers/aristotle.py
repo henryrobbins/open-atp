@@ -94,6 +94,15 @@ class AristotleProver(AutomatedProver):
     resume_backoff_seconds : float
         Initial sleep between retries/resumes, doubling (capped) between tries.
         Default ``5.0``.
+    timeout_s : int
+        Wall-clock budget for the generation run, in seconds. Default ``1800``.
+    env : dict[str, str], optional
+        Extra environment variables exported into the run. Default empty.
+
+    Attributes
+    ----------
+    prover_prompt : str
+        The prover's own prompt handed to Aristotle, before any user prompt.
 
     Examples
     --------
