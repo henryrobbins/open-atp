@@ -225,6 +225,13 @@ member that isn't a method. So the split is:
 - **Constructor params and attributes** (instance state + `@property`) live **only in
   the docstring**, in `Parameters`/`Attributes` sections. The hook hides them as
   members, so they render once, from the prose. Never re-list them with `:members:`.
+- **List each name once — `Parameters` *or* `Attributes`, never both** (the
+  numpy/scipy/sklearn convention). A constructor arg stored verbatim as an attribute is
+  documented only under `Parameters`; readers know `self.<arg>` exists without it being
+  repeated. `Attributes` is reserved for state **not** in the signature: `@property`
+  (e.g. `Harness.command`, `Verifier.image`) and derived/computed fields. If a
+  `@property` shares a name with a param (e.g. `OpenCodeHarness.provider`), document the
+  resolution in the param and leave it out of `Attributes`.
 - **Methods** are the only members `autoclass` enumerates. Document each method **once,
   on the class that defines it.**
 - **Inheritance**: numpydoc does *not* walk the MRO, so each leaf class must

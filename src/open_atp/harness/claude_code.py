@@ -37,11 +37,6 @@ class ClaudeCodeHarness(Harness):
         credentials on a key clash. Default none.
     optional_env : tuple[str, ...], optional
         Best-effort credential names forwarded from the host when present. Default none.
-
-    Attributes
-    ----------
-    plugins : list[str]
-        Claude Code plugins to load (names or paths).
     """
 
     name = "claude_code"

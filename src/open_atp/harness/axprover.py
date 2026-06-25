@@ -67,12 +67,6 @@ class AxProverHarness(Harness):
         credentials on a key clash. Default none.
     optional_env : tuple[str, ...], optional
         Best-effort credential names forwarded from the host when present. Default none.
-
-    Attributes
-    ----------
-    max_iterations : int or None
-        Cap on ax-prover's proposer->builder->reviewer loop, or ``None`` for its
-        default (50).
     """
 
     name = "axprover"

@@ -117,10 +117,6 @@ class Harness(ABC):
 
     Attributes
     ----------
-    model : str
-        Model id this harness runs.
-    effort : str
-        Reasoning-effort level passed to harnesses that support it.
     command : str
         Bash command the backend runs to launch the agent (read-only property).
     """

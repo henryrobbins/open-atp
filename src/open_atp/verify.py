@@ -114,8 +114,6 @@ class Verifier:
 
     Attributes
     ----------
-    backend : ComputeBackend
-        The sandbox the candidate project is compiled in.
     image : ~open_atp.images.Image
         The image ``backend`` runs -- the compatibility contract projects must
         match (toolchain + locked Mathlib revision).

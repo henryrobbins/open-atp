@@ -37,11 +37,6 @@ class OpenCodeHarness(Harness):
         credentials on a key clash. Default none.
     optional_env : tuple[str, ...], optional
         Best-effort credential names forwarded from the host when present. Default none.
-
-    Attributes
-    ----------
-    provider : str
-        API provider, taken from config or inferred from the model prefix.
     """
 
     name = "opencode"

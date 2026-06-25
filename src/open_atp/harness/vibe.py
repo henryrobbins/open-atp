@@ -57,15 +57,6 @@ class VibeHarness(Harness):
         credentials on a key clash. Default none.
     optional_env : tuple[str, ...], optional
         Best-effort credential names forwarded from the host when present. Default none.
-
-    Attributes
-    ----------
-    agent : str
-        The vibe agent profile this harness drives.
-    max_turns : int or None
-        ``vibe -p`` turn guard, or ``None`` when unset.
-    max_price : float or None
-        ``vibe -p`` price guard, or ``None`` when unset.
     """
 
     name = "vibe"
