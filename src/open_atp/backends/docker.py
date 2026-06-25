@@ -39,6 +39,7 @@ class DockerCommandHandle(CommandHandle):
     _stdout_lines: list[str] = field(default_factory=list)
 
     def stream(self) -> Iterator[str]:
+        """Yield the container's stdout lines as they arrive, retaining each."""
         assert self.popen.stdout is not None
         for line in self.popen.stdout:
             line = line.rstrip("\n")
@@ -46,6 +47,7 @@ class DockerCommandHandle(CommandHandle):
             yield line
 
     def cancel(self) -> None:
+        """``docker kill`` the container (bind-mounted artifacts already on host)."""
         # The workdir is bind-mounted, so partial artifacts are already on the host;
         # just kill the container.
         subprocess.run(
@@ -55,6 +57,7 @@ class DockerCommandHandle(CommandHandle):
         )
 
     def wait(self) -> CommandResult:
+        """Block for the container to exit and collect its captured output."""
         stdout, stderr = self.popen.communicate()
         # communicate() returns "" for streams already drained via stream().
         out = stdout if stdout else "\n".join(self._stdout_lines)
@@ -77,7 +80,7 @@ class DockerSessionHandle(DockerCommandHandle):
     """
 
     def cancel(self) -> None:
-        pass
+        """No-op: the owning session, not the handle, kills the container."""
 
 
 class DockerBackend(ComputeBackend):
@@ -146,6 +149,7 @@ class DockerBackend(ComputeBackend):
 
     @property
     def name(self) -> str:
+        """Short identifier for the backend: ``"docker"``."""
         return "docker"
 
     def _wrap(self, command: str) -> str:
@@ -161,6 +165,28 @@ class DockerBackend(ComputeBackend):
         *,
         detach: bool = False,
     ) -> list[str]:
+        """Build the ``docker run`` argv: workdir + extra mounts, env, and image.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory bind-mounted at :attr:`workdir_mount`.
+        container : str
+            ``--name`` for the container, so a run can later be ``docker kill``ed.
+        env : Mapping[str, str]
+            Per-call environment variables, merged over the backend's :attr:`env`.
+        mounts : Sequence[tuple[str, str]]
+            Extra ``(host_path, container_path)`` bind mounts appended after
+            :attr:`volumes`.
+        detach : bool
+            Add ``-d`` for a keep-alive session container (commands then land via
+            ``docker exec``). Default ``False``.
+
+        Returns
+        -------
+        list[str]
+            The ``docker run`` argv, up to but not including the in-container command.
+        """
         cmd = ["docker", "run", "--rm"]
         if detach:
             # Keep-alive container for a session; commands land via ``docker exec``.
@@ -184,6 +210,34 @@ class DockerBackend(ComputeBackend):
         mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
+        """``docker run`` ``command`` with ``workdir`` bind-mounted, returning a handle.
+
+        Edits land on the host directly via the bind mount, so there is no copy-out
+        step; the unique container name lets :meth:`DockerCommandHandle.cancel` kill it.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory bind-mounted at :attr:`workdir_mount`; the command's edits
+            land here directly.
+        command : str
+            The shell command to run inside the container.
+        env : Mapping[str, str], optional
+            Per-call environment variables, merged over the backend's :attr:`env`.
+            Default empty.
+        mounts : Sequence[tuple[str, str]], optional
+            Extra ``(host_path, container_path)`` bind mounts (e.g. agent credential
+            dirs). Default empty.
+        timeout_s : int, optional
+            Unused by Docker (the container has no built-in cap); callers enforce
+            timeouts on the handle. Default ``None``.
+
+        Returns
+        -------
+        CommandHandle
+            A live :class:`DockerCommandHandle` to stream or :meth:`~CommandHandle.wait`
+            on.
+        """
         container = f"afps-{uuid.uuid4().hex[:12]}"
         argv = self._build_cmd(workdir, container, env or {}, mounts or ())
         argv += ["bash", "-lc", self._wrap(command)]
@@ -206,6 +260,29 @@ class DockerBackend(ComputeBackend):
         mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> ComputeSession:
+        """Start a detached keep-alive container for repeated ``docker exec`` commands.
+
+        All mounts are wired at ``docker run`` time (Docker can't add them per-exec);
+        the container lives until :meth:`DockerSession.close`.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory bind-mounted at :attr:`workdir_mount` for the session's life.
+        env : Mapping[str, str], optional
+            Environment variables pinned on the container at creation, merged over the
+            backend's :attr:`env`. Default empty.
+        mounts : Sequence[tuple[str, str]], optional
+            Extra ``(host_path, container_path)`` bind mounts wired at creation (Docker
+            can't add them per-exec). Default empty.
+        timeout_s : int, optional
+            Unused by Docker (the container has no built-in cap). Default ``None``.
+
+        Returns
+        -------
+        ComputeSession
+            A live :class:`DockerSession` over the workdir.
+        """
         # A detached keep-alive container (the workdir bind-mounted, all mounts wired
         # at run time since Docker can't add them per-exec); commands land via
         # ``docker exec`` until close() kills it.
@@ -240,6 +317,23 @@ class DockerSession(ComputeSession):
         env: Mapping[str, str] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
+        """``docker exec`` ``command`` into the container; close() owns teardown.
+
+        Parameters
+        ----------
+        command : str
+            The shell command to run in the live container.
+        env : Mapping[str, str], optional
+            Per-command environment variables (``docker exec -e``). Default empty.
+        timeout_s : int, optional
+            Unused by Docker (the container has no built-in cap). Default ``None``.
+
+        Returns
+        -------
+        CommandHandle
+            A live :class:`DockerSessionHandle` whose ``cancel`` is a no-op (the session
+            owns teardown).
+        """
         argv = ["docker", "exec"]
         for key, value in (env or {}).items():
             argv += ["-e", f"{key}={value}"]
@@ -256,12 +350,13 @@ class DockerSession(ComputeSession):
         )
 
     def sync_out(self) -> None:
-        pass  # bind mount: edits are already on the host
+        """No-op: the bind mount means edits are already on the host."""
 
     def sync_in(self) -> None:
-        pass  # bind mount: host edits are already visible in the container
+        """No-op: the bind mount means host edits are already visible in-container."""
 
     def close(self) -> None:
+        """``docker kill`` the keep-alive container. Idempotent."""
         # Idempotent: killing an already-gone container just errors out quietly.
         subprocess.run(
             ["docker", "kill", self.container],

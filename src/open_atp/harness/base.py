@@ -139,6 +139,11 @@ class Harness(ABC):
         The backend has already ``cd``'d into the workdir and symlinked ``.lake``;
         we export ``$PROMPT`` from the written prompt file (the launch scripts
         reference it) and run the rendered script.
+
+        Returns
+        -------
+        str
+            The bash one-liner that exports ``$PROMPT`` and runs ``agent.sh``.
         """
         return f'export PROMPT="$(cat {PROMPT_FILE})" && bash {SCRIPT_FILE}'
 
@@ -149,6 +154,12 @@ class Harness(ABC):
         required credentials (:meth:`_required_env`, which raises if a needed key is
         absent). Mount dirs come from :meth:`_home_dirs`. Subclasses needing
         best-effort host passthrough override this (see ``NuminaHarness``).
+
+        Returns
+        -------
+        AgentAuth
+            Resolved env (name -> value) and ``(host_dir, dest_basename)`` mounts
+            the prover forwards into the sandbox.
         """
         env: dict[str, str] = {}
         env.update(self._static_env())
@@ -156,7 +167,13 @@ class Harness(ABC):
         return AgentAuth(env=env, mounts=self._home_dirs())
 
     def _static_env(self) -> dict[str, str]:
-        """Non-secret env vars to set for this harness (e.g. ``IS_SANDBOX``)."""
+        """Non-secret env vars to set for this harness (e.g. ``IS_SANDBOX``).
+
+        Returns
+        -------
+        dict[str, str]
+            Constant name -> value pairs; empty for the base class.
+        """
         return {}
 
     def _required_env(self) -> dict[str, str]:
@@ -164,11 +181,22 @@ class Harness(ABC):
 
         Override to read explicit constructor overrides or fall back to the host
         environment, raising if a required key is absent.
+
+        Returns
+        -------
+        dict[str, str]
+            Resolved credential name -> value pairs; empty for the base class.
         """
         return {}
 
     def _home_dirs(self) -> list[tuple[Path, str]]:
-        """``(src, basename)`` dirs to mount under the sandbox ``$HOME``."""
+        """``(src, basename)`` dirs to mount under the sandbox ``$HOME``.
+
+        Returns
+        -------
+        list[tuple[pathlib.Path, str]]
+            ``(host_dir, dest_basename)`` mount pairs; empty for the base class.
+        """
         return []
 
     def _provider_key_env(self, provider: str, explicit: str | None) -> dict[str, str]:
@@ -178,6 +206,25 @@ class Harness(ABC):
         :data:`_PROVIDER_ENV`'s name for ``provider``. Raise if neither is set. No
         format check -- OpenAI and DeepSeek keys are both ``sk-...`` and
         indistinguishable, so the key is assumed correct for the selected provider.
+
+        Parameters
+        ----------
+        provider : str
+            Provider name (see :func:`_infer_provider`) whose canonical env var the
+            key is forwarded under.
+        explicit : str, optional
+            A constructor override that takes precedence over the host environment;
+            ``None`` falls back to reading the host env.
+
+        Returns
+        -------
+        dict[str, str]
+            A single ``{env_name: key}`` pair to forward into the sandbox.
+
+        Raises
+        ------
+        RuntimeError
+            If neither ``explicit`` nor the host env supplies the key.
         """
         env_name = _PROVIDER_ENV[provider]
         key = explicit or os.environ.get(env_name)
@@ -194,6 +241,16 @@ class Harness(ABC):
         it via :meth:`stage_skills`) and *not* the prompt (the prover and task own it,
         written via :meth:`write_prompt`). Subclasses that need more (Vibe's
         VIBE_HOME, ax-prover's per-target setup) override and call ``super().stage``.
+
+        Parameters
+        ----------
+        wd : pathlib.Path
+            The agent working directory to populate; must already exist.
+
+        Raises
+        ------
+        RuntimeError
+            If ``wd`` does not exist.
         """
         if not wd.exists():
             raise RuntimeError("The agent working directory must be created first.")
@@ -205,11 +262,29 @@ class Harness(ABC):
         The prompt's *content* is owned by the prover (its prover prompt) and the task
         (the optional user prompt); the harness owns only the file location and the
         ``cat $PROMPT`` launch contract, so it provides the write mechanism.
+
+        Parameters
+        ----------
+        wd : pathlib.Path
+            The agent working directory the launch script reads the prompt from.
+        prompt : str
+            The composed prompt text to write to :data:`PROMPT_FILE`.
         """
         (wd / PROMPT_FILE).write_text(prompt)
 
     def parse(self, lines: list[str]) -> HarnessRunResult:
-        """Parse the agent's streamed JSON lines into a :class:`HarnessRunResult`."""
+        """Parse the agent's streamed JSON lines into a :class:`HarnessRunResult`.
+
+        Parameters
+        ----------
+        lines : list[str]
+            The agent's streamed stdout, one JSON object per line.
+
+        Returns
+        -------
+        HarnessRunResult
+            Token totals, cost, and stop metadata parsed from the stream.
+        """
         return self._parse_lines(lines)
 
     def collect_logs(self, wd: Path, logs_dir: Path) -> None:
@@ -222,6 +297,13 @@ class Harness(ABC):
         stays the proof project and ``download_logs`` carries the full record. Called
         after :meth:`parse` (which may read those files for cost), so moving them is
         safe.
+
+        Parameters
+        ----------
+        wd : pathlib.Path
+            The agent working directory rich log files are moved out of.
+        logs_dir : pathlib.Path
+            The run's log directory the files are relocated into.
         """
 
     def stage_skills(self, wd: Path, skill_dirs: list[Path]) -> None:
@@ -232,6 +314,14 @@ class Harness(ABC):
         not consume skills (``skills_dest is None``, e.g. ax-prover). The prover owns
         the *list* (``AgentProver.skills``, resolved by ``resolve_skill``);
         the harness owns *where* it goes.
+
+        Parameters
+        ----------
+        wd : pathlib.Path
+            The agent working directory the skills are copied into (under
+            :attr:`skills_dest`).
+        skill_dirs : list[pathlib.Path]
+            Resolved skill source dirs (each a ``<name>/SKILL.md`` tree) to copy.
         """
         if self.skills_dest is None or not skill_dirs:
             return
@@ -246,17 +336,46 @@ class Harness(ABC):
             )
 
     def _render(self, template: str) -> str:
-        """Substitute ``<<MODEL>>``/``<<EFFORT>>`` into a launch-script template."""
+        """Substitute ``<<MODEL>>``/``<<EFFORT>>`` into a launch-script template.
+
+        Parameters
+        ----------
+        template : str
+            A launch-script template with ``<<MODEL>>``/``<<EFFORT>>`` placeholders.
+
+        Returns
+        -------
+        str
+            ``template`` with the placeholders replaced by :attr:`model`/:attr:`effort`.
+        """
         return template.replace("<<MODEL>>", self.model).replace(
             "<<EFFORT>>", self.effort
         )
 
     @abstractmethod
     def _agent_command(self) -> str:
-        """The rendered contents of the workdir's ``agent.sh``."""
+        """The rendered contents of the workdir's ``agent.sh``.
+
+        Returns
+        -------
+        str
+            The fully rendered launch script for this harness.
+        """
 
     @abstractmethod
-    def _parse_lines(self, lines: list[str]) -> HarnessRunResult: ...
+    def _parse_lines(self, lines: list[str]) -> HarnessRunResult:
+        """Parse the agent's streamed JSON lines into a :class:`HarnessRunResult`.
+
+        Parameters
+        ----------
+        lines : list[str]
+            The agent's streamed stdout, one JSON object per line.
+
+        Returns
+        -------
+        HarnessRunResult
+            Token totals, cost, and stop metadata parsed from the stream.
+        """
 
 
 def _infer_provider(model: str) -> str:

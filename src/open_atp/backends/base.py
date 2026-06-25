@@ -56,7 +56,13 @@ class CommandHandle(AbstractContextManager["CommandHandle"]):
     """
 
     def stream(self) -> Iterator[str]:
-        """Yield stdout lines as they arrive."""
+        """Yield stdout lines as they arrive.
+
+        Yields
+        ------
+        str
+            Each line of the command's standard output, newline-stripped, as produced.
+        """
         raise NotImplementedError
 
     def cancel(self) -> None:
@@ -64,7 +70,13 @@ class CommandHandle(AbstractContextManager["CommandHandle"]):
         raise NotImplementedError
 
     def wait(self) -> CommandResult:
-        """Drain to completion and return the final result."""
+        """Drain to completion and return the final result.
+
+        Returns
+        -------
+        CommandResult
+            Exit code, captured stdout/stderr, and wall-clock duration.
+        """
         raise NotImplementedError
 
     def __exit__(self, *exc: object) -> None:
@@ -110,7 +122,25 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         env: Mapping[str, str] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
-        """Run ``command`` in the live sandbox; the handle does NOT tear it down."""
+        """Run ``command`` in the live sandbox; the handle does NOT tear it down.
+
+        Parameters
+        ----------
+        command : str
+            The shell command to run in the live sandbox.
+        env : Mapping[str, str], optional
+            Per-command environment variables, merged over the backend's ``env``.
+            Default empty.
+        timeout_s : int, optional
+            Wall-clock cap for the command; backends may fall back to their configured
+            ``timeout_s``. Default ``None``.
+
+        Returns
+        -------
+        CommandHandle
+            A live handle to stream or :meth:`~CommandHandle.wait` on. Its teardown hook
+            does NOT close the session.
+        """
         raise NotImplementedError
 
     def sync_out(self) -> None:
@@ -137,6 +167,21 @@ def wrap_command(workdir_mount: str, baked_lake: str, command: str) -> str:
     so uploaded projects reuse it. Identical for Docker (bind mount) and Modal (pushed
     dir), so it lives here rather than in either backend. ``baked_lake`` empty skips
     the symlink.
+
+    Parameters
+    ----------
+    workdir_mount : str
+        Path inside the sandbox to ``cd`` into before running ``command``.
+    baked_lake : str
+        Image-baked olean cache to symlink the workdir's ``.lake`` to; empty skips the
+        symlink.
+    command : str
+        The command to run once the cache is wired.
+
+    Returns
+    -------
+    str
+        A single shell string: the cache prep followed by ``command``.
     """
     prep = f"cd {workdir_mount}"
     if baked_lake:
@@ -208,6 +253,28 @@ class ComputeBackend(abc.ABC):
         ``mounts`` are extra ``(host_path, container_path)`` bind mounts beyond the
         workdir -- used to forward agent credential dirs (e.g. Codex's ``~/.codex``)
         per run, without baking them into the backend config.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory mounted/synced into the sandbox; file mutations are synced
+            back out on completion.
+        command : str
+            The shell command to run inside the sandbox.
+        env : Mapping[str, str], optional
+            Per-call environment variables, merged over the backend's :attr:`env`.
+            Default empty.
+        mounts : Sequence[tuple[str, str]], optional
+            Extra ``(host_path, container_path)`` bind mounts beyond the workdir (e.g.
+            agent credential dirs). Default empty.
+        timeout_s : int, optional
+            Wall-clock cap for the command; falls back to the backend's
+            :attr:`timeout_s`. Default ``None``.
+
+        Returns
+        -------
+        CommandHandle
+            A live handle to stream or :meth:`~CommandHandle.wait` on.
         """
 
     @abc.abstractmethod
@@ -228,6 +295,26 @@ class ComputeBackend(abc.ABC):
         ``env``/``mounts`` here pin the long-lived sandbox at creation (Docker bind
         mounts can only be set at ``docker run``); per-command credentials go to
         :meth:`ComputeSession.exec`'s own ``env``.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory mounted/synced into the sandbox for the session's life.
+        env : Mapping[str, str], optional
+            Environment variables pinned on the sandbox at creation, merged over the
+            backend's :attr:`env`. Default empty.
+        mounts : Sequence[tuple[str, str]], optional
+            Extra ``(host_path, container_path)`` mounts pinned at creation. Default
+            empty.
+        timeout_s : int, optional
+            Wall-clock cap for the sandbox; falls back to the backend's
+            :attr:`timeout_s`. Default ``None``.
+
+        Returns
+        -------
+        ComputeSession
+            A live session over the workdir; close it via
+            :meth:`ComputeSession.close` (use as a context manager).
         """
 
     def run(
@@ -239,7 +326,29 @@ class ComputeBackend(abc.ABC):
         mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> CommandResult:
-        """Convenience: :meth:`start` then block via :meth:`CommandHandle.wait`."""
+        """Convenience: :meth:`start` then block via :meth:`CommandHandle.wait`.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory mounted/synced into the sandbox; mutations sync back out.
+        command : str
+            The shell command to run inside the sandbox.
+        env : Mapping[str, str], optional
+            Per-call environment variables, merged over the backend's :attr:`env`.
+            Default empty.
+        mounts : Sequence[tuple[str, str]], optional
+            Extra ``(host_path, container_path)`` bind mounts beyond the workdir.
+            Default empty.
+        timeout_s : int, optional
+            Wall-clock cap for the command; falls back to the backend's
+            :attr:`timeout_s`. Default ``None``.
+
+        Returns
+        -------
+        CommandResult
+            Exit code, captured stdout/stderr, and wall-clock duration.
+        """
         with self.start(
             workdir, command, env=env, mounts=mounts, timeout_s=timeout_s
         ) as handle:

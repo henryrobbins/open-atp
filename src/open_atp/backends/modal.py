@@ -99,6 +99,7 @@ class ModalCommandHandle(CommandHandle):
     _buf: str = ""
 
     def stream(self) -> Iterator[str]:
+        """Yield stdout split into lines, re-buffering Modal's arbitrary chunks."""
         # Modal's StreamReader defaults to by_line=False, so iterating proc.stdout
         # yields arbitrary chunks (a chunk may hold several JSON objects, or split
         # one). Re-buffer and split on newlines so we honour the line-delimited
@@ -123,6 +124,7 @@ class ModalCommandHandle(CommandHandle):
             self._buf = ""
 
     def cancel(self) -> None:
+        """Pull partial artifacts (best effort), then terminate the Sandbox."""
         # No per-exec kill on a Sandbox, so pull partial artifacts (best effort) and
         # then terminate -- terminating is the authoritative kill and also ensures we
         # never leak compute. Idempotent: safe to call after wait() already tore down.
@@ -130,6 +132,7 @@ class ModalCommandHandle(CommandHandle):
         _terminate(self.sb)
 
     def wait(self) -> CommandResult:
+        """Flush stdout, pull the workdir + stderr back, then terminate the Sandbox."""
         # Draining stdout (above) usually fills _stdout_lines; flush any unread
         # chunks plus the trailing partial line, then return the exit code.
         self._flush()
@@ -157,9 +160,10 @@ class ModalSessionHandle(ModalCommandHandle):
     """
 
     def cancel(self) -> None:
-        pass
+        """No-op: the owning session, not the handle, terminates the Sandbox."""
 
     def wait(self) -> CommandResult:
+        """Flush stdout and read stderr, leaving the Sandbox up for the session."""
         self._flush()
         exit_code = self.proc.wait()
         stderr = _pull_stderr(self.sb)
@@ -302,9 +306,11 @@ class ModalBackend(ComputeBackend):
 
     @property
     def name(self) -> str:
+        """Short identifier for the backend: ``"modal"``."""
         return "modal"
 
     def _wrap(self, command: str) -> str:
+        """cd into the workdir and wire the warm Mathlib cache before ``command``."""
         return wrap_command(REMOTE_WD, BAKED_LAKE, command)
 
     def _provision(
@@ -374,6 +380,34 @@ class ModalBackend(ComputeBackend):
         mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
+        """Provision a Sandbox, push ``workdir`` in, and launch ``command`` in it.
+
+        The handle pulls the workdir back out and terminates the Sandbox on
+        :meth:`ModalCommandHandle.wait`/``cancel``.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory pushed into the Sandbox before launch and pulled back out on
+            completion (so completed proofs land on the host).
+        command : str
+            The shell command to run inside the Sandbox.
+        env : Mapping[str, str], optional
+            Per-call environment variables, merged over the backend's :attr:`env`.
+            Default empty.
+        mounts : Sequence[tuple[str, str]], optional
+            Extra ``(host_path, container_path)`` dirs pushed into the Sandbox (e.g.
+            agent credential dirs). Default empty.
+        timeout_s : int, optional
+            Wall-clock cap for the Sandbox; falls back to the backend's
+            :attr:`timeout_s`. Default ``None``.
+
+        Returns
+        -------
+        CommandHandle
+            A live :class:`ModalCommandHandle` to stream or :meth:`~CommandHandle.wait`
+            on.
+        """
         _require_modal()
         sb = self._provision(workdir, env, mounts, timeout_s)
         try:
@@ -403,6 +437,31 @@ class ModalBackend(ComputeBackend):
         mounts: Sequence[tuple[str, str]] | None = None,
         timeout_s: int | None = None,
     ) -> ComputeSession:
+        """Provision a Sandbox over ``workdir`` and keep it alive for many execs.
+
+        The Sandbox lives until :meth:`ModalSession.close`; ``env``/``mounts`` pin it
+        at creation.
+
+        Parameters
+        ----------
+        workdir : pathlib.Path
+            Host directory pushed into the Sandbox at creation; bridge it back with
+            :meth:`ModalSession.sync_out`.
+        env : Mapping[str, str], optional
+            Environment variables pinned on the Sandbox at creation, merged over the
+            backend's :attr:`env`. Default empty.
+        mounts : Sequence[tuple[str, str]], optional
+            Extra ``(host_path, container_path)`` dirs pushed in at creation. Default
+            empty.
+        timeout_s : int, optional
+            Wall-clock cap for the Sandbox; falls back to the backend's
+            :attr:`timeout_s`. Default ``None``.
+
+        Returns
+        -------
+        ComputeSession
+            A live :class:`ModalSession` over the workdir.
+        """
         _require_modal()
         sb = self._provision(workdir, env, mounts, timeout_s)
         return ModalSession(backend=self, sb=sb, workdir=workdir)
@@ -428,6 +487,25 @@ class ModalSession(ComputeSession):
         env: Mapping[str, str] | None = None,
         timeout_s: int | None = None,
     ) -> CommandHandle:
+        """Exec ``command`` in the live Sandbox; close() owns teardown.
+
+        Parameters
+        ----------
+        command : str
+            The shell command to run in the live Sandbox.
+        env : Mapping[str, str], optional
+            Per-command environment variables, forwarded as a one-off Modal secret
+            (usually empty -- credentials pin at session creation). Default empty.
+        timeout_s : int, optional
+            Unused per-exec; the cap is fixed on the Sandbox at creation. Default
+            ``None``.
+
+        Returns
+        -------
+        CommandHandle
+            A live :class:`ModalSessionHandle` whose ``wait`` leaves the Sandbox up for
+            the next command.
+        """
         import modal
 
         # Per-command env is rare (the agent's creds are pinned at session create), so
@@ -447,12 +525,15 @@ class ModalSession(ComputeSession):
         )
 
     def sync_out(self) -> None:
+        """Tar the Sandbox workdir back out over the host ``workdir``."""
         _pull_wd(self.sb, self.workdir)
 
     def sync_in(self) -> None:
+        """Tar the host ``workdir`` up into the Sandbox."""
         _push_dir(self.sb, self.workdir, REMOTE_WD)
 
     def close(self) -> None:
+        """Pull final artifacts, then terminate the Sandbox. Idempotent."""
         # Pull final artifacts, then terminate. Both are best-effort/idempotent, so a
         # second close() (or close after a failed exec) is safe.
         _pull_wd(self.sb, self.workdir)
