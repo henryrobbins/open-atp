@@ -39,6 +39,19 @@ def _load_dotenv(path: Path) -> None:
 _load_dotenv(_ENV_FILE)
 
 
+# The no-Docker prover/harness unit tests stub the agent run but still build the
+# harness auth, which only checks each provider key is *present* (the value is
+# never used off the live path). Seed placeholders so the suite is self-contained
+# without a local ``.env`` (e.g. on CI). ``setdefault`` keeps real creds -- needed
+# by the opt-in live tests -- authoritative when they are set.
+for _placeholder_env in (
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "MISTRAL_API_KEY",
+):
+    os.environ.setdefault(_placeholder_env, "test-placeholder")
+
+
 class _FakeHandle(CommandHandle):
     """A finished, output-less command -- enough for an in-session verify exec."""
 
