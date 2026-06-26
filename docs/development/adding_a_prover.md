@@ -9,12 +9,13 @@ depending on what you are wrapping:
   ax-prover are all the *same*
   {class}`~open_atp.provers.agent_prover.AgentProver` composed with a different
   {class}`~open_atp.harness.base.Harness`. To add another CLI you write a **harness**,
-  not a prover. Start at [Route A](#route-a-a-new-agent-harness).
+  not a prover. Start at [Route A](#route-a).
 - **A genuinely different prover** — one that doesn't drive an agent CLI over a staged
   workdir (e.g. a hosted API like Aristotle). Subclass
   {class}`~open_atp.provers.base.AutomatedProver` directly. See
-  [Route B](#route-b-a-new-prover-type).
+  [Route B](#route-b).
 
+(route-a)=
 ## Route A: a new agent harness
 
 A {class}`~open_atp.harness.base.Harness` adapts one agent CLI to the sandbox: its
@@ -84,6 +85,7 @@ Add unit tests under `tests/harness/` (parsing, credential resolution, staging) 
 `tests/harness/test_vibe.py`. The live, billable end-to-end path is covered by the
 `agent_api` marker — opt-in only (`make test-agent`), never in the default suite.
 
+(route-b)=
 ## Route B: a new prover type
 
 For a prover that isn't an agent-over-workdir, subclass
