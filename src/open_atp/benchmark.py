@@ -20,14 +20,18 @@ public Lean benchmarks (`PutnamBench
 <https://github.com/trishullab/PutnamBench/tree/main/lean4/src>`_, `FATE
 <https://github.com/frenzymath/FATE>`_): a flat directory of standalone ``.lean``
 files, optionally with subdirectories grouping several files into one task.
+:func:`download_dataset` fetches one of those benchmarks (a :class:`DATASET` member)
+straight to such a directory.
 """
 
 from __future__ import annotations
 
 import json
+import subprocess
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from open_atp.images import SKELETON_DIR
@@ -229,3 +233,83 @@ def _subdir_project(subdir: Path, skeleton: Path) -> LeanProject | None:
         return None
     dest = Path(tempfile.mkdtemp()) / subdir.name
     return create_project(lean_files, dest, skeleton=skeleton)
+
+
+class DATASET(Enum):
+    """The public Lean benchmark datasets accepted by :func:`download_dataset`.
+
+    Each member's value is the directory name the dataset is cloned into. PutnamBench
+    pins an older Lean (``v4.27.0``) than the default skeleton, so stage it with a
+    matching ``skeleton`` (see :func:`tasks_from_dir`); the FATE datasets are on the
+    default ``v4.28.0``.
+    """
+
+    #: `PutnamBench <https://github.com/trishullab/PutnamBench>`_ (Lean 4).
+    PUTNAM = "putnam"
+    #: `FATE-H <https://github.com/frenzymath/FATE-H>`_ (hard).
+    FATE_H = "fate-h"
+    #: `FATE-M <https://github.com/frenzymath/FATE-M>`_ (medium).
+    FATE_M = "fate-m"
+    #: `FATE-X <https://github.com/frenzymath/FATE-X>`_ (extra).
+    FATE_X = "fate-x"
+
+
+#: Each dataset's GitHub ``owner/name`` and the subdirectory holding its ``.lean``
+#: task files. Package-internal: :func:`download_dataset` clones from it.
+_DATASETS: dict[DATASET, tuple[str, str]] = {
+    DATASET.PUTNAM: ("trishullab/PutnamBench", "lean4/src"),
+    DATASET.FATE_H: ("frenzymath/FATE-H", "FATEH"),
+    DATASET.FATE_M: ("frenzymath/FATE-M", "FATEM"),
+    DATASET.FATE_X: ("frenzymath/FATE-X", "FATEX"),
+}
+
+
+def download_dataset(
+    dataset: DATASET,
+    dest: Path | str,
+    *,
+    ref: str | None = None,
+) -> Path:
+    """Download a benchmark dataset's task directory under ``dest``.
+
+    Sparse-clones only the dataset's task subdirectory (shallow + blobless) into
+    ``dest/<dataset>`` and returns the path to that subdirectory -- a directory of
+    ``.lean`` files ready for :func:`tasks_from_dir`. An already-present download is
+    reused as-is (the clone is skipped), so repeated calls are cheap.
+
+    Parameters
+    ----------
+    dataset : DATASET
+        Which benchmark to fetch.
+    dest : pathlib.Path or str
+        Directory to clone into; the repo lands at ``dest/<dataset>``. Created if
+        missing.
+    ref : str, optional
+        Branch or tag to check out. Default ``None`` -- the repo's default branch.
+
+    Returns
+    -------
+    pathlib.Path
+        The dataset's task directory (``dest/<dataset>/<subdir>``).
+    """
+    repo, subdir = _DATASETS[dataset]
+    dest = Path(dest)
+    repo_dir = dest / dataset.value
+    task_dir = repo_dir / subdir
+    if task_dir.is_dir():
+        return task_dir
+
+    dest.mkdir(parents=True, exist_ok=True)
+    url = f"https://github.com/{repo}.git"
+    clone = ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse"]
+    if ref is not None:
+        clone += ["--branch", ref]
+    clone += [url, str(repo_dir)]
+    subprocess.run(clone, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo_dir), "sparse-checkout", "set", subdir], check=True
+    )
+
+    if not task_dir.is_dir():
+        raise FileNotFoundError(f"{repo} has no {subdir!r} at ref {ref or 'default'}")
+    return task_dir

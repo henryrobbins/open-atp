@@ -10,9 +10,18 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from pathlib import Path
 
-from open_atp.benchmark import run_benchmark, tasks_from_dir
+import pytest
+
+from open_atp import benchmark
+from open_atp.benchmark import (
+    DATASET,
+    download_dataset,
+    run_benchmark,
+    tasks_from_dir,
+)
 from open_atp.lean import LeanProject, ProofTask
 
 from .test_api import FIXTURE, FakeProver
@@ -151,3 +160,42 @@ def test_skips_hidden_and_empty_dirs(tmp_path: Path) -> None:
     tasks = tasks_from_dir(bench, skeleton=skeleton)
 
     assert set(tasks) == {"keep"}
+
+
+# --- download_dataset ------------------------------------------------------
+
+
+def test_sparse_clones_the_subdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **_: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(cmd)
+        if "clone" in cmd:  # emulate the clone materializing repo + subdir
+            (Path(cmd[-1]) / "lean4" / "src").mkdir(parents=True)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(benchmark.subprocess, "run", fake_run)
+
+    path = download_dataset(DATASET.PUTNAM, tmp_path)
+
+    assert path == tmp_path / "putnam" / "lean4" / "src"
+    clone = next(c for c in calls if "clone" in c)
+    assert "--sparse" in clone and "--depth" in clone
+    assert clone[-2] == "https://github.com/trishullab/PutnamBench.git"
+    set_cmd = next(c for c in calls if "sparse-checkout" in c)
+    assert set_cmd[-1] == "lean4/src"
+
+
+def test_existing_download_is_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "fate-m" / "FATEM").mkdir(parents=True)
+
+    def boom(*_: object, **__: object) -> object:
+        raise AssertionError("should not clone a cached dataset")
+
+    monkeypatch.setattr(benchmark.subprocess, "run", boom)
+
+    assert download_dataset(DATASET.FATE_M, tmp_path) == tmp_path / "fate-m" / "FATEM"

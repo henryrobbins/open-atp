@@ -26,6 +26,20 @@ files, optionally with subdirectories grouping several files into one task.
 .. autofunction:: open_atp.benchmark.tasks_from_dir
 ```
 
+## Downloading a dataset
+
+{func}`~open_atp.benchmark.download_dataset` fetches one of the public benchmarks (a
+{class}`~open_atp.benchmark.DATASET` member) straight to a task directory — a sparse
+clone of just the dataset's `.lean` subdirectory — ready for
+{func}`~open_atp.benchmark.tasks_from_dir`.
+
+```{eval-rst}
+.. autofunction:: open_atp.benchmark.download_dataset
+
+.. autoclass:: open_atp.benchmark.DATASET
+   :members:
+```
+
 ## Results
 
 ```{eval-rst}

@@ -17,8 +17,10 @@ are then funnelled through the shared verifier.
 """
 
 from open_atp.benchmark import (
+    DATASET,
     BenchmarkResult,
     BenchmarkRun,
+    download_dataset,
     run_benchmark,
     tasks_from_dir,
 )
@@ -29,7 +31,6 @@ from open_atp.config import (
     standard_prover,
     standard_provers,
 )
-from open_atp.datasets import DATASETS, Dataset, download_dataset
 from open_atp.images import DEFAULT_IMAGE, Image
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
@@ -39,8 +40,7 @@ __all__ = [
     "AutomatedProver",
     "BenchmarkResult",
     "BenchmarkRun",
-    "DATASETS",
-    "Dataset",
+    "DATASET",
     "DEFAULT_IMAGE",
     "Image",
     "ProofResult",

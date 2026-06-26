@@ -154,17 +154,16 @@ The `open-atp ex-benchmark` CLI command runs exactly this sweep over all
 To benchmark a directory of `.lean` files (each a `sorry`'d task),
 {func}`~open_atp.benchmark.tasks_from_dir` builds the `tasks` mapping: each loose
 `.lean` file becomes a task named by its stem, and each subdirectory becomes one
-multi-file task. {func}`~open_atp.datasets.download_dataset` fetches the public
-benchmarks (PutnamBench, FATE) — a sparse clone of just the task subdirectory:
+multi-file task. {func}`~open_atp.benchmark.download_dataset` fetches the public
+benchmarks ({class}`~open_atp.benchmark.DATASET`: PutnamBench, FATE) — a sparse clone
+of just the task subdirectory:
 
 ```python
-from open_atp.benchmark import run_benchmark, tasks_from_dir
-from open_atp.datasets import download_dataset
+from open_atp.benchmark import DATASET, download_dataset, run_benchmark, tasks_from_dir
 
-src = download_dataset("fate-m", "datasets")        # datasets/fate-m/FATEM
+src = download_dataset(DATASET.FATE_M, "datasets")  # datasets/fate-m/FATEM
 result = run_benchmark(tasks_from_dir(src), provers, Path("runs/fate-m"))
 ```
 
 PutnamBench pins an older Lean than the default skeleton, so stage it against a
-matching skeleton (`tasks_from_dir(src, skeleton=...)`); see
-{data}`~open_atp.datasets.DATASETS` for each dataset's toolchain.
+matching skeleton (`tasks_from_dir(src, skeleton=...)`).
