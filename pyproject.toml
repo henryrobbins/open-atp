@@ -21,6 +21,8 @@ dependencies = [
     "modal>=1.5",
     "aristotlelib",
     "pyyaml",  # `open-atp benchmark` reads a YAML provers config
+    "structlog",  # benchmark sweep logging
+    "tqdm",  # benchmark progress bar
     # Numina helper skills call out to these providers.
     "lean-explore>=1.2.1",
     "google-genai>=1.44.0",
@@ -93,7 +95,7 @@ files = ["src/open_atp"]
 
 # Third-party deps that ship no type information (no py.typed).
 [[tool.mypy.overrides]]
-module = ["aristotlelib.*", "yaml"]
+module = ["aristotlelib.*", "yaml", "tqdm"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

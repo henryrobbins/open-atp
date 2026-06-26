@@ -31,14 +31,19 @@ import subprocess
 import tempfile
 import threading
 from collections.abc import Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+import structlog
+from tqdm import tqdm
+
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
+
+log = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -126,6 +131,7 @@ def run_benchmark(
     only: Sequence[str] | None = None,
     max_workers: int | None = None,
     max_per_prover: int = 5,
+    progress: bool = True,
 ) -> BenchmarkResult:
     """Run every prover over every task, writing artifacts under ``output_dir``.
 
@@ -162,6 +168,10 @@ def run_benchmark(
     max_per_prover : int
         Most concurrent ``prove`` calls for any single prover. Default ``5``, to stay
         under rate limits.
+    progress : bool
+        Show a :mod:`tqdm` progress bar over the ``(task, prover)`` pairs. Default
+        ``True``. Each completed pair is logged (task, prover, status, duration, cost)
+        via :mod:`structlog` regardless.
 
     Returns
     -------
@@ -201,11 +211,36 @@ def run_benchmark(
         for task_name, task in tasks.items()
         for prover_name, prover in provers.items()
     ]
-    if max_workers == 1:
-        runs = [run_pair(*job) for job in jobs]
-    else:
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            runs = list(pool.map(lambda job: run_pair(*job), jobs))
+    slots: list[BenchmarkRun | None] = [None] * len(jobs)
+    bar = tqdm(total=len(jobs), disable=not progress, unit="run")
+
+    def record(index: int, run: BenchmarkRun) -> None:
+        slots[index] = run
+        r = run.result
+        status = "✓" if r.success else ("error" if r.error else "✗")
+        log.info(
+            "run complete",
+            task=run.task,
+            prover=run.prover,
+            status=status,
+            duration_s=round(r.duration_s, 1) if r.duration_s is not None else None,
+            cost_usd=r.cost_usd,
+        )
+        bar.update(1)
+
+    try:
+        if max_workers == 1:
+            for i, job in enumerate(jobs):
+                record(i, run_pair(*job))
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = {pool.submit(run_pair, *job): i for i, job in enumerate(jobs)}
+                for future in as_completed(futures):
+                    record(futures[future], future.result())
+    finally:
+        bar.close()
+
+    runs = [run for run in slots if run is not None]
     return BenchmarkResult(output_dir=output_dir, runs=runs)
 
 

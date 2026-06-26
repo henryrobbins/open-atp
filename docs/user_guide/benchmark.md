@@ -38,6 +38,10 @@ runs any *single* prover may have in flight — so a rate-limited prover (e.g. a
 model) stays under its limit even when other provers fill the pool. Pass `only=[...]`
 to run a subset of the tasks (by name, in the given order) instead of the whole set.
 
+A `tqdm` progress bar tracks the pairs (disable with `progress=False`), and each
+completion is logged via `structlog` with its task, prover, status, duration, and
+cost.
+
 The `open-atp ex-benchmark` CLI command runs exactly this sweep over all
 {func}`~open_atp.config.standard_provers` and the five bundled
 {class}`~open_atp.examples.EXAMPLE` tasks; pick the backend with

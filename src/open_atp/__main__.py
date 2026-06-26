@@ -17,8 +17,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import TextIO, cast
 
+import structlog
 import yaml
+from tqdm import tqdm
 
 from open_atp.backends import _BACKENDS
 from open_atp.backends.base import ComputeBackend
@@ -55,6 +58,32 @@ from open_atp.provers.base import AutomatedProver
 AX_PROVER_REPO = "https://github.com/henryrobbins/ax-prover-base"
 AX_PROVER_REF = "361e5b3451267785bfd70f173e7ab0be667d4987"
 AX_PROVER_SPEC = f"git+{AX_PROVER_REPO}@{AX_PROVER_REF}"
+
+
+class _TqdmStream:
+    """A file-like sink that routes log lines through :meth:`tqdm.write`.
+
+    Keeps log output from clobbering an active progress bar.
+    """
+
+    def write(self, message: str) -> int:
+        tqdm.write(message, end="")
+        return len(message)
+
+    def flush(self) -> None:
+        pass
+
+
+def _configure_logging() -> None:
+    """Render structlog events as tidy console lines that respect the tqdm bar."""
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="%H:%M:%S"),
+            structlog.dev.ConsoleRenderer(),
+        ],
+        logger_factory=structlog.PrintLoggerFactory(file=cast("TextIO", _TqdmStream())),
+    )
 
 
 def _load_dotenv() -> None:
@@ -324,6 +353,7 @@ def _build_modal_image(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
+    _configure_logging()
     parser = argparse.ArgumentParser(prog="open-atp")
     sub = parser.add_subparsers(dest="command", required=True)
 
