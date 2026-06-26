@@ -2,20 +2,14 @@
 
 ## Install the package
 
-`open-atp` targets Python 3.12+. Install it from source with
-[uv](https://docs.astral.sh/uv/) (recommended for development):
-
-```bash
-git clone https://github.com/henryrobbins/open-atp.git
-cd open-atp
-uv sync
-```
-
-or with `pip`:
+`open-atp` targets Python 3.12+. Install it with `pip`:
 
 ```bash
 pip install open-atp
 ```
+
+To work on `open-atp` itself, install from source instead — see
+{doc}`development/index`.
 
 ## Quickstart
 
