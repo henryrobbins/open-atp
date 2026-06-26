@@ -59,12 +59,12 @@ result = run_benchmark(tasks_from_dir(src), provers, Path("runs/fate-m"))
 
 Each {class}`~open_atp.benchmark.DATASET` member:
 
-| Benchmark | `DATASET` | Paper | Source |
-| --- | --- | --- | --- |
-| PutnamBench | `PUTNAM` | [Tsoukalas et al. 2024](https://arxiv.org/abs/2407.11214) | [trishullab/PutnamBench](https://github.com/trishullab/PutnamBench) |
-| FATE-H (hard) | `FATE_H` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-H](https://github.com/frenzymath/FATE-H) |
-| FATE-M (medium) | `FATE_M` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-M](https://github.com/frenzymath/FATE-M) |
-| FATE-X (extra) | `FATE_X` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-X](https://github.com/frenzymath/FATE-X) |
+| Benchmark | `DATASET` | Toolchain | Paper | Source |
+| --- | --- | --- | --- | --- |
+| PutnamBench | `PUTNAM` | `v4.27.0` | [Tsoukalas et al. 2024](https://arxiv.org/abs/2407.11214) | [trishullab/PutnamBench](https://github.com/trishullab/PutnamBench) |
+| FATE-H (hard) | `FATE_H` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-H](https://github.com/frenzymath/FATE-H) |
+| FATE-M (medium) | `FATE_M` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-M](https://github.com/frenzymath/FATE-M) |
+| FATE-X (extra) | `FATE_X` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-X](https://github.com/frenzymath/FATE-X) |
 
 PutnamBench pins an older Lean than the default skeleton, so stage it against a
 matching skeleton (`tasks_from_dir(src, skeleton=...)`).
