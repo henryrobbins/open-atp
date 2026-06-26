@@ -69,6 +69,35 @@ Each {class}`~open_atp.benchmark.DATASET` member:
 PutnamBench pins an older Lean than the default skeleton, so stage it against a
 matching skeleton (`tasks_from_dir(src, skeleton=...)`).
 
+## From the command line
+
+Download a dataset, then benchmark it — the `benchmark` command runs
+{func}`~open_atp.benchmark.tasks_from_dir` over the directory and prints the table:
+
+```bash
+open-atp download fate-m datasets            # -> datasets/fate-m/FATEM
+open-atp benchmark datasets/fate-m/FATEM --compute docker
+```
+
+`benchmark` runs every standard prover by default. To choose provers, pass a YAML
+config with `--provers` (or drop a `provers.yaml` in the benchmarked directory). The
+config is either a single standard prover name, or a list whose entries are each a
+standard prover name **or** a prover-config mapping (an optional `name` keys the
+result; otherwise it is derived from the prover/harness type):
+
+```yaml
+- agent:claude            # a standard prover name
+- type: agent             # a prover config (built against --compute)
+  harness:
+    type: codex
+    model: gpt-5.5
+- name: aristotle-hosted  # an explicit name for this entry
+  type: aristotle
+```
+
+`--compute {docker,modal}` picks the backend (standard image, default `docker`), and
+`--json` emits the {class}`~open_atp.benchmark.BenchmarkResult` as JSON.
+
 ## Citing the benchmarks
 
 If you run these benchmarks, please cite their authors:

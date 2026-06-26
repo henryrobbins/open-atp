@@ -1640,6 +1640,7 @@ dependencies = [
     { name = "lean-explore" },
     { name = "modal" },
     { name = "openai" },
+    { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
@@ -1649,14 +1650,12 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
     { name = "python-dotenv" },
-    { name = "pyyaml" },
     { name = "ruff" },
 ]
 docs = [
     { name = "furo" },
     { name = "myst-parser" },
     { name = "numpydoc" },
-    { name = "pyyaml" },
     { name = "sphinx" },
     { name = "sphinx-autobuild" },
     { name = "sphinx-autodoc-typehints" },
@@ -1680,8 +1679,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5" },
     { name = "python-dotenv", marker = "extra == 'dev'" },
-    { name = "pyyaml", marker = "extra == 'dev'" },
-    { name = "pyyaml", marker = "extra == 'docs'" },
+    { name = "pyyaml" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7" },
     { name = "sphinx-autobuild", marker = "extra == 'docs'" },

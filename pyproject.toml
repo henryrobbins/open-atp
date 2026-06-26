@@ -20,6 +20,7 @@ dependencies = [
     "jinja2>=3.1",
     "modal>=1.5",
     "aristotlelib",
+    "pyyaml",  # `open-atp benchmark` reads a YAML provers config
     # Numina helper skills call out to these providers.
     "lean-explore>=1.2.1",
     "google-genai>=1.44.0",
@@ -41,7 +42,6 @@ dev = [
     "pytest-xdist>=3.5",
     "ruff",
     "python-dotenv",
-    "pyyaml",  # docs/_ext/provers_table.py (make gen-provers / check-provers)
 ]
 docs = [
     "sphinx>=7",
@@ -51,7 +51,6 @@ docs = [
     "sphinx-autobuild",
     "sphinx-design",
     "numpydoc",
-    "pyyaml",  # provers_table extension reads docs/provers.yaml
 ]
 
 [project.scripts]
@@ -94,7 +93,7 @@ files = ["src/open_atp"]
 
 # Third-party deps that ship no type information (no py.typed).
 [[tool.mypy.overrides]]
-module = ["aristotlelib.*"]
+module = ["aristotlelib.*", "yaml"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
