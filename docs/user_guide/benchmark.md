@@ -40,7 +40,8 @@ to run a subset of the tasks (by name, in the given order) instead of the whole 
 
 A `tqdm` progress bar tracks the pairs (disable with `progress=False`), and each
 completion is logged via `structlog` with its task, prover, status, duration, and
-cost.
+cost. Aristotle's live progress display is captured to its run's `logs/stdout.txt`
+rather than streamed to the terminal, so the sweep stays readable.
 
 The `open-atp ex-benchmark` CLI command runs exactly this sweep over all
 {func}`~open_atp.config.standard_provers` and the five bundled

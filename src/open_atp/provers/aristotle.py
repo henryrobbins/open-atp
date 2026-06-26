@@ -22,6 +22,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
+from open_atp._capture import capture_stdout
 from open_atp.backends.base import ComputeBackend
 from open_atp.lean import ProofTask
 from open_atp.provers.base import (
@@ -180,10 +181,13 @@ class AristotleProver(AutomatedProver):
         # The raw result archive and the full run record both belong with the run's
         # logs, not the proof project. The hosted agent has no live stdout stream, so
         # its record (events, transcript, summary) is downloaded here rather than teed.
+        # aristotlelib prints a live progress display to stdout; capture it to
+        # ``stdout.txt`` so a concurrent benchmark sweep stays readable.
         result_tar = logs_dir / "aristotle_result.tar.gz"
-        downloaded, metadata = asyncio.run(
-            self._submit_and_download(wd, prompt, result_tar, logs_dir)
-        )
+        with capture_stdout(logs_dir / "stdout.txt"):
+            downloaded, metadata = asyncio.run(
+                self._submit_and_download(wd, prompt, result_tar, logs_dir)
+            )
 
         if downloaded is not None:
             self._extract_over(downloaded, wd)
