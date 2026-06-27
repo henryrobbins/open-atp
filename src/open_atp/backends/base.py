@@ -345,3 +345,23 @@ class ComputeBackend(abc.ABC):
             workdir, command, env=env, mounts=mounts, timeout_s=timeout_s
         ) as handle:
             return handle.wait()
+
+    def test(self) -> bool:
+        """Smoke-test the backend by verifying a trivial proof end to end.
+
+        Returns
+        -------
+        bool
+            Whether the trivial proof verified in this backend.
+        """
+        import tempfile
+
+        from open_atp.lean import create_project
+        from open_atp.verify import Verifier
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            lean_file = tmp_path / "Trivial.lean"
+            lean_file.write_text("theorem trivial_proof : True := trivial\n")
+            project = create_project([lean_file], tmp_path / "project")
+            return Verifier(self).verify(project).verified
