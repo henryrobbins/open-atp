@@ -300,3 +300,21 @@ def test_existing_download_is_reused(
     monkeypatch.setattr(benchmark.subprocess, "run", boom)
 
     assert download_dataset(DATASET.FATE_M, tmp_path) == tmp_path / "fate-m" / "FATEM"
+
+
+def test_examples_copies_bundled_assets_without_cloning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from open_atp.examples import example_assets
+
+    def boom(*_: object, **__: object) -> object:
+        raise AssertionError("examples are copied, not cloned")
+
+    monkeypatch.setattr(benchmark.subprocess, "run", boom)
+
+    path = download_dataset(DATASET.EXAMPLES, tmp_path)
+
+    assert path == tmp_path / "examples"
+    assert sorted(p.name for p in path.glob("*.lean")) == sorted(
+        a.name for a in example_assets()
+    )

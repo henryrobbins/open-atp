@@ -27,6 +27,7 @@ straight to such a directory.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -314,14 +315,17 @@ def _subdir_project(subdir: Path, skeleton: Path) -> LeanProject | None:
 
 
 class DATASET(Enum):
-    """The public Lean benchmark datasets accepted by :func:`download_dataset`.
+    """The benchmark datasets accepted by :func:`download_dataset`.
 
-    Each member's value is the directory name the dataset is cloned into. PutnamBench
-    pins an older Lean (``v4.27.0``) than the default skeleton, so stage it with a
-    matching ``skeleton`` (see :func:`tasks_from_dir`); the FATE datasets are on the
-    default ``v4.28.0``.
+    Each member's value is the directory name the dataset lands in. The FATE datasets
+    and the bundled examples are on the default ``v4.28.0``; PutnamBench pins an older
+    Lean (``v4.27.0``), so stage it with a matching ``skeleton`` (see
+    :func:`tasks_from_dir`). ``EXAMPLES`` is the package's bundled
+    :class:`~open_atp.examples.EXAMPLE` set, copied from the wheel rather than cloned.
     """
 
+    #: The bundled :class:`~open_atp.examples.EXAMPLE` tasks (copied, not cloned).
+    EXAMPLES = "examples"
     #: `PutnamBench <https://github.com/trishullab/PutnamBench>`_ (Lean 4).
     PUTNAM = "putnam"
     #: `FATE-H <https://github.com/frenzymath/FATE-H>`_ (hard).
@@ -354,24 +358,31 @@ def download_dataset(
     ``dest/<dataset>`` and returns the path to that subdirectory -- a directory of
     ``.lean`` files ready for :func:`tasks_from_dir`. An already-present download is
     reused as-is (the clone is skipped), so repeated calls are cheap.
+    :attr:`DATASET.EXAMPLES` instead copies the package's bundled example assets into
+    ``dest/examples`` (no clone, ``ref`` ignored).
 
     Parameters
     ----------
     dataset : DATASET
         Which benchmark to fetch.
     dest : pathlib.Path or str
-        Directory to clone into; the repo lands at ``dest/<dataset>``. Created if
+        Directory to clone into; the dataset lands at ``dest/<dataset>``. Created if
         missing.
     ref : str, optional
         Branch or tag to check out. Default ``None`` -- the repo's default branch.
+        Ignored for :attr:`DATASET.EXAMPLES`.
 
     Returns
     -------
     pathlib.Path
-        The dataset's task directory (``dest/<dataset>/<subdir>``).
+        The dataset's task directory (``dest/<dataset>/<subdir>``; ``dest/examples``
+        for :attr:`DATASET.EXAMPLES`).
     """
-    repo, subdir = _DATASETS[dataset]
     dest = Path(dest)
+    if dataset is DATASET.EXAMPLES:
+        return _copy_examples(dest / dataset.value)
+
+    repo, subdir = _DATASETS[dataset]
     repo_dir = dest / dataset.value
     task_dir = repo_dir / subdir
     if task_dir.is_dir():
@@ -390,4 +401,14 @@ def download_dataset(
 
     if not task_dir.is_dir():
         raise FileNotFoundError(f"{repo} has no {subdir!r} at ref {ref or 'default'}")
+    return task_dir
+
+
+def _copy_examples(task_dir: Path) -> Path:
+    """Copy the bundled example ``.lean`` assets into ``task_dir`` and return it."""
+    from open_atp.examples import example_assets
+
+    task_dir.mkdir(parents=True, exist_ok=True)
+    for asset in example_assets():
+        shutil.copy2(asset, task_dir / asset.name)
     return task_dir

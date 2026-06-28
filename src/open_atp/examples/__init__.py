@@ -64,6 +64,11 @@ class EXAMPLE(Enum):
     SMUL_ADD = "SmulAdd"
 
 
+def example_assets() -> list[Path]:
+    """The bundled example ``.lean`` asset files (one per :class:`EXAMPLE` member)."""
+    return [_ASSETS_DIR / f"{member.value}.lean" for member in EXAMPLE]
+
+
 def example_task(name: EXAMPLE) -> ProofTask:
     """Stage a bundled example into a ready-to-run :class:`~open_atp.lean.ProofTask`.
 
@@ -79,4 +84,4 @@ def example_task(name: EXAMPLE) -> ProofTask:
     return ProofTask(create_project([asset], dest))
 
 
-__all__ = ["EXAMPLE", "example_task"]
+__all__ = ["EXAMPLE", "example_assets", "example_task"]

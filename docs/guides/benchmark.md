@@ -43,10 +43,17 @@ completion is logged via `structlog` with its task, prover, status, duration, an
 cost. Aristotle's live progress display is captured to its run's `logs/stdout.txt`
 rather than streamed to the terminal, so the sweep stays readable.
 
-The `open-atp ex-benchmark` CLI command runs exactly this sweep over all
-{func}`~open_atp.config.standard_provers` and the five bundled
-{class}`~open_atp.examples.EXAMPLE` tasks; pick the backend with
-`--compute {docker,modal}`.
+To run this sweep over the five bundled {class}`~open_atp.examples.EXAMPLE` tasks,
+download them like any other dataset and benchmark the resulting directory:
+
+```bash
+open-atp download examples datasets         # -> datasets/examples
+open-atp benchmark datasets/examples runs/examples --compute docker
+```
+
+`download examples` copies the bundled assets from the package (no clone); the
+directory is then an ordinary {func}`~open_atp.benchmark.tasks_from_dir` input, so
+all the `benchmark` options (`--provers`, `--compute {docker,modal}`, ...) apply.
 
 ## Tasks from a directory
 
