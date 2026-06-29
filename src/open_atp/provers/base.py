@@ -194,6 +194,15 @@ class AutomatedProver(abc.ABC):
         ProofResult
             The verification verdict and run metadata, pointing at the populated
             :attr:`~ProofResult.wd` and :attr:`~ProofResult.logs_dir`.
+
+        Raises
+        ------
+        ~open_atp.lean.ToolchainMismatch
+            If the project's toolchain differs from the backend image's. Checked up
+            front, before any generation compute is spent.
+        ~open_atp.lean.MathlibRevMismatch
+            If the project records a Mathlib revision that differs from the backend
+            image's. Checked up front, before any generation compute is spent.
         """
         self.verifier.check_compatible(task.project)
 

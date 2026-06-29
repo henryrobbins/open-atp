@@ -31,6 +31,9 @@ pinned Mathlib skeleton.
 ```{eval-rst}
 .. autoexception:: open_atp.lean.ToolchainMismatch
    :no-members:
+
+.. autoexception:: open_atp.lean.MathlibRevMismatch
+   :no-members:
 ```
 
 ## Image defaults

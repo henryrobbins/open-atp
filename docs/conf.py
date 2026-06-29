@@ -43,6 +43,7 @@ extlinks = {
 }
 
 myst_enable_extensions = [
+    "attrs_inline",
     "colon_fence",
     "deflist",
     "fieldlist",
@@ -123,6 +124,7 @@ numpydoc_xref_aliases = {
     "LeanProject": "open_atp.lean.LeanProject",
     "ProofTask": "open_atp.lean.ProofTask",
     "ToolchainMismatch": "open_atp.lean.ToolchainMismatch",
+    "MathlibRevMismatch": "open_atp.lean.MathlibRevMismatch",
     # Verification
     "VerificationReport": "open_atp.verify.VerificationReport",
     "Verifier": "open_atp.verify.Verifier",
