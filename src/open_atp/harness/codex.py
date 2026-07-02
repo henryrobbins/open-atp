@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 
 from open_atp.harness._paths import _SCRIPTS
@@ -54,6 +55,10 @@ class CodexHarness(Harness):
     ) -> None:
         super().__init__(model=model, effort=effort)
         self._auth_file = auth_file
+        # Guards the lazy _codex_home init: a benchmark sweep shares one harness
+        # instance across tasks run concurrently, so the check-then-create must be
+        # atomic (see _home_dirs).
+        self._codex_home_lock = threading.Lock()
 
     def _home_dirs(self) -> list[tuple[Path, str]]:
         # Mount ONLY the auth credential, never the whole ~/.codex: the host's
@@ -68,10 +73,15 @@ class CodexHarness(Harness):
             raise RuntimeError(
                 "codex harness requires ~/.codex/auth.json from `codex login`"
             )
-        if self._codex_home is None:
-            self._codex_home = tempfile.TemporaryDirectory(prefix="codex-home-")
-            # copy2 preserves auth.json's 0600 mode, which codex requires.
-            shutil.copy2(auth, Path(self._codex_home.name) / "auth.json")
+        # Lock the check-then-create: without it, two concurrent runs on a shared
+        # harness both see None, the second's TemporaryDirectory overwrites the first,
+        # and the orphaned one's finalizer deletes its dir out from under the run still
+        # staging it -- surfacing as a missing auth.json.
+        with self._codex_home_lock:
+            if self._codex_home is None:
+                self._codex_home = tempfile.TemporaryDirectory(prefix="codex-home-")
+                # copy2 preserves auth.json's 0600 mode, which codex requires.
+                shutil.copy2(auth, Path(self._codex_home.name) / "auth.json")
         return [(Path(self._codex_home.name), ".codex")]
 
     def _agent_command(self) -> str:

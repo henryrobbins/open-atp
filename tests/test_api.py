@@ -126,6 +126,33 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
     assert isinstance(numina, NuminaProver)
 
 
+def test_codex_home_dirs_is_concurrency_safe(tmp_path: Path) -> None:
+    # A benchmark sweep shares one CodexHarness across tasks run in parallel. Every
+    # concurrent _home_dirs() must return the same staged dir whose auth.json survives
+    # -- without the lock the loser's TemporaryDirectory finalizer deletes it.
+    import threading
+
+    auth = tmp_path / "auth.json"
+    auth.write_text('{"token": "fake"}')
+    harness = CodexHarness(auth_file=auth)
+
+    results: list[Path] = []
+    barrier = threading.Barrier(8)
+
+    def stage() -> None:
+        barrier.wait()  # release all threads into the check-then-create at once
+        results.append(harness._home_dirs()[0][0])
+
+    threads = [threading.Thread(target=stage) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len({str(p) for p in results}) == 1
+    assert (results[0] / "auth.json").is_file()
+
+
 def test_standard_prover_uses_one_backend_for_generation_and_verify() -> None:
     backend = DockerBackend(image=DEFAULT_IMAGE)
 
