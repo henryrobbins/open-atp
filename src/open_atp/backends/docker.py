@@ -195,9 +195,9 @@ class DockerBackend(ComputeBackend):
         workdir: Path,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandHandle:
         """``docker run`` ``command`` with ``workdir`` bind-mounted, returning a handle.
 
@@ -211,15 +211,15 @@ class DockerBackend(ComputeBackend):
             land here directly.
         command : str
             The shell command to run inside the container.
+        timeout_s : int
+            Unused by Docker (the container has no built-in cap); callers enforce
+            timeouts on the handle.
         env : Mapping[str, str], optional
             Per-call environment variables, merged over the backend's :attr:`env`.
             Default empty.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` bind mounts (e.g. agent credential
             dirs). Default empty.
-        timeout_s : int, optional
-            Unused by Docker (the container has no built-in cap); callers enforce
-            timeouts on the handle. Default ``None``.
 
         Returns
         -------
@@ -245,9 +245,9 @@ class DockerBackend(ComputeBackend):
         self,
         workdir: Path,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> ComputeSession:
         """Start a detached keep-alive container for repeated ``docker exec`` commands.
 
@@ -258,14 +258,14 @@ class DockerBackend(ComputeBackend):
         ----------
         workdir : pathlib.Path
             Host directory bind-mounted at :attr:`workdir_mount` for the session's life.
+        timeout_s : int
+            Unused by Docker (the container has no built-in cap).
         env : Mapping[str, str], optional
             Environment variables pinned on the container at creation, merged over the
             backend's :attr:`env`. Default empty.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` bind mounts wired at creation (Docker
             can't add them per-exec). Default empty.
-        timeout_s : int, optional
-            Unused by Docker (the container has no built-in cap). Default ``None``.
 
         Returns
         -------

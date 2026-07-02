@@ -100,7 +100,7 @@ def test_backend_run_smoke(tmp_path: Path) -> None:
 
     proj = _stage(tmp_path)
     backend = ModalBackend(image=DEFAULT_IMAGE)
-    result = backend.run(proj, "lake env lean MILExample.lean")
+    result = backend.run(proj, "lake env lean MILExample.lean", timeout_s=600)
 
     # The sorry'd fixture compiles (exit 0) but warns about `sorry`.
     assert result.exit_code == 0, result.stdout + result.stderr
@@ -157,7 +157,7 @@ def test_session_runs_many_commands_in_one_sandbox(tmp_path: Path) -> None:
     backend = ModalBackend(image=DEFAULT_IMAGE)
     verifier = Verifier(backend)
 
-    with backend.session(proj) as session:
+    with backend.session(proj, timeout_s=600) as session:
         # A first exec (stands in for the agent run) then an in-session verify -- both
         # in one Sandbox, terminated once on close.
         assert session.exec("true").wait().exit_code == 0

@@ -104,7 +104,7 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         from open_atp.images import DEFAULT_IMAGE
 
         backend = DockerBackend(image=DEFAULT_IMAGE)
-        with backend.session(workdir) as session:
+        with backend.session(workdir, timeout_s=1800) as session:
             with session.exec("lake env lean Demo.lean") as handle:
                 result = handle.wait()
             session.sync_out()   # pull the agent's edits back to the host
@@ -228,9 +228,9 @@ class ComputeBackend(abc.ABC):
         workdir: Path,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandHandle:
         """Launch ``command`` with ``workdir`` mounted/synced into the sandbox.
 
@@ -248,15 +248,14 @@ class ComputeBackend(abc.ABC):
             back out on completion.
         command : str
             The shell command to run inside the sandbox.
+        timeout_s : int
+            Wall-clock cap for the command, in seconds.
         env : Mapping[str, str], optional
             Per-call environment variables, merged over the backend's :attr:`env`.
             Default empty.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` bind mounts beyond the workdir (e.g.
             agent credential dirs). Default empty.
-        timeout_s : int, optional
-            Wall-clock cap for the command. ``None`` leaves it to the backend's own
-            default. Default ``None``.
 
         Returns
         -------
@@ -269,9 +268,9 @@ class ComputeBackend(abc.ABC):
         self,
         workdir: Path,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> ComputeSession:
         """Open a persistent sandbox over ``workdir`` for multiple :meth:`exec` calls.
 
@@ -287,15 +286,14 @@ class ComputeBackend(abc.ABC):
         ----------
         workdir : pathlib.Path
             Host directory mounted/synced into the sandbox for the session's life.
+        timeout_s : int
+            Wall-clock cap for the sandbox, in seconds.
         env : Mapping[str, str], optional
             Environment variables pinned on the sandbox at creation, merged over the
             backend's :attr:`env`. Default empty.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` mounts pinned at creation. Default
             empty.
-        timeout_s : int, optional
-            Wall-clock cap for the sandbox. ``None`` leaves it to the backend's own
-            default. Default ``None``.
 
         Returns
         -------
@@ -309,9 +307,9 @@ class ComputeBackend(abc.ABC):
         workdir: Path,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandResult:
         """Convenience: :meth:`start` then block via :meth:`CommandHandle.wait`.
 
@@ -321,15 +319,14 @@ class ComputeBackend(abc.ABC):
             Host directory mounted/synced into the sandbox; mutations sync back out.
         command : str
             The shell command to run inside the sandbox.
+        timeout_s : int
+            Wall-clock cap for the command, in seconds.
         env : Mapping[str, str], optional
             Per-call environment variables, merged over the backend's :attr:`env`.
             Default empty.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` bind mounts beyond the workdir.
             Default empty.
-        timeout_s : int, optional
-            Wall-clock cap for the command. ``None`` leaves it to the backend's own
-            default. Default ``None``.
 
         Returns
         -------

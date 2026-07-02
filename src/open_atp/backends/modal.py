@@ -54,9 +54,6 @@ log = logging.getLogger(__name__)
 REMOTE_WD = "/workspace/wd"
 #: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
 BAKED_LAKE = "/workspace/.lake"
-#: Sandbox lifetime used when a caller opens a Sandbox without an explicit
-#: ``timeout_s`` -- Modal requires a concrete cap at creation.
-DEFAULT_SANDBOX_TIMEOUT_S = 1800
 
 
 def _require_modal() -> None:
@@ -309,9 +306,9 @@ class ModalBackend(ComputeBackend):
     def _provision(
         self,
         workdir: Path,
+        timeout_s: int,
         env: Mapping[str, str] | None,
         mounts: Sequence[tuple[str, str]] | None,
-        timeout_s: int | None,
     ) -> modal.Sandbox:
         """Create an idle Sandbox, push the workdir + mounts, warm the Lean cache.
 
@@ -342,7 +339,7 @@ class ModalBackend(ComputeBackend):
             secrets=[secret],
             cpu=cpu,
             memory=self.memory_mib,
-            timeout=timeout_s or DEFAULT_SANDBOX_TIMEOUT_S,
+            timeout=timeout_s,
         )
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces
@@ -369,9 +366,9 @@ class ModalBackend(ComputeBackend):
         workdir: Path,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandHandle:
         """Provision a Sandbox, push ``workdir`` in, and launch ``command`` in it.
 
@@ -385,15 +382,14 @@ class ModalBackend(ComputeBackend):
             completion (so completed proofs land on the host).
         command : str
             The shell command to run inside the Sandbox.
+        timeout_s : int
+            Wall-clock cap for the Sandbox, in seconds.
         env : Mapping[str, str], optional
             Per-call environment variables, merged over the backend's :attr:`env`.
             Default empty.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` dirs pushed into the Sandbox (e.g.
             agent credential dirs). Default empty.
-        timeout_s : int, optional
-            Wall-clock cap for the Sandbox. ``None`` falls back to
-            :data:`DEFAULT_SANDBOX_TIMEOUT_S`. Default ``None``.
 
         Returns
         -------
@@ -402,7 +398,9 @@ class ModalBackend(ComputeBackend):
             on.
         """
         _require_modal()
-        sb = self._provision(workdir, env, mounts, timeout_s)
+        sb = self._provision(
+            workdir=workdir, timeout_s=timeout_s, env=env, mounts=mounts
+        )
         try:
             started_at = time.time()
             # Redirect stdin from /dev/null (Modal leaves it an open pipe with no EOF,
@@ -426,9 +424,9 @@ class ModalBackend(ComputeBackend):
         self,
         workdir: Path,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> ComputeSession:
         """Provision a Sandbox over ``workdir`` and keep it alive for many execs.
 
@@ -440,15 +438,14 @@ class ModalBackend(ComputeBackend):
         workdir : pathlib.Path
             Host directory pushed into the Sandbox at creation; bridge it back with
             :meth:`ModalSession.sync_out`.
+        timeout_s : int
+            Wall-clock cap for the Sandbox, in seconds.
         env : Mapping[str, str], optional
             Environment variables pinned on the Sandbox at creation, merged over the
             backend's :attr:`env`. Default empty.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` dirs pushed in at creation. Default
             empty.
-        timeout_s : int, optional
-            Wall-clock cap for the Sandbox. ``None`` falls back to
-            :data:`DEFAULT_SANDBOX_TIMEOUT_S`. Default ``None``.
 
         Returns
         -------
@@ -456,7 +453,9 @@ class ModalBackend(ComputeBackend):
             A live :class:`ModalSession` over the workdir.
         """
         _require_modal()
-        sb = self._provision(workdir, env, mounts, timeout_s)
+        sb = self._provision(
+            workdir=workdir, timeout_s=timeout_s, env=env, mounts=mounts
+        )
         return ModalSession(backend=self, sb=sb, workdir=workdir)
 
 

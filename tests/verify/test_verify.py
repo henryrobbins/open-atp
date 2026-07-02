@@ -71,7 +71,7 @@ def test_session_persists_state_across_execs(tmp_path: Path) -> None:
     """One live container: a file written by one exec is visible to the next."""
     proj = _stage(tmp_path)
     backend = DockerBackend(image=DEFAULT_IMAGE)
-    with backend.session(proj) as session:
+    with backend.session(proj, timeout_s=600) as session:
         session.exec("echo hello > marker.txt").wait()
         result = session.exec("cat marker.txt").wait()
 
@@ -88,7 +88,7 @@ def test_verify_in_session_matches_standalone(tmp_path: Path) -> None:
 
     backend = DockerBackend(image=DEFAULT_IMAGE)
     verifier = Verifier(backend)
-    with backend.session(proj) as session:
+    with backend.session(proj, timeout_s=600) as session:
         report = verifier.verify(LeanProject(proj), session=session)
 
     assert report.compiles, report.compile_log

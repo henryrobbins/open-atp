@@ -99,9 +99,9 @@ class FakeSessionBackend(DockerBackend):
         self,
         workdir: Path,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
-        timeout_s: int | None = None,
     ) -> ComputeSession:
         return _FakeSession()
 
