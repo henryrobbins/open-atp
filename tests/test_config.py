@@ -51,7 +51,7 @@ def test_build_harness_from_mapping() -> None:
 def test_build_harness_string_shorthand() -> None:
     harness = build_harness("vibe")
     assert isinstance(harness, VibeHarness)
-    assert harness.agent == "lean-standin"
+    assert harness.agent == "lean-labs"
 
 
 # --- build_prover ----------------------------------------------------------

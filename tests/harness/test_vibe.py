@@ -3,7 +3,7 @@
 Fast unit layer (no Docker, no creds, no API):
 
 * ``stage_wd`` bootstraps a workdir-local VIBE_HOME (config that un-gates the
-  builtin ``lean`` agent + the vendored ``lean-standin`` stand-in, with the model
+  builtin ``lean`` agent + the vendored ``lean-labs`` profile, with the model
   templated in).
 * ``_agent_command`` renders the chosen agent profile + the ``-p`` run guards.
 * ``parse_result`` pulls cost/tokens from the per-session ``meta.json`` (the
@@ -12,7 +12,7 @@ Fast unit layer (no Docker, no creds, no API):
 * ``prove`` diffs the workdir after a stubbed run that writes a solved file and a
   synthetic session log, with no Docker.
 
-The live path (the non-Labs ``vibe`` stand-in on the real Mistral Vibe CLI) lives in
+The live path (the ``vibe`` lean-labs profile on the real Mistral Vibe CLI) lives in
 the single parametrized ``test_e2e_provers.py`` suite, alongside every other prover.
 """
 
@@ -81,7 +81,7 @@ def _write_session_log(log_dir: Path, stats: dict[str, object]) -> None:
 def prover(fake_session_backend: object) -> AgentProver:
     # The in-process fake session keeps the diff unit test (which stubs _run_agent)
     # off a live backend while _generate opens its session and verifies in it.
-    harness = VibeHarness(agent="lean-standin", model="magistral-medium-latest")
+    harness = VibeHarness(agent="lean-labs", model="labs-leanstral-1-5")
     return AgentProver(harness=harness, backend=fake_session_backend)
 
 
@@ -93,7 +93,7 @@ def test_registered_and_construction_carries_vibe_knobs() -> None:
 
     harness = VibeHarness(
         agent="lean",
-        model="labs-leanstral-2603",
+        model="labs-leanstral-1-5",
         max_turns=8,
         max_price=0.5,
     )
@@ -105,7 +105,7 @@ def test_registered_and_construction_carries_vibe_knobs() -> None:
 
 def test_agent_command_renders_agent_and_run_guards() -> None:
     harness = VibeHarness(
-        model="labs-leanstral-2603", agent="lean", max_turns=8, max_price=0.5
+        model="labs-leanstral-1-5", agent="lean", max_turns=8, max_price=0.5
     )
     script = harness._agent_command()
     assert "--agent lean" in script
@@ -116,15 +116,15 @@ def test_agent_command_renders_agent_and_run_guards() -> None:
 
 
 def test_agent_command_omits_unset_guards() -> None:
-    harness = VibeHarness(model="magistral-medium-latest", agent="lean-standin")
+    harness = VibeHarness(model="magistral-medium-latest", agent="lean-labs")
     script = harness._agent_command()
-    assert "--agent lean-standin" in script
+    assert "--agent lean-labs" in script
     assert "--max-turns" not in script
     assert "--max-price" not in script
 
 
 def test_agent_auth_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    harness = VibeHarness(model="labs-leanstral-2603")
+    harness = VibeHarness(model="labs-leanstral-1-5")
     monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="MISTRAL_API_KEY"):
         harness.agent_auth()
@@ -143,7 +143,7 @@ def test_agent_auth_explicit_key_overrides_env(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
-    harness = VibeHarness(model="magistral-medium-latest", agent="lean-standin")
+    harness = VibeHarness(model="magistral-medium-latest", agent="lean-labs")
     harness.stage_wd(tmp_path)
     harness.write_prompt(tmp_path, "fill the sorrys")
 
@@ -155,7 +155,7 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
     assert "[session_logging]" in config
     # Ungate mutating tools in `vibe -p` (otherwise `edit` is denied) and wire in the
     # lean-lsp compile-check loop -- both live on the base config so they cover the
-    # builtin `lean` agent and the stand-ins alike.
+    # builtin `lean` agent and the lean-labs profile alike.
     assert "bypass_tool_permissions = true" in config
     assert "[[mcp_servers]]" in config
     assert 'command = "lean-lsp-mcp"' in config
@@ -163,13 +163,13 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
     # the opencode fix). Vibe's field is in seconds.
     assert "tool_timeout_sec = 180" in config
 
-    standin = tmp_path / ".vibe" / "agents" / "lean-standin.toml"
-    assert standin.is_file()
-    standin_text = standin.read_text()
-    assert 'system_prompt_id = "lean"' in standin_text
+    profile = tmp_path / ".vibe" / "agents" / "lean-labs.toml"
+    assert profile.is_file()
+    profile_text = profile.read_text()
+    assert 'system_prompt_id = "lean"' in profile_text
     # Vibe has no --model flag, so the model is templated into the profile.
-    assert 'name = "magistral-medium-latest"' in standin_text
-    assert "<<MODEL>>" not in standin_text
+    assert 'name = "magistral-medium-latest"' in profile_text
+    assert "<<MODEL>>" not in profile_text
 
     # Skills are staged by the prover (stage_skills), not stage_wd(); the VIBE_HOME
     # skills location is covered by test_stage_skills_copies_into_harness_location.
@@ -183,7 +183,7 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
 
 
 def test_parse_reads_cost_and_tokens_from_session_log(tmp_path: Path) -> None:
-    harness = VibeHarness(model="labs-leanstral-2603")
+    harness = VibeHarness(model="labs-leanstral-1-5")
     harness.stage_wd(tmp_path)
     _write_session_log(harness._session_log_dir, _session_stats())
 
@@ -195,7 +195,7 @@ def test_parse_reads_cost_and_tokens_from_session_log(tmp_path: Path) -> None:
 
 
 def test_parse_without_session_log_leaves_cost_none(tmp_path: Path) -> None:
-    harness = VibeHarness(model="labs-leanstral-2603")
+    harness = VibeHarness(model="labs-leanstral-1-5")
     harness.stage_wd(tmp_path)  # no log written
     result = harness.parse_result(STREAM_LINES)
     assert result.cost_usd is None
@@ -247,5 +247,5 @@ def test_generate_reports_changes_and_session_cost(
     # Cost flows straight from the session log (vibe never self-reports in stdout).
     assert result.cost_usd == pytest.approx(0.0119204)
     assert result.metadata["harness"] == "vibe"
-    assert result.metadata["model"] == "magistral-medium-latest"
+    assert result.metadata["model"] == "labs-leanstral-1-5"
     assert result.metadata["input_tokens"] == 26951

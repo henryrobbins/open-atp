@@ -6,8 +6,8 @@
 
 Leanstral {cite:p}`mistral2026leanstral` is a Mistral Labs model fine-tuned for Lean theorem proving using Mistral's [Vibe](https://docs.mistral.ai/mistral-vibe/) agent harness. The prover uses the {class}`~open_atp.provers.agent_prover.AgentProver` with the {class}`~open_atp.harness.vibe.VibeHarness`.
 
-```{warning}
-[Leanstral](https://docs.mistral.ai/models/model-cards/leanstral-26-03) is deprecated as of May 22nd, 2026, and is only reachable as a Labs model, which requires Lab Model access from a Mistral org admin. The standard prover uses a stand-in reasoning model (`magistral-medium-latest`) to mitigate this.
+```{note}
+The standard prover pins [Leanstral 1.5](https://docs.mistral.ai/models/model-cards/leanstral-1-5) (`labs-leanstral-1-5`), the updated Leanstral lab model. Reaching it requires Lab Model access enabled by a Mistral org admin. Vibe's builtin `lean` agent pins a deprecated Leanstral and exposes no `--model` flag, so the prover drives the `lean-labs` profile — the same Lean scaffold with the model templated in — to control the version.
 ```
 
 ## Authentication
@@ -56,7 +56,7 @@ open-atp prove path/to/task.lean output_dir leanstral
 
 ### Customizing the prover
 
-To override knobs like `model`, `agent`, `max_turns`, and `max_price`, construct the class directly. The standard defaults are `agent="lean-standin"` with `model="magistral-medium-latest"`:
+To override knobs like `model`, `agent`, `max_turns`, and `max_price`, construct the class directly. The standard defaults are `agent="lean-labs"` with `model="labs-leanstral-1-5"`:
 
 ```{testcode}
 from pathlib import Path
@@ -70,7 +70,7 @@ from open_atp.provers import AgentProver
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
     harness=VibeHarness(
-        model="magistral-medium-latest",
+        model="labs-leanstral-1-5",
         max_turns=None,                  # passed to `vibe -p --max-turns`
         max_price=None,                  # passed to `vibe -p --max-price`
     ),
