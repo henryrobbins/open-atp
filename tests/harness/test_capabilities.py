@@ -101,9 +101,10 @@ _MODELS = {
     # deepseek-chat keeps cost low and exercises OpenCode's non-anthropic branch
     # (provider is inferred from the model prefix in the harness).
     "opencode": "deepseek-chat",
-    # The builtin ``lean`` agent (real Leanstral) is Labs-gated; the non-Labs
-    # ``lean-standin`` stand-in (selected in _make_harness) runs this model.
-    "vibe": "magistral-medium-latest",
+    # The builtin ``lean`` agent pins a deprecated Leanstral; the ``lean-labs``
+    # profile (selected in _make_harness) runs this model. Leanstral is $0-priced,
+    # so the probe uses the real lab model.
+    "vibe": "labs-leanstral-1-5",
 }
 
 # Backend dimension: each value carries its own opt-out marker so a run can pick
@@ -161,12 +162,12 @@ def _make_backend(backend: str) -> ComputeBackend:
 
 def _make_harness(harness: str) -> Harness:
     if harness == "vibe":
-        # The builtin ``lean`` agent is Labs-gated; drive the vendored non-Labs
-        # ``lean-standin`` stand-in so the probe runs without Labs access.
+        # The builtin ``lean`` agent pins a deprecated Leanstral; drive the vendored
+        # ``lean-labs`` profile so the probe controls the model.
         return VibeHarness(
             model=_MODELS["vibe"],
             effort="low",
-            agent="lean-standin",
+            agent="lean-labs",
         )
     if harness == "claude_code":
         # No plugins -- plugin loading isn't what these probes exercise.

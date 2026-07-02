@@ -79,9 +79,9 @@ def _need_modal() -> str | None:
 
 # --- the parametrization: backends x provers ----------------------------------
 #
-# ``leanstral`` covers the vibe harness on its non-Labs Magistral default (the real
-# ``labs-leanstral-2603`` model is Mistral-Labs-gated and not runnable today). Keep
-# this set in sync with the catalog -- ``test_catalog_is_fully_covered`` enforces it.
+# ``leanstral`` covers the vibe harness on its ``labs-leanstral-1-5`` default (the
+# lab model, reachable now that Lab Model access is enabled). Keep this set in sync
+# with the catalog -- ``test_catalog_is_fully_covered`` enforces it.
 
 BACKENDS = [
     pytest.param("docker", lambda: None, marks=pytest.mark.docker, id="docker"),

@@ -16,8 +16,9 @@ _HARNESS_DIR = Path(__file__).parent
 _ASSETS = _HARNESS_DIR / "assets"
 _SCRIPTS = _ASSETS / "scripts"
 _MCP_JSON = _ASSETS / "configs" / "mcp.json"
-#: Vibe-specific assets: the vendored stand-in agent profile (lean scaffold on a
-#: non-Labs model) copied into the sandbox's per-workdir VIBE_HOME/agents.
+#: Vibe-specific assets: the vendored model-templated ``lean-labs`` agent profile
+#: (lean scaffold with a chosen model) copied into the sandbox's per-workdir
+#: VIBE_HOME/agents.
 _VIBE_ASSETS = _ASSETS / "vibe"
 
 #: Root of the ``open_atp`` package, used to locate the vendored bundles.

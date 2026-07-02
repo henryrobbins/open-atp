@@ -16,13 +16,14 @@ class VibeHarness(Harness):
     """Mistral Vibe CLI driving its builtin ``lean`` agent (Leanstral) in a sandbox.
 
     Vibe's ``lean`` agent *is* Leanstral: ``vibe -p ... --agent lean`` pins the model
-    to ``leanstral`` via the builtin agent profile (there is no ``--model`` flag). The
-    bare ``lean`` profile is Labs-gated, so the ``lean-standin`` stand-in (vendored
-    under ``assets/vibe/``) runs the same Lean scaffold on a non-Labs model until Labs
-    access is enabled. The selected profile is named by :attr:`agent`. Since vibe has
-    no ``--model`` flag, the stand-in profile templates ``<<MODEL>>`` and the harness
-    substitutes :attr:`model` into it at :meth:`stage_wd` time -- so the model is a
-    knob (default Magistral) just like the other harnesses' ``--model``.
+    via the builtin agent profile (there is no ``--model`` flag), but that pin is a
+    deprecated Leanstral and cannot be changed. So the ``lean-labs`` profile (vendored
+    under ``assets/vibe/``) mirrors the same Lean scaffold while templating in a chosen
+    model: it carries ``<<MODEL>>`` and the harness substitutes :attr:`model` at
+    :meth:`stage_wd` time -- so the model is a knob (default the ``labs-leanstral-1-5``
+    lab model) just like the other harnesses' ``--model``. The selected profile is
+    named by :attr:`agent`. Reaching a Labs model requires Lab Model access enabled by
+    a Mistral org admin.
 
     Two things differ from the other harnesses:
 
@@ -38,14 +39,14 @@ class VibeHarness(Harness):
     Parameters
     ----------
     model : str
-        Model templated into the stand-in profile (vibe has no ``--model`` flag).
-        Ignored by the builtin ``lean`` agent, which pins its own (Leanstral). Default
-        ``"magistral-medium-latest"``.
+        Model templated into the ``lean-labs`` profile (vibe has no ``--model`` flag).
+        Ignored by the builtin ``lean`` agent, which pins its own (deprecated)
+        Leanstral. Default ``"labs-leanstral-1-5"``.
     effort : str
         Reasoning-effort level. Default ``"high"``.
     agent : str, optional
-        Which vibe agent profile to drive: ``"lean"`` (real Leanstral) or a
-        model-templated stand-in. Default ``"lean-standin"``.
+        Which vibe agent profile to drive: ``"lean"`` (builtin, deprecated Leanstral)
+        or the model-templated ``"lean-labs"``. Default ``"lean-labs"``.
     max_turns : int, optional
         ``vibe -p`` turn guard; ``None`` (default) leaves it unset.
     max_price : float, optional
@@ -61,7 +62,7 @@ class VibeHarness(Harness):
     >>> harness.name
     'vibe'
     >>> harness.agent
-    'lean-standin'
+    'lean-labs'
 
     With the key supplied explicitly, :meth:`agent_auth` forwards it as
     ``MISTRAL_API_KEY`` without reading the host environment:
@@ -85,9 +86,9 @@ class VibeHarness(Harness):
     def __init__(
         self,
         *,
-        model: str = "magistral-medium-latest",
+        model: str = "labs-leanstral-1-5",
         effort: str = "high",
-        agent: str = "lean-standin",
+        agent: str = "lean-labs",
         max_turns: int | None = None,
         max_price: float | None = None,
         mistral_api_key: str | None = None,
@@ -113,7 +114,7 @@ class VibeHarness(Harness):
     def stage_wd(self, wd: Path) -> None:
         super().stage_wd(wd)
         # Workdir-local VIBE_HOME: a minimal config that un-gates the builtin `lean`
-        # agent, plus the vendored stand-in agent profile. Session logs (with cost)
+        # agent, plus the vendored model-templated `lean-labs` profile. Session logs
         # default to VIBE_HOME/logs/session, so they land here and sync back out.
         vibe_home = wd / self.VIBE_HOME_DIR
         agents_dir = vibe_home / "agents"
@@ -150,11 +151,11 @@ class VibeHarness(Harness):
             'command = "lean-lsp-mcp"\n'
             "tool_timeout_sec = 180\n"
         )
-        # The vendored stand-in profile lives as ``<agent>.toml`` (``lean-standin``).
-        # Vibe has no ``--model`` flag, so the model is templated into the profile:
-        # ``_render`` substitutes ``<<MODEL>>`` with ``self.model`` (default Magistral)
-        # as it writes the copy into the workdir. The builtin ``lean`` agent (real
-        # Leanstral) ships with vibe and pins its own model, so it needs no profile.
+        # The vendored profile lives as ``<agent>.toml`` (``lean-labs``). Vibe has no
+        # ``--model`` flag, so the model is templated into the profile: ``_render``
+        # substitutes ``<<MODEL>>`` with ``self.model`` (default the lab Leanstral) as
+        # it writes the copy into the workdir. The builtin ``lean`` agent ships with
+        # vibe and pins its own (deprecated) model, so it needs no profile.
         if self.agent != "lean":
             profile = _VIBE_ASSETS / f"{self.agent}.toml"
             (agents_dir / profile.name).write_text(self._render(profile.read_text()))
