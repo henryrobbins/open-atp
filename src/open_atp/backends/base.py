@@ -128,8 +128,8 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
         timeout_s : int, optional
-            Wall-clock cap for the command; backends may fall back to their configured
-            ``timeout_s``. Default ``None``.
+            Wall-clock cap for the command. ``None`` leaves it to the backend's own
+            default. Default ``None``.
 
         Returns
         -------
@@ -195,9 +195,6 @@ class ComputeBackend(abc.ABC):
         :data:`~open_atp.images.DEFAULT_IMAGE`. A mapping is coerced to an
         :class:`~open_atp.images.Image` (so a parsed config's nested ``image:`` block
         works).
-    timeout_s : int
-        Wall-clock cap applied to a command when its call site does not pass an
-        explicit ``timeout_s``. Default ``1800``.
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
@@ -211,7 +208,6 @@ class ComputeBackend(abc.ABC):
         self,
         *,
         image: Image | Mapping[str, object] = DEFAULT_IMAGE,
-        timeout_s: int = 1800,
         env: Mapping[str, str] | None = None,
     ) -> None:
         self.image = (
@@ -219,7 +215,6 @@ class ComputeBackend(abc.ABC):
             if isinstance(image, Image)
             else Image(**cast("Mapping[str, str]", image))
         )
-        self.timeout_s = timeout_s
         self.env = dict(env or {})
 
     @property
@@ -260,8 +255,8 @@ class ComputeBackend(abc.ABC):
             Extra ``(host_path, container_path)`` bind mounts beyond the workdir (e.g.
             agent credential dirs). Default empty.
         timeout_s : int, optional
-            Wall-clock cap for the command; falls back to the backend's
-            :attr:`timeout_s`. Default ``None``.
+            Wall-clock cap for the command. ``None`` leaves it to the backend's own
+            default. Default ``None``.
 
         Returns
         -------
@@ -299,8 +294,8 @@ class ComputeBackend(abc.ABC):
             Extra ``(host_path, container_path)`` mounts pinned at creation. Default
             empty.
         timeout_s : int, optional
-            Wall-clock cap for the sandbox; falls back to the backend's
-            :attr:`timeout_s`. Default ``None``.
+            Wall-clock cap for the sandbox. ``None`` leaves it to the backend's own
+            default. Default ``None``.
 
         Returns
         -------
@@ -333,8 +328,8 @@ class ComputeBackend(abc.ABC):
             Extra ``(host_path, container_path)`` bind mounts beyond the workdir.
             Default empty.
         timeout_s : int, optional
-            Wall-clock cap for the command; falls back to the backend's
-            :attr:`timeout_s`. Default ``None``.
+            Wall-clock cap for the command. ``None`` leaves it to the backend's own
+            default. Default ``None``.
 
         Returns
         -------

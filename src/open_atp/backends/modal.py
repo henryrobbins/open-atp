@@ -54,6 +54,9 @@ log = logging.getLogger(__name__)
 REMOTE_WD = "/workspace/wd"
 #: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
 BAKED_LAKE = "/workspace/.lake"
+#: Sandbox lifetime used when a caller opens a Sandbox without an explicit
+#: ``timeout_s`` -- Modal requires a concrete cap at creation.
+DEFAULT_SANDBOX_TIMEOUT_S = 1800
 
 
 def _require_modal() -> None:
@@ -251,9 +254,6 @@ class ModalBackend(ComputeBackend):
         :data:`~open_atp.images.DEFAULT_IMAGE`. A mapping is coerced to an
         :class:`~open_atp.images.Image` (so a parsed config's nested ``image:`` block
         works).
-    timeout_s : int
-        Wall-clock cap applied to a command when its call site does not pass an
-        explicit ``timeout_s``. Default ``1800``.
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
@@ -287,13 +287,12 @@ class ModalBackend(ComputeBackend):
         self,
         *,
         image: Image | Mapping[str, object] = DEFAULT_IMAGE,
-        timeout_s: int = 1800,
         env: Mapping[str, str] | None = None,
         cpu: float = 2.0,
         memory_mib: int = 4096,
         app: str = "open-atp",
     ) -> None:
-        super().__init__(image=image, timeout_s=timeout_s, env=env)
+        super().__init__(image=image, env=env)
         self.cpu = cpu
         self.memory_mib = memory_mib
         self.app = app
@@ -343,7 +342,7 @@ class ModalBackend(ComputeBackend):
             secrets=[secret],
             cpu=cpu,
             memory=self.memory_mib,
-            timeout=timeout_s or self.timeout_s,
+            timeout=timeout_s or DEFAULT_SANDBOX_TIMEOUT_S,
         )
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces
@@ -393,8 +392,8 @@ class ModalBackend(ComputeBackend):
             Extra ``(host_path, container_path)`` dirs pushed into the Sandbox (e.g.
             agent credential dirs). Default empty.
         timeout_s : int, optional
-            Wall-clock cap for the Sandbox; falls back to the backend's
-            :attr:`timeout_s`. Default ``None``.
+            Wall-clock cap for the Sandbox. ``None`` falls back to
+            :data:`DEFAULT_SANDBOX_TIMEOUT_S`. Default ``None``.
 
         Returns
         -------
@@ -448,8 +447,8 @@ class ModalBackend(ComputeBackend):
             Extra ``(host_path, container_path)`` dirs pushed in at creation. Default
             empty.
         timeout_s : int, optional
-            Wall-clock cap for the Sandbox; falls back to the backend's
-            :attr:`timeout_s`. Default ``None``.
+            Wall-clock cap for the Sandbox. ``None`` falls back to
+            :data:`DEFAULT_SANDBOX_TIMEOUT_S`. Default ``None``.
 
         Returns
         -------

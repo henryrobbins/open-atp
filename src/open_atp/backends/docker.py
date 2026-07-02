@@ -95,9 +95,6 @@ class DockerBackend(ComputeBackend):
         :data:`~open_atp.images.DEFAULT_IMAGE`. A mapping is coerced to an
         :class:`~open_atp.images.Image` (so a parsed config's nested ``image:`` block
         works).
-    timeout_s : int
-        Wall-clock cap applied to a command when its call site does not pass an
-        explicit ``timeout_s``. Default ``1800``.
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
@@ -130,13 +127,12 @@ class DockerBackend(ComputeBackend):
         self,
         *,
         image: Image | Mapping[str, object] = DEFAULT_IMAGE,
-        timeout_s: int = 1800,
         env: Mapping[str, str] | None = None,
         workdir_mount: str = "/workspace/wd",
         baked_lake: str = "/workspace/.lake",
         volumes: tuple[tuple[str, str], ...] = (),
     ) -> None:
-        super().__init__(image=image, timeout_s=timeout_s, env=env)
+        super().__init__(image=image, env=env)
         self.workdir_mount = workdir_mount
         self.baked_lake = baked_lake
         self.volumes = tuple(tuple(v) for v in volumes)
