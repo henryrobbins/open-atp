@@ -1697,7 +1697,7 @@ requires-dist = [
     { name = "rich" },
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7,<9" },
-    { name = "sphinx-argparse", marker = "extra == 'docs'" },
+    { name = "sphinx-argparse", marker = "extra == 'docs'", specifier = "<0.6" },
     { name = "sphinx-autobuild", marker = "extra == 'docs'" },
     { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'" },
     { name = "sphinx-design", marker = "extra == 'docs'" },
