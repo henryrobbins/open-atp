@@ -20,7 +20,7 @@ class OpenCodeHarness(Harness):
     Parameters
     ----------
     model : str
-        Model id the agent runs. Default ``"claude-opus-4-8"``.
+        Model id the agent runs. Default ``"deepseek-v4-pro"``.
     effort : str
         Reasoning-effort level. Default ``"high"``.
     provider : str, optional
@@ -59,7 +59,7 @@ class OpenCodeHarness(Harness):
     def __init__(
         self,
         *,
-        model: str = "claude-opus-4-8",
+        model: str = "deepseek-v4-pro",
         effort: str = "high",
         provider: str | None = None,
         provider_api_key: str | None = None,
