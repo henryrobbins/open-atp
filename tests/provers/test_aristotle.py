@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import tarfile
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -121,6 +122,27 @@ def test_is_transient_distinguishes_dropped_links_from_real_errors() -> None:
     assert not _is_transient(ValueError("unrelated"))
 
 
+def test_quiet_aristotle_logger_drops_expected_noise() -> None:
+    """The filter drops the .lake / dropped-connection noise, keeps everything else."""
+    import logging
+
+    from open_atp.provers.aristotle import _quiet_aristotle_logger
+
+    _quiet_aristotle_logger()
+    _quiet_aristotle_logger()  # idempotent: no duplicate filter
+    logger = logging.getLogger("aristotle")
+
+    def _drops(msg: str) -> bool:
+        record = logger.makeRecord(
+            "aristotle", logging.WARNING, __file__, 0, msg, (), None
+        )
+        return not all(f.filter(record) for f in logger.filters)
+
+    assert _drops("WARNING: Your project contains .lean files but no .lake folder.")
+    assert _drops("Connection to server was interrupted. Use 'aristotle show x'.")
+    assert not _drops("Task complete!")
+
+
 def test_wait_until_terminal_resumes_after_dropped_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -142,6 +164,8 @@ def test_wait_until_terminal_resumes_after_dropped_connection(
     class _FakeTask:
         agent_task_id = "t-1"
         status = TaskStatus.QUEUED
+        percent_complete = 0
+        last_updated_at = datetime(2024, 1, 1)
         waits = 0
 
         async def wait_for_completion(self) -> None:
@@ -157,6 +181,80 @@ def test_wait_until_terminal_resumes_after_dropped_connection(
     assert task.status is TaskStatus.COMPLETE
 
 
+def test_wait_until_terminal_reconnects_past_budget_while_progressing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A long run that keeps advancing reconnects without limit: the budget is a stall
+    counter, not a lifetime cap.
+
+    The stream drops on every attempt and the task stays IN_PROGRESS far longer than
+    ``max_resume_attempts`` -- but because ``percent_complete`` advances each refresh,
+    the stall budget keeps resetting, so we never give up before it completes.
+    """
+    import asyncio
+
+    from aristotlelib.agent_task import TaskStatus
+
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
+
+    class _ProgressingTask:
+        agent_task_id = "t-3"
+        status = TaskStatus.IN_PROGRESS
+        last_updated_at = datetime(2024, 1, 1)
+        percent_complete = 0
+        waits = 0
+
+        async def wait_for_completion(self) -> None:
+            self.waits += 1
+
+        async def refresh(self) -> None:
+            # Advance until well past the budget, then settle.
+            if self.percent_complete >= 90:
+                self.status = TaskStatus.COMPLETE
+            else:
+                self.percent_complete += 10
+
+    prover = _make_prover()
+    prover.max_resume_attempts = 3
+    task = _ProgressingTask()
+    asyncio.run(prover._wait_until_terminal(task))
+
+    assert task.status is TaskStatus.COMPLETE
+    assert task.waits > prover.max_resume_attempts  # never gave up despite the cap
+
+
+def test_wait_until_terminal_is_bounded_by_timeout() -> None:
+    """A hung wait is cancellable at the deadline, so ``timeout_s`` can cap it.
+
+    ``_submit_and_download`` wraps the wait in ``asyncio.wait_for(..., timeout_s)``;
+    this checks the wait actually yields at its await points so the cap fires instead
+    of blocking forever.
+    """
+    import asyncio
+
+    from aristotlelib.agent_task import TaskStatus
+
+    class _HangingTask:
+        agent_task_id = "t-4"
+        status = TaskStatus.IN_PROGRESS
+        percent_complete = 0
+        last_updated_at = datetime(2024, 1, 1)
+
+        async def wait_for_completion(self) -> None:
+            await asyncio.sleep(3600)  # never settles within the test
+
+        async def refresh(self) -> None:
+            pass
+
+    async def _run() -> None:
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                _make_prover()._wait_until_terminal(_HangingTask()), timeout=0.05
+            )
+
+    asyncio.run(_run())
+
+
 def test_wait_until_terminal_gives_up_after_resume_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -170,13 +268,15 @@ def test_wait_until_terminal_gives_up_after_resume_budget(
     class _StuckTask:
         agent_task_id = "t-2"
         status = TaskStatus.IN_PROGRESS
+        percent_complete = 50
+        last_updated_at = datetime(2024, 1, 1)
         waits = 0
 
         async def wait_for_completion(self) -> None:
             self.waits += 1
 
         async def refresh(self) -> None:
-            pass  # never reaches a terminal state
+            pass  # never progresses, never reaches a terminal state
 
     prover = _make_prover()
     prover.max_resume_attempts = 3

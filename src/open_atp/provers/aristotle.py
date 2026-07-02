@@ -49,6 +49,30 @@ PROVER_PROMPT = (
 _IGNORE = shutil.ignore_patterns(".lake", ".git", "*.tar.gz")
 
 
+class _AristotleNoiseFilter(logging.Filter):
+    """Drop the two expected-noise records aristotlelib logs on our headless path.
+
+    We deliberately upload without ``.lake`` (the sandbox already has the warm
+    Mathlib cache) and resume across dropped event streams ourselves, so
+    aristotlelib's ".lake folder" warning and its "Connection to server was
+    interrupted" error are both expected and redundant -- the full run record still
+    syncs to the logs dir regardless.
+    """
+
+    _DROP = ("no .lake folder", "Connection to server was interrupted")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not any(needle in message for needle in self._DROP)
+
+
+def _quiet_aristotle_logger() -> None:
+    """Install :class:`_AristotleNoiseFilter` on the ``aristotle`` logger, once."""
+    logger = logging.getLogger("aristotle")
+    if not any(isinstance(f, _AristotleNoiseFilter) for f in logger.filters):
+        logger.addFilter(_AristotleNoiseFilter())
+
+
 def _is_transient(exc: BaseException) -> bool:
     """True for errors worth retrying: a dropped connection, timeout, or 5xx.
 
@@ -93,13 +117,18 @@ class AristotleProver(AutomatedProver):
         The hosted run lives server-side, so a dropped connection is recoverable:
         re-fetch rather than reporting the run failed. Default ``5``.
     max_resume_attempts : int
-        Bounds how many times we re-attach to the event stream when it drops
-        mid-run. Default ``20``.
+        Bounds *consecutive* event-stream reconnects that see no server-side progress
+        before we stop waiting. Any progress (``percent_complete`` or
+        ``last_updated_at`` advancing) resets it, so a healthy but long run reconnects
+        without limit; this only caps a genuinely stuck task. Default ``10``.
     resume_backoff_seconds : float
         Initial sleep between retries/resumes, doubling (capped) between tries.
         Default ``5.0``.
     timeout_s : int
-        Wall-clock budget for the generation run, in seconds. Default ``1800``.
+        Hard wall-clock cap on the generation wait, in seconds. When it elapses we
+        stop waiting and proceed with whatever Aristotle has produced so far (the run
+        keeps going and billing server-side regardless -- this only bounds the
+        client). Default ``1800``.
 
     Attributes
     ----------
@@ -149,7 +178,7 @@ class AristotleProver(AutomatedProver):
         api_key: str | None = None,
         allow_agent_questions: bool = False,
         max_connection_retries: int = 5,
-        max_resume_attempts: int = 20,
+        max_resume_attempts: int = 10,
         resume_backoff_seconds: float = 5.0,
         timeout_s: int = 1800,
     ) -> None:
@@ -226,6 +255,10 @@ class AristotleProver(AutomatedProver):
         import aristotlelib
         from aristotlelib import AgentQuestionsSetting, Project
 
+        # We strip ``.lake`` before upload and resume dropped event streams ourselves;
+        # silence aristotlelib's resulting expected-noise records on the console.
+        _quiet_aristotle_logger()
+
         key = self._api_key or os.environ.get("ARISTOTLE_API_KEY")
         if key:
             aristotlelib.set_api_key(key)
@@ -248,8 +281,25 @@ class AristotleProver(AutomatedProver):
             return None, metadata
 
         agent_task = tasks[0]
-        # Resume across dropped connections until the task truly settles server-side.
-        await self._wait_until_terminal(agent_task)
+        # Resume across dropped connections until the task truly settles server-side,
+        # but never past the wall-clock budget: on timeout, stop waiting and fall
+        # through to download whatever Aristotle has produced so far.
+        try:
+            await asyncio.wait_for(
+                self._wait_until_terminal(agent_task), timeout=self.timeout_s
+            )
+        except TimeoutError:
+            log.warning(
+                "aristotle: generation exceeded timeout_s=%ss; proceeding with "
+                "whatever output is available",
+                self.timeout_s,
+            )
+            metadata_timed_out = True
+            # wait_for cancelled the wait mid-flight; re-fetch the true task state so
+            # the recorded status/summary reflect where the run actually got to.
+            await self._with_retry(agent_task.refresh, "refresh task status")
+        else:
+            metadata_timed_out = False
         await self._with_retry(project.refresh, "refresh project")
 
         metadata.update(
@@ -257,6 +307,7 @@ class AristotleProver(AutomatedProver):
             task_status=agent_task.status.name,
             percent_complete=agent_task.percent_complete,
             output_summary=agent_task.output_summary,
+            timed_out=metadata_timed_out,
         )
 
         # Sync the full run record to the host before returning. Best-effort: a hiccup
@@ -307,8 +358,17 @@ class AristotleProver(AutomatedProver):
         returns with a stale, still-running status while the task keeps going on the
         server. Treat any non-terminal status after it returns as a dropped connection,
         re-fetch the true state, and re-attach to the stream until the task actually
-        settles (or we exhaust the resume budget, in which case we proceed with
-        whatever output exists -- the run dashboard is the source of truth).
+        settles.
+
+        The stream has no client timeout (aristotlelib opens it with ``timeout=None``),
+        so drops are server/proxy-side -- and Aristotle can work for many minutes
+        without emitting an event, leaving the connection idle and prone to being cut.
+        So ``max_resume_attempts`` bounds *consecutive resumes without progress*, not
+        the run's lifetime: any forward progress (``percent_complete`` or
+        ``last_updated_at`` advancing) resets the budget and the backoff. A healthy but
+        long run thus reconnects indefinitely; we only give up once the task is
+        genuinely stuck, and proceed with whatever output exists (the run dashboard is
+        the source of truth).
         """
         from aristotlelib.agent_task import TaskStatus
 
@@ -319,29 +379,46 @@ class AristotleProver(AutomatedProver):
             TaskStatus.FAILED,
             TaskStatus.CANCELED,
         }
+
+        def progress() -> tuple[object, object]:
+            return (agent_task.percent_complete, agent_task.last_updated_at)
+
         delay = self.resume_backoff_seconds
-        for attempt in range(1, self.max_resume_attempts + 1):
+        last_progress = progress()
+        stalls = 0
+        while stalls < self.max_resume_attempts:
             try:
                 await agent_task.wait_for_completion()
             except Exception as exc:  # noqa: BLE001 -- re-raised unless transient
                 if not _is_transient(exc):
                     raise
-                log.warning("aristotle: wait interrupted (%s); resuming", exc)
+                log.debug("aristotle: wait interrupted (%s); resuming", exc)
             await self._with_retry(agent_task.refresh, "refresh task status")
             if agent_task.status in terminal:
                 return
-            log.warning(
+
+            if progress() != last_progress:
+                # The run advanced server-side, so this drop is not a stall: reset the
+                # budget and backoff and keep reconnecting for as long as it progresses.
+                last_progress = progress()
+                stalls = 0
+                delay = self.resume_backoff_seconds
+            else:
+                stalls += 1
+            # Expected: long-lived SSE streams get severed and we re-attach. Debug, not
+            # warning, so a normal run with many reconnects stays quiet.
+            log.debug(
                 "aristotle: connection dropped with task still %s; resuming "
-                "(attempt %d/%d)",
+                "(stall %d/%d)",
                 agent_task.status.name,
-                attempt,
+                stalls,
                 self.max_resume_attempts,
             )
             await asyncio.sleep(delay)
             delay = min(delay * 2, 60.0)
         log.warning(
-            "aristotle: task %s still %s after %d resume attempts; proceeding with "
-            "whatever output is available",
+            "aristotle: task %s still %s after %d resumes with no progress; proceeding "
+            "with whatever output is available",
             agent_task.agent_task_id,
             agent_task.status.name,
             self.max_resume_attempts,
@@ -399,8 +476,12 @@ class AristotleProver(AutomatedProver):
             wrapped = len(entries) == 1 and entries[0].is_dir()
             source = entries[0] if wrapped else staging
 
+            # Recreate directories too (not just files): an empty directory can be
+            # load-bearing -- e.g. a lakefile that globs a dir the agent had to create.
             for item in source.rglob("*"):
-                if item.is_file():
-                    dest = workdir / item.relative_to(source)
+                dest = workdir / item.relative_to(source)
+                if item.is_dir():
+                    dest.mkdir(parents=True, exist_ok=True)
+                elif item.is_file():
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(item, dest)
