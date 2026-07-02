@@ -247,6 +247,7 @@ def test_generate_reports_files_the_agent_changed(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         # The real agent would edit files in place; emulate that.
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
@@ -280,6 +281,7 @@ def test_generate_reports_no_changes_when_agent_does_nothing(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         return [], ""
 
@@ -312,6 +314,7 @@ def test_prove_reuses_one_sandbox_for_generation_and_verify(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         # Generation hands the live session through to the agent run.
         assert session is not None

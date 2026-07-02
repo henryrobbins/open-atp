@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -87,6 +88,12 @@ _REASON_RE = re.compile(
 )
 
 _SORRY_RE = re.compile(r"\bsorry\b")
+
+# Don't start another coordinator round with less than this much of the generation
+# budget left: a round needs meaningful wall-clock to make progress, and the per-round
+# cap (remaining budget) must stay comfortably positive so coreutils ``timeout`` has
+# something to enforce (see ``_run_rounds``).
+_MIN_ROUND_S = 60
 
 # Helper-LLM usage ledger: ``discussion_partner.py`` appends one JSON record per
 # Gemini/GPT call here (workdir-relative, under ``.claude/`` next to ``cli.log``).
@@ -251,10 +258,12 @@ class NuminaProver(AgentProver):
 
         # 5. Round-continuation loop, with the final check, in one persistent sandbox:
         #    generation and verification share the backend, so we pay neither a
-        #    per-round nor a separate verify spin-up.
+        #    per-round nor a separate verify spin-up. The session must cover both the
+        #    whole round loop (self.timeout_s) and the verifier's own budget, since
+        #    both run before teardown; the backend adds its sync headroom on top.
         _, mounts = self._auth(harness)
         with self.verifier.backend.session(
-            wd, mounts=mounts, timeout_s=self.timeout_s
+            wd, mounts=mounts, timeout_s=self.timeout_s + self.verifier.timeout_s
         ) as session:
             loop = self._run_rounds(wd, harness, stdout_path, tracker, session=session)
             # Final pull so the host workdir (helper-usage ledger, completed files)
@@ -364,7 +373,17 @@ class NuminaProver(AgentProver):
         statement_changed = False
         statement_changes: list[str] = []
 
+        # The rounds share one Sandbox lifetime (Sandbox timeout = self.timeout_s +
+        # headroom), so budget the loop as a whole: each round is capped at the
+        # *remaining* wall-clock, and we stop once too little is left to make progress.
+        deadline = time.monotonic() + self.timeout_s
+
         for round_num in range(1, self.max_rounds + 1):
+            remaining = deadline - time.monotonic()
+            if remaining < _MIN_ROUND_S:
+                end_reason = "TIMEOUT"
+                break
+
             # A fresh session is started whenever we have hit too many consecutive
             # LIMITs (and, in this backend, every round -- see module docstring).
             if consecutive_limits >= self.max_consecutive_limits:
@@ -372,7 +391,7 @@ class NuminaProver(AgentProver):
                 session_resets += 1
 
             round_lines, round_stderr = self._run_agent(
-                workdir, harness, stdout_path, session=session
+                workdir, harness, stdout_path, session=session, timeout_s=int(remaining)
             )
             if round_stderr:
                 stderrs.append(round_stderr)

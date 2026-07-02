@@ -169,6 +169,7 @@ def _scripted_run_agent(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         i = len(calls)
         calls.append(i)
@@ -208,6 +209,7 @@ def test_helper_cost_is_folded_into_total(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         # Simulate the in-sandbox skill appending usage across two rounds' calls.
         ledger = workdir / ".claude" / "helper_usage.jsonl"
@@ -250,6 +252,7 @@ def test_helper_cost_flags_unpriced_model(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         ledger = workdir / ".claude" / "helper_usage.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -315,6 +318,7 @@ def test_round_loop_falls_back_to_subtype_when_no_marker(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         calls.append(1)
         return [_result_line(None, subtype="success")], ""
@@ -341,6 +345,7 @@ def test_guard_error_stops_and_restores_weakened_theorem(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         target = workdir / "MILExample.lean"
         target.write_text(
@@ -394,6 +399,7 @@ def test_run_end_to_end_verifies_mocked_numina_result(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         assert session is not None  # rounds exec in the live session
         (workdir / "MILExample.lean").write_text(_SOLVED_FILE)

@@ -209,11 +209,16 @@ class AgentProver(AutomatedProver):
         #    and verification share the backend, so we keep the container hot between
         #    them and never pay a second spin-up. Mounts (credential dirs) are pinned
         #    when the session is created; per-command env is forwarded by _run_agent.
+        #    The session must cover both phases -- the generation budget plus the
+        #    verifier's own -- since both run before the sandbox is torn down; the
+        #    backend adds its sync headroom on top.
         _, mounts = self._auth(harness)
         with self.verifier.backend.session(
-            wd, mounts=mounts, timeout_s=self.timeout_s
+            wd, mounts=mounts, timeout_s=self.timeout_s + self.verifier.timeout_s
         ) as session:
-            lines, stderr = self._run_agent(wd, harness, stdout_path, session)
+            lines, stderr = self._run_agent(
+                wd, harness, stdout_path, session, timeout_s=self.timeout_s
+            )
             self._download_wd(wd, session)
             # Parse (which reads harness usage files still in wd) before
             # _download_logs relocates them out.
@@ -291,6 +296,8 @@ class AgentProver(AutomatedProver):
         harness: Harness,
         stdout_path: Path,
         session: ComputeSession,
+        *,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         """Resolve auth, launch the agent in the live ``session``, and tee its stdout.
 
@@ -303,6 +310,11 @@ class AgentProver(AutomatedProver):
         The agent execs in the persistent ``session`` -- the same hot sandbox that
         stays up for the verifier afterwards. Mounts (credential dirs) were pinned when
         the session was created; only per-command env is forwarded here.
+
+        ``timeout_s`` is the agent's wall-clock budget: on Modal it is enforced by the
+        Sandbox exec (killed with Sandbox slack left to pull the workdir), and a
+        multi-round caller passes the *remaining* budget so successive rounds share one
+        Sandbox lifetime. Docker ignores it (bind-mounted, no self-terminate).
 
         Isolated (it owns credential resolution + the backend call) so tests can
         stand in a fake run -- write a solved file, return a captured stream --
@@ -318,7 +330,7 @@ class AgentProver(AutomatedProver):
                 lines.append(line)
 
         with stdout_path.open("a", encoding="utf-8") as sink:
-            handle = session.exec(harness.command, env=env)
+            handle = session.exec(harness.command, env=env, timeout_s=timeout_s)
             drain(handle, sink)
             result = handle.wait()
             self._log_agent_result(harness, result, lines)

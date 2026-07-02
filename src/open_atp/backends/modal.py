@@ -20,6 +20,10 @@ Everything else is a variation of that isolation. Notable details:
 * Redirect stdin to ``/dev/null`` to avoid Modal's stdin-open deadlock; capture
   stderr to a file pulled back with the workdir.
 * Pin ``LEAN_NUM_THREADS`` to the allocated CPU count so Lean doesn't oversubscribe.
+* Cap generation with coreutils ``timeout`` *below* the Sandbox's own lifetime (which
+  carries :data:`SYNC_HEADROOM_S` of slack), so a timed-out agent is killed while the
+  Sandbox is still alive to pull the partial workdir back -- rather than Modal
+  terminating the whole Sandbox mid-run and losing every edit.
 * Never leak a Sandbox: terminate on a failed start and after every run.
 """
 
@@ -27,6 +31,7 @@ from __future__ import annotations
 
 import io
 import logging
+import shlex
 import tarfile
 import tempfile
 import time
@@ -54,6 +59,14 @@ log = logging.getLogger(__name__)
 REMOTE_WD = "/workspace/wd"
 #: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
 BAKED_LAKE = "/workspace/.lake"
+#: Extra Sandbox lifetime (seconds) reserved purely for the final tar pull. The
+#: caller's ``timeout_s`` already budgets the *work* (generation + the in-session
+#: verify); the Sandbox is created with ``timeout_s + SYNC_HEADROOM_S`` so that after
+#: the last command hits its coreutils ``timeout``, the Sandbox is still alive long
+#: enough to tar the partial workdir back out. Without it, the Sandbox timeout and the
+#: work budget coincide and the pull races a Sandbox Modal has already terminated --
+#: dropping every edit the agent made.
+SYNC_HEADROOM_S = 180
 
 
 def _require_modal() -> None:
@@ -73,6 +86,26 @@ def _tar_dir(src: Path) -> bytes:
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:
         tf.add(str(src), arcname=".")
     return buf.getvalue()
+
+
+def _exec_payload(wrapped: str, timeout_s: int | None) -> str:
+    """Build the ``bash -c`` argument for a Sandbox exec: cap, stdin, stderr.
+
+    ``timeout_s`` (> 0) caps ``wrapped`` with coreutils ``timeout``, which -- run
+    without ``--foreground`` -- signals the command's whole process group, so the
+    agent *and* its children are killed when the budget expires (in time for the
+    Sandbox's :data:`SYNC_HEADROOM_S` pull window). Each command the caller runs
+    (generation, then the in-session verify) passes its own slice of the budget.
+    ``None`` leaves it uncapped, for a caller that manages its own timeout.
+
+    Stdin is ``/dev/null`` (Modal leaves it an open pipe with no EOF, hanging agent
+    CLIs) and stderr is captured to a file pulled back with the workdir.
+    """
+    if timeout_s is not None and timeout_s > 0:
+        body = f"timeout --kill-after=30 {timeout_s} bash -c {shlex.quote(wrapped)}"
+    else:
+        body = f"{{ {wrapped} ; }}"
+    return f"{body} < /dev/null 2> {REMOTE_WD}/modal_stderr.txt"
 
 
 def _modal_image_name(image: str) -> str:
@@ -333,13 +366,16 @@ class ModalBackend(ComputeBackend):
         secret = modal.Secret.from_dict(secret_dict)
 
         # Idle Sandbox with no main process: we must push the workdir before exec.
+        # Give the Sandbox SYNC_HEADROOM_S beyond the work budget: commands are
+        # coreutils-capped at the budget (see _exec_payload), so the Sandbox outlives
+        # a timed-out command and the partial workdir can still be pulled back.
         sb = modal.Sandbox.create(
             app=app,
             image=image,
             secrets=[secret],
             cpu=cpu,
             memory=self.memory_mib,
-            timeout=timeout_s,
+            timeout=timeout_s + SYNC_HEADROOM_S,
         )
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces
@@ -383,7 +419,7 @@ class ModalBackend(ComputeBackend):
         command : str
             The shell command to run inside the Sandbox.
         timeout_s : int
-            Wall-clock cap for the Sandbox, in seconds.
+            Wall-clock cap for the command, in seconds.
         env : Mapping[str, str], optional
             Per-call environment variables, merged over the backend's :attr:`env`.
             Default empty.
@@ -403,13 +439,12 @@ class ModalBackend(ComputeBackend):
         )
         try:
             started_at = time.time()
-            # Redirect stdin from /dev/null (Modal leaves it an open pipe with no EOF,
-            # so agent CLIs hang) and capture stderr to a file pulled back on wait().
+            # Cap the command a headroom below the Sandbox timeout so a timed-out run
+            # is killed while the Sandbox is still alive to pull the workdir back.
             proc = sb.exec(
                 "bash",
                 "-c",
-                f"{{ {self._wrap(command)} ; }} "
-                f"< /dev/null 2> {REMOTE_WD}/modal_stderr.txt",
+                _exec_payload(self._wrap(command), timeout_s),
                 workdir=REMOTE_WD,
             )
         except BaseException:
@@ -439,7 +474,7 @@ class ModalBackend(ComputeBackend):
             Host directory pushed into the Sandbox at creation; bridge it back with
             :meth:`ModalSession.sync_out`.
         timeout_s : int
-            Wall-clock cap for the Sandbox, in seconds.
+            Wall-clock time for the Modal Sandbox session to live, in seconds.
         env : Mapping[str, str], optional
             Environment variables pinned on the Sandbox at creation, merged over the
             backend's :attr:`env`. Default empty.
@@ -489,8 +524,7 @@ class ModalSession(ComputeSession):
             Per-command environment variables, forwarded as a one-off Modal secret
             (usually empty -- credentials pin at session creation). Default empty.
         timeout_s : int, optional
-            Unused per-exec; the cap is fixed on the Sandbox at creation. Default
-            ``None``.
+            Wall-clock cap for this command, uncapped by default.
 
         Returns
         -------
@@ -507,8 +541,7 @@ class ModalSession(ComputeSession):
         proc = self.sb.exec(
             "bash",
             "-c",
-            f"{{ {self.backend._wrap(command)} ; }} "
-            f"< /dev/null 2> {REMOTE_WD}/modal_stderr.txt",
+            _exec_payload(self.backend._wrap(command), timeout_s),
             workdir=REMOTE_WD,
             secrets=secrets,
         )

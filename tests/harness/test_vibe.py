@@ -220,6 +220,7 @@ def test_generate_reports_changes_and_session_cost(
         harness: Harness,
         stdout_path: Path,
         session: object | None = None,
+        timeout_s: int | None = None,
     ) -> tuple[list[str], str]:
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
         # The real vibe run writes this; emulate it so parse_result() finds the cost.
