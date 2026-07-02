@@ -141,6 +141,9 @@ class Verifier:
     backend : ComputeBackend
         The sandbox the candidate project is compiled in. Its image carries the
         Lean toolchain + Mathlib pins every project is checked against.
+    timeout_s : int
+        Wall-clock cap for the post-generation compile/axiom check, in seconds.
+        Independent of a prover's (larger) generation budget. Default ``600``.
 
     Attributes
     ----------
@@ -149,8 +152,9 @@ class Verifier:
         match (toolchain + locked Mathlib revision).
     """
 
-    def __init__(self, backend: ComputeBackend) -> None:
+    def __init__(self, backend: ComputeBackend, *, timeout_s: int = 600) -> None:
         self.backend = backend
+        self.timeout_s = timeout_s
 
     @property
     def image(self) -> Image:
@@ -280,11 +284,13 @@ class Verifier:
         if not rel:
             return VerificationReport(compiles=True, sorry_free=True)
 
+        # The compile/axiom check is the post-generation step: cap it with the
+        # verifier's own timeout, not the prover's (larger) generation budget.
         script = self._compile_script(rel)
         if session is None:
-            result = self.backend.run(project.root, script)
+            result = self.backend.run(project.root, script, timeout_s=self.timeout_s)
         else:
-            with session.exec(script) as handle:
+            with session.exec(script, timeout_s=self.timeout_s) as handle:
                 result = handle.wait()
         log = result.stdout + ("\n" + result.stderr if result.stderr else "")
 

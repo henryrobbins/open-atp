@@ -306,6 +306,11 @@ def _benchmark(args: argparse.Namespace) -> int:
     backend = build_backend({"type": compute})
     registry = _build_registry(config.get("provers"), backend)
     provers = _select_provers(registry, args.provers, backend)
+    # --timeout is the per-task generation budget: chain it onto each prover
+    if args.timeout is not None:
+        timeout_s = round(args.timeout * 60)
+        for prover in provers.values():
+            prover.timeout_s = timeout_s
     tasks = args.tasks if args.tasks is not None else config.get("tasks")
     only = _task_filter(tasks)
 
@@ -524,6 +529,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--workers",
         type=int,
         help="Number of workers; each worker runs a single prover on a task.",
+    )
+    benchmark.add_argument(
+        "--timeout",
+        type=float,
+        help="Per-task wall-clock timeout in minutes (default: 30).",
     )
     benchmark.add_argument(
         "--json",

@@ -158,6 +158,8 @@ class AutomatedProver(abc.ABC):
         backend: ComputeBackend,
         timeout_s: int = 1800,
     ) -> None:
+        # timeout_s bounds generation; the Verifier keeps its own (600s default)
+        # budget for the post-generation compile/axiom check.
         self.timeout_s = timeout_s
         self.verifier = Verifier(backend)
 
