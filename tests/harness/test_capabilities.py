@@ -22,6 +22,15 @@ skill, in place of the default bundle's skills) and run every probe; vibe stages
 it under ``VIBE_HOME/skills`` (its trust-independent user skills dir) rather than
 the project ``.agents/skills`` the others use.
 
+``grok`` runs *only* the ``edits_present_on_host`` probe. The other three classify
+a per-tool-call event stream (``tool_use`` + ``tool_result`` with a status), but
+grok's headless output exposes none: ``--output-format json`` emits a single final
+result object, and ``streaming-json`` emits only token-level ``thought``/``text``
+deltas plus a terminal ``end`` -- tool calls run but are never surfaced as events.
+The edit-sync probe asserts on the host filesystem, not the stream, so it is the one
+capability that can be checked for grok here; its full pipeline lives in
+``test_e2e_provers``.
+
 Every test is marked ``agent_api`` (billable, needs agent creds) and excluded by
 default via ``addopts``; the backend dimension carries the ``docker`` / ``modal``
 marker per parametrization. Run e.g. ``pytest -m 'agent_api and docker'``. Each
@@ -34,6 +43,7 @@ Prerequisites:
     integration spend off the Anthropic bill)
   - vibe: ``MISTRAL_API_KEY`` in env, with Labs access to the builtin ``lean``
     agent (pins Leanstral 1.5)
+  - grok: ``~/.grok/auth.json`` from ``grok`` login (edit-sync probe only)
   - docker backend: docker on PATH + the ``open-atp:latest`` image
   - modal backend: ``MODAL_TOKEN_*`` env or ``~/.modal.toml`` + the published image
 """
@@ -90,7 +100,14 @@ Rules:
 - Do not summarize. Make the one call, then stop.
 """
 
+#: The four harnesses whose headless output exposes a per-tool-call event stream the
+#: classifiers can inspect; every probe runs against these.
 HARNESS_NAMES = ["claude_code", "codex", "opencode", "vibe"]
+
+#: Harnesses for the ``edits_present_on_host`` probe, which asserts on the host
+#: filesystem rather than the event stream. ``grok`` joins here (and only here): it
+#: surfaces no tool-call events, so the other three probes can't classify it.
+EDIT_SYNC_HARNESS_NAMES = [*HARNESS_NAMES, "grok"]
 
 #: Cheap models per agent to keep the (billable) integration run inexpensive.
 _MODELS = {
@@ -104,6 +121,9 @@ _MODELS = {
     # The builtin ``lean`` agent pins Leanstral 1.5 itself; recorded in metadata
     # only (vibe has no --model flag). Leanstral is $0-priced.
     "vibe": "labs-leanstral-1-5",
+    # grok bills the logged-in xAI plan (mounted OAuth, not per-token), so cost isn't
+    # a concern; use the default recommended model.
+    "grok": "grok-4.5",
 }
 
 # Backend dimension: each value carries its own opt-out marker so a run can pick
@@ -127,6 +147,9 @@ def _agent_available(harness: str) -> bool:
         return bool(os.environ.get("DEEPSEEK_API_KEY"))
     if harness == "vibe":
         return bool(os.environ.get("MISTRAL_API_KEY"))
+    if harness == "grok":
+        # Mounts the OAuth login (grok login), not an env var.
+        return (Path.home() / ".grok" / "auth.json").is_file()
     return False
 
 
@@ -626,7 +649,7 @@ def test_lean_lsp_mcp(harness: str, backend: str) -> None:
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-@pytest.mark.parametrize("harness", HARNESS_NAMES)
+@pytest.mark.parametrize("harness", EDIT_SYNC_HARNESS_NAMES)
 def test_edits_present_on_host_after_completion(harness: str, backend: str) -> None:
     """A file the agent writes is on the host workdir once the run completes.
 

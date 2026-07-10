@@ -98,14 +98,14 @@ def test_codex_cost_falls_back_to_token_table(tmp_path: Path) -> None:
     assert estimated == pytest.approx(20.0)
 
 
-def test_grok_parse_lines_tokens_and_cost_fallback() -> None:
+def test_grok_parse_lines_tokens_and_cost_fallback(tmp_path: Path) -> None:
     """Grok reports no USD, so prove() estimates from the token totals it parses."""
     harness = _HARNESSES["grok"](model="grok-4.5", effort="high")
     lines = [
         '{"result":"done","stop_reason":"stop",'
         '"usage":{"input_tokens":1000000,"output_tokens":1000000}}',
     ]
-    result = harness.parse_result(lines)
+    result = harness.parse_result(lines, tmp_path)
     assert result.input_tokens == 1_000_000
     assert result.output_tokens == 1_000_000
     assert result.stop_reason == "stop"
@@ -115,11 +115,11 @@ def test_grok_parse_lines_tokens_and_cost_fallback() -> None:
     assert estimated == pytest.approx(8.0)
 
 
-def test_grok_parse_handles_multiline_json() -> None:
+def test_grok_parse_handles_multiline_json(tmp_path: Path) -> None:
     """`--output-format json` may pretty-print; the object still parses."""
     harness = _HARNESSES["grok"](model="grok-4.5")
     lines = ["{", '  "usage": {"prompt_tokens": 5, "completion_tokens": 7}', "}"]
-    result = harness.parse_result(lines)
+    result = harness.parse_result(lines, tmp_path)
     assert result.input_tokens == 5
     assert result.output_tokens == 7
 
@@ -135,15 +135,22 @@ def test_grok_stage_wd_writes_lean_lsp_config(tmp_path: Path) -> None:
     assert 'command = "lean-lsp-mcp"' in config
 
 
-def test_grok_auth_forwards_xai_key() -> None:
-    harness = _HARNESSES["grok"](xai_api_key="xai-fake")
-    assert harness.agent_auth().env == {"XAI_API_KEY": "xai-fake"}
+def test_grok_auth_mounts_only_auth_json(tmp_path: Path) -> None:
+    auth = tmp_path / "auth.json"
+    auth.write_text('{"key": "oidc-token"}')
+    harness = _HARNESSES["grok"](auth_file=auth)
+    result = harness.agent_auth()
+    assert result.env == {}  # OAuth login is mounted, not forwarded as an env key
+    (src, dest) = result.mounts[0]
+    assert dest == ".grok-home"  # NOT `.grok`: that would shadow the image binary
+    staged = sorted(p.name for p in src.iterdir())
+    assert staged == ["auth.json"]
+    assert (src / "auth.json").read_text() == '{"key": "oidc-token"}'
 
 
-def test_grok_auth_requires_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("XAI_API_KEY", raising=False)
-    harness = _HARNESSES["grok"](model="grok-4.5")
-    with pytest.raises(RuntimeError, match="XAI_API_KEY"):
+def test_grok_auth_requires_auth_file(tmp_path: Path) -> None:
+    harness = _HARNESSES["grok"](auth_file=tmp_path / "missing.json")
+    with pytest.raises(RuntimeError, match="auth.json"):
         harness.agent_auth()
 
 

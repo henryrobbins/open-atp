@@ -8,27 +8,29 @@ Use xAI's [Grok CLI](https://docs.x.ai/build/overview) (Grok Build) as an automa
 
 ## Authentication
 
-Grok bills against an xAI API account. Create a key in the [xAI console](https://console.x.ai/) and expose it as `XAI_API_KEY`:
+The harness reuses the `grok` CLI's OAuth login, so runs draw on the logged-in xAI plan rather than a metered API key. Log in once on the host:
 
 ```bash
-export XAI_API_KEY=xai-...
+grok login
 ```
 
-It is recommended to define this in a `.env` file in your project root. Alternatively, pass the key to the harness explicitly:
+This writes `~/.grok/auth.json`. The harness stages **only** that file into the sandbox (never the whole `~/.grok`, which also holds the CLI binary and personal state) and points `GROK_HOME` at it, so grok reads the credential there. To use a login from a non-default location, pass it explicitly:
 
 ```{testcode}
+from pathlib import Path
+
 from open_atp.harness import GrokHarness
 
-GrokHarness(xai_api_key="xai-...")
+GrokHarness(auth_file=Path("~/.grok/auth.json").expanduser())
 ```
 
-Either way the harness forwards the key into the sandbox as `XAI_API_KEY`.
+The mounted access token is short-lived; if it has expired, re-run `grok login` on the host before a batch.
 
 ## Using the prover
 
 ### Standard prover via Python API
 
-The simplest way to run the prover is through {func}`~open_atp.config.standard_prover`, which uses a standard configuration pointing at `grok-4.5`. Set `XAI_API_KEY` in the host environment (or pass it to the harness). Here, we prove the {ref}`MUL_REORDER` example theorem:
+The simplest way to run the prover is through {func}`~open_atp.config.standard_prover`, which uses a standard configuration pointing at `grok-4.5`. Log in with `grok login` on the host first (or pass `auth_file` to the harness). Here, we prove the {ref}`MUL_REORDER` example theorem:
 
 ```{testcode}
 from pathlib import Path

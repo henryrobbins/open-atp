@@ -10,7 +10,26 @@
 # lean-lsp MCP server is registered via the project-scope .grok/config.toml the
 # harness writes. The JSON result goes to stdout.
 #
+# GROK_HOME points at the mounted credential dir (the harness stages just
+# auth.json there); grok reads the OAuth login from it and writes its own state
+# alongside, so the image's ~/.grok binary is never shadowed. It sits under $HOME,
+# which the backend sets equal to the mount root (container_home).
+#
 # https://docs.x.ai/build/cli/headless-scripting
+
+export GROK_HOME="$HOME/.grok-home"
+
+# grok validates --model against a model list it fetches from xAI at startup. On a
+# cold sandbox that fetch can transiently fail (network not yet ready, or throttled
+# under concurrent starts), returning an empty list so --model fails with "unknown
+# model id" and aborts the whole run. Gate the (expensive) proof call on a warm list
+# via the cheap `grok models` probe. Note it exits 0 even on a failed fetch (printing
+# an empty list), so gate on the target model actually appearing -- not the exit
+# code -- retrying until the fetch lands.
+for _ in $(seq 1 10); do
+    grok models 2>/dev/null | grep -qF '<<MODEL>>' && break
+    sleep 3
+done
 
 grok --single "$PROMPT" \
     --output-format json \

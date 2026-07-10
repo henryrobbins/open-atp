@@ -68,6 +68,12 @@ def _need_codex() -> str | None:
     return None if (Path.home() / ".codex").exists() else "no ~/.codex (codex login)"
 
 
+def _need_grok() -> str | None:
+    """Grok mounts ``~/.grok/auth.json`` (``grok`` login), not an env var."""
+    auth = Path.home() / ".grok" / "auth.json"
+    return None if auth.is_file() else "no ~/.grok/auth.json (grok login)"
+
+
 def _need_modal() -> str | None:
     """Modal: env tokens or a ``~/.modal.toml`` profile (``modal token set``)."""
     if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
@@ -133,7 +139,7 @@ PROVER_SPECS = [
     ),
     pytest.param(
         "grok",
-        _need_env("XAI_API_KEY"),
+        _need_grok,
         marks=pytest.mark.agent_api,
         id="agent-grok",
     ),
