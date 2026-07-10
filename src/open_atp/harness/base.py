@@ -279,18 +279,27 @@ class Harness(ABC):
         """
         (wd / PROMPT_FILE).write_text(prompt)
 
-    def parse_result(self, lines: list[str]) -> HarnessRunResult:
-        """Parse the agent's streamed JSON lines into a :class:`HarnessRunResult`.
+    def parse_result(self, lines: list[str], wd: Path) -> HarnessRunResult:
+        """Parse the agent's run into a :class:`HarnessRunResult`.
+
+        ``wd`` is passed explicitly (not stashed on the instance) so a single harness
+        shared across concurrently-running tasks reads *this* task's usage: harnesses
+        whose cost/tokens live in workdir files (Vibe's session log, ax-prover's ``-o``
+        JSON) read them from ``wd`` here. The CLI harnesses parse from ``lines`` alone
+        and ignore ``wd``.
 
         Parameters
         ----------
         lines : list[str]
             The agent's streamed stdout, one JSON object per line.
+        wd : pathlib.Path
+            The agent working directory this run used; where a harness reads any
+            workdir-local usage files.
 
         Returns
         -------
         HarnessRunResult
-            Token totals, cost, and stop metadata parsed from the stream.
+            Token totals, cost, and stop metadata parsed from the run.
         """
         return self._parse_lines(lines)
 

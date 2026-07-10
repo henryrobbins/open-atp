@@ -96,8 +96,6 @@ class VibeHarness(Harness):
         self.max_turns = max_turns
         self.max_price = max_price
         self._mistral_api_key = mistral_api_key
-        #: Set in :meth:`stage_wd`; where :meth:`parse_result` looks for session logs.
-        self._session_log_dir: Path | None = None
 
     def _required_env(self) -> dict[str, str]:
         # The builtin lean agent's provider reads MISTRAL_API_KEY from the process
@@ -152,7 +150,10 @@ class VibeHarness(Harness):
             'command = "lean-lsp-mcp"\n'
             "tool_timeout_sec = 180\n"
         )
-        self._session_log_dir = vibe_home / "logs" / "session"
+
+    def _session_log_dir(self, wd: Path) -> Path:
+        """Where vibe writes its per-session logs under the workdir-local VIBE_HOME."""
+        return wd / self.VIBE_HOME_DIR / "logs" / "session"
 
     def _agent_command(self) -> str:
         template = (_SCRIPTS / "vibe_agent.sh").read_text()
@@ -163,11 +164,11 @@ class VibeHarness(Harness):
             extra += f" \\\n    --max-price {self.max_price}"
         return template.replace("<<AGENT>>", self.agent).replace("<<EXTRA>>", extra)
 
-    def parse_result(self, lines: list[str]) -> HarnessRunResult:
+    def parse_result(self, lines: list[str], wd: Path) -> HarnessRunResult:
         # Final assistant text + stop signal come from the NDJSON stream; token/cost
-        # totals come from the session log, which the stream does not carry.
+        # totals come from the session log under ``wd`` (the stream omits them).
         result = self._parse_lines(lines)
-        stats = self._read_session_stats()
+        stats = self._read_session_stats(wd)
         if stats is not None:
             cost = stats.get("session_cost")
             if isinstance(cost, (int, float)):
@@ -187,11 +188,12 @@ class VibeHarness(Harness):
             logs_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(logs_dir / "vibe-session"))
 
-    def _read_session_stats(self) -> dict[str, Any] | None:
-        """Load ``stats`` from the most recent session ``meta.json``, if present."""
-        if self._session_log_dir is None or not self._session_log_dir.is_dir():
+    def _read_session_stats(self, wd: Path) -> dict[str, Any] | None:
+        """Load ``stats`` from the most recent session ``meta.json`` under ``wd``."""
+        log_dir = self._session_log_dir(wd)
+        if not log_dir.is_dir():
             return None
-        metas = sorted(self._session_log_dir.glob("*/meta.json"))
+        metas = sorted(log_dir.glob("*/meta.json"))
         if not metas:
             return None
         try:

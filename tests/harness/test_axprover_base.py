@@ -152,8 +152,6 @@ def test_render_config_anthropic_model_and_effort(tmp_path: Path) -> None:
     # API rejects under thinking.type: adaptive ("Extra inputs are not permitted").
     assert "budget_tokens" not in llm["provider_config"]["thinking"]
     assert cfg["prover"]["max_iterations"] == 15
-    # parse_result() looks here for the usage side-channel files.
-    assert harness._wd == tmp_path
 
 
 def test_render_config_provider_prefix_and_knob_per_provider() -> None:
@@ -186,7 +184,7 @@ def test_parse_sums_tokens_across_usage_files(tmp_path: Path) -> None:
     _write_usage(tmp_path, "A_lean", 1000, 200)
     _write_usage(tmp_path, "B_lean", 500, 50)
 
-    result = harness.parse_result(STREAM_LINES)
+    result = harness.parse_result(STREAM_LINES, tmp_path)
     assert result.input_tokens == 1500
     assert result.output_tokens == 250
     # ax-prover never self-reports USD; the prover derives it from the token table.
@@ -197,7 +195,7 @@ def test_parse_sums_tokens_across_usage_files(tmp_path: Path) -> None:
 def test_parse_without_usage_files_reports_zero_tokens(tmp_path: Path) -> None:
     harness = AxProverBaseHarness(model="claude-opus-4-8")
     harness.stage_wd(tmp_path)  # no usage files written
-    result = harness.parse_result(STREAM_LINES)
+    result = harness.parse_result(STREAM_LINES, tmp_path)
     assert result.input_tokens == 0
     assert result.output_tokens == 0
     assert result.cost_usd is None

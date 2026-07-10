@@ -57,9 +57,9 @@ def make_prover(fake_session_backend: object) -> object:
 # --- stream parsing + cost -------------------------------------------------
 
 
-def test_claude_code_parse_lines_tokens_and_cost() -> None:
+def test_claude_code_parse_lines_tokens_and_cost(tmp_path: Path) -> None:
     harness = ClaudeCodeHarness(model="claude-opus-4-8", effort="high")
-    result = harness.parse_result(STREAM.read_text().splitlines())
+    result = harness.parse_result(STREAM.read_text().splitlines(), tmp_path)
 
     assert result.input_tokens == 18432
     assert result.output_tokens == 2096
@@ -68,10 +68,10 @@ def test_claude_code_parse_lines_tokens_and_cost() -> None:
     assert result.cost_usd == pytest.approx(0.4231)
 
 
-def test_parse_ignores_blank_and_malformed_lines() -> None:
+def test_parse_ignores_blank_and_malformed_lines(tmp_path: Path) -> None:
     harness = ClaudeCodeHarness(model="claude-opus-4-8")
     lines = ["", "   ", "not json", '{"type":"system"}']
-    result = harness.parse_result(lines)
+    result = harness.parse_result(lines, tmp_path)
     assert result.input_tokens == 0
     assert result.output_tokens == 0
     assert result.cost_usd is None
@@ -84,14 +84,14 @@ def test_compute_cost_usd_known_and_unknown_model() -> None:
     assert compute_cost_usd("no-such-model", 1000, 1000) is None
 
 
-def test_codex_cost_falls_back_to_token_table() -> None:
+def test_codex_cost_falls_back_to_token_table(tmp_path: Path) -> None:
     """Codex reports no USD, so prove() must estimate from token totals."""
     harness = _HARNESSES["codex"](model="gpt-5.4", effort="high")
     lines = [
         '{"type":"turn.completed","usage":{"input_tokens":2000000,'
         '"output_tokens":1000000}}',
     ]
-    result = harness.parse_result(lines)
+    result = harness.parse_result(lines, tmp_path)
     assert result.cost_usd is None  # codex never self-reports
     # gpt-5.4 is (2.5, 15.0): 2M*2.5 + 1M*15 = 5 + 15 = 20.
     estimated = compute_cost_usd("gpt-5.4", result.input_tokens, result.output_tokens)

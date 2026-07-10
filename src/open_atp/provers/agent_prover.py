@@ -256,7 +256,7 @@ class AgentProver(AutomatedProver):
         lines: list[str],
     ) -> None:
         """Token totals -> cost, then diff the workdir against the staged originals."""
-        parsed = harness.parse_result(lines)
+        parsed = harness.parse_result(lines, wd)
         cost = parsed.cost_usd
         if cost is None:
             cost = compute_cost_usd(

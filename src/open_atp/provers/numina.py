@@ -398,7 +398,7 @@ class NuminaProver(AgentProver):
             # Pull the round's edits to the host so the statement tracker (and the
             # next round's snapshot) see them (no-op on bind-mounted Docker).
             session.sync_out()
-            parsed = harness.parse_result(round_lines)
+            parsed = harness.parse_result(round_lines, workdir)
 
             input_tokens += parsed.input_tokens
             output_tokens += parsed.output_tokens

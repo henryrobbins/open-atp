@@ -102,8 +102,6 @@ class AxProverBaseHarness(Harness):
         super().__init__(model=model, effort=effort)
         self.max_iterations = max_iterations
         self._provider_api_key = provider_api_key
-        #: Set in :meth:`stage_wd`; where :meth:`parse_result` looks for usage files.
-        self._wd: Path | None = None
 
     def _required_env(self) -> dict[str, str]:
         # ax-prover reads the provider key from the process env; forward the selected
@@ -118,7 +116,6 @@ class AxProverBaseHarness(Harness):
         # launch contract still cats it, so one is still written.
         super().stage_wd(wd)
         (wd / "axprover.yaml").write_text(self._render_config())
-        self._wd = wd
 
     def _ax_model(self) -> str:
         """``self.model`` as ax-prover's ``provider:model`` string."""
@@ -198,15 +195,15 @@ class AxProverBaseHarness(Harness):
         # No <<MODEL>>/<<EFFORT>> substitution: those live in axprover.yaml.
         return (_SCRIPTS / "axprover_agent.sh").read_text()
 
-    def parse_result(self, lines: list[str]) -> HarnessRunResult:
-        # Tokens come from the per-target ``-o`` files (ax_output.<target>.json), each
-        # a ``{location: {success, ..., input_tokens, output_tokens, ...}}`` map written
-        # by the launch script. Sum across every target in every file; the stream itself
-        # carries no usage. Leave cost_usd None so the prover derives USD from the token
-        # table (like CodexHarness).
+    def parse_result(self, lines: list[str], wd: Path) -> HarnessRunResult:
+        # Tokens come from the per-target ``-o`` files (ax_output.<target>.json) under
+        # ``wd``, each a ``{location: {success, ..., input_tokens, output_tokens}}`` map
+        # written by the launch script. Sum across every target in every file; the
+        # stream itself carries no usage. Leave cost_usd None so the prover derives USD
+        # from the token table (like CodexHarness).
         result = self._parse_lines(lines)
-        if self._wd is not None and self._wd.is_dir():
-            for path in sorted(self._wd.glob("ax_output.*.json")):
+        if wd.is_dir():
+            for path in sorted(wd.glob("ax_output.*.json")):
                 try:
                     data = json.loads(path.read_text())
                 except (OSError, json.JSONDecodeError):

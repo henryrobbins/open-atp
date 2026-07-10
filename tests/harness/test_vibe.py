@@ -173,7 +173,7 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
     assert harness.skills_dest == ".vibe/skills"
 
     # parse_result() looks here for the session log written back from the sandbox.
-    assert harness._session_log_dir == tmp_path / ".vibe" / "logs" / "session"
+    assert harness._session_log_dir(tmp_path) == tmp_path / ".vibe" / "logs" / "session"
 
 
 # --- parse: cost from the session log, text from the stream ----------------
@@ -182,9 +182,9 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
 def test_parse_reads_cost_and_tokens_from_session_log(tmp_path: Path) -> None:
     harness = VibeHarness(model="labs-leanstral-1-5")
     harness.stage_wd(tmp_path)
-    _write_session_log(harness._session_log_dir, _session_stats())
+    _write_session_log(harness._session_log_dir(tmp_path), _session_stats())
 
-    result = harness.parse_result(STREAM_LINES)
+    result = harness.parse_result(STREAM_LINES, tmp_path)
     assert result.cost_usd == pytest.approx(0.0119204)
     assert result.input_tokens == 26951
     assert result.output_tokens == 570
@@ -194,7 +194,7 @@ def test_parse_reads_cost_and_tokens_from_session_log(tmp_path: Path) -> None:
 def test_parse_without_session_log_leaves_cost_none(tmp_path: Path) -> None:
     harness = VibeHarness(model="labs-leanstral-1-5")
     harness.stage_wd(tmp_path)  # no log written
-    result = harness.parse_result(STREAM_LINES)
+    result = harness.parse_result(STREAM_LINES, tmp_path)
     assert result.cost_usd is None
     assert result.input_tokens == 0
 
@@ -222,7 +222,7 @@ def test_generate_reports_changes_and_session_cost(
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
         # The real vibe run writes this; emulate it so parse_result() finds the cost.
         assert isinstance(harness, VibeHarness)
-        _write_session_log(harness._session_log_dir, _session_stats())
+        _write_session_log(harness._session_log_dir(workdir), _session_stats())
         return STREAM_LINES, ""
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
