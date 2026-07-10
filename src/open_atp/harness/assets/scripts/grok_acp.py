@@ -18,6 +18,7 @@ object per line to *its* stdout, which the backend captures as the run's transcr
 
 Config comes from the environment the launch script exports: ``PROMPT`` (the task),
 ``GROK_MODEL`` / ``GROK_EFFORT`` (agent flags), and ``GROK_HOME`` (mounted OAuth).
+``OPEN_ATP_TIMEOUT_S`` (forwarded by the prover) bounds the ``session/prompt`` wait.
 fs/terminal client capabilities are advertised *off* so grok runs its own tools
 inside the sandbox rather than delegating them back to this driver.
 """
@@ -31,6 +32,20 @@ import subprocess
 import sys
 import threading
 from typing import Any
+
+#: Bound on the fast ACP handshake calls (initialize / authenticate / session/new).
+#: These should return in well under a second; a short cap surfaces a stuck startup
+#: quickly rather than hiding it behind the long prompt budget.
+_HANDSHAKE_TIMEOUT = 120
+
+#: Slack added to the prompt wait over the run's wall-clock budget, so on Modal the
+#: backend's coreutils ``timeout`` kills the exec first (clean, leaves headroom to
+#: sync the partial workdir out). On Docker (no backend cap) this self-terminating
+#: wait is the only bound, firing a minute past budget.
+_PROMPT_SLACK = 60
+
+#: Fallback prompt budget when OPEN_ATP_TIMEOUT_S is unset (matches the prover default).
+_DEFAULT_TIMEOUT = 1800
 
 
 def _log(msg: str) -> None:
@@ -77,7 +92,7 @@ class ACPDriver:
             self.proc.stdin.flush()
 
     def _request(
-        self, method: str, params: dict[str, Any], timeout: float = 1800
+        self, method: str, params: dict[str, Any], timeout: float = _HANDSHAKE_TIMEOUT
     ) -> dict[str, Any]:
         self._next_id += 1
         rid = self._next_id
@@ -184,11 +199,38 @@ class ACPDriver:
             _log(f"[grok-acp] session/new failed: {json.dumps(sess)}")
             return 1
 
-        resp = self._request(
-            "session/prompt",
-            {"sessionId": session_id, "prompt": [{"type": "text", "text": prompt}]},
-        )
+        # session/prompt is the whole proof attempt, so bound its wait by the run's
+        # wall-clock budget (+ slack) rather than the short handshake cap.
+        budget = int(os.environ.get("OPEN_ATP_TIMEOUT_S") or _DEFAULT_TIMEOUT)
+        try:
+            resp = self._request(
+                "session/prompt",
+                {"sessionId": session_id, "prompt": [{"type": "text", "text": prompt}]},
+                timeout=budget + _PROMPT_SLACK,
+            )
+        except queue.Empty:
+            _log(f"[grok-acp] session/prompt timed out after {budget}s")
+            self._emit(
+                {
+                    "sessionUpdate": "result",
+                    "stopReason": "timeout",
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "total_tokens": None,
+                    "text": "".join(self._agent_text),
+                }
+            )
+            return 1
         meta = resp.get("_meta") or {}
+        # Instrumentation: the ACP usage counts look per-turn (final assistant
+        # message only), not run-cumulative. Dump the whole response envelope
+        # (top-level keys + full _meta) so we can see every field xAI ships and
+        # decide whether any of them is cumulative. Prompt echo is stripped to
+        # keep it readable.
+        envelope = {k: v for k, v in resp.items() if k != "prompt"}
+        _log(f"[grok-acp] prompt response keys: {sorted(resp.keys())}")
+        _log(f"[grok-acp] prompt response _meta: {json.dumps(meta)}")
+        _log(f"[grok-acp] prompt response envelope: {json.dumps(envelope)}")
         self._emit(
             {
                 "sessionUpdate": "result",
@@ -196,6 +238,7 @@ class ACPDriver:
                 "input_tokens": meta.get("inputTokens"),
                 "output_tokens": meta.get("outputTokens"),
                 "total_tokens": meta.get("totalTokens"),
+                "raw_meta": meta,
                 "text": "".join(self._agent_text),
             }
         )
