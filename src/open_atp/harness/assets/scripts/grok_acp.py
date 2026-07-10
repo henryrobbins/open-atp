@@ -8,21 +8,13 @@ Agent Client Protocol, JSON-RPC 2.0 over stdin/stdout) surfaces all of it as
 token usage -- https://docs.x.ai/build/cli/headless-scripting#acp
 
 This driver speaks that protocol to a child ``grok agent stdio`` and writes one JSON
-object per line to *its* stdout, which the backend captures as the run's transcript.
-To keep the transcript readable it does **not** forward the raw stream verbatim -- ACP
-delivers the assistant's message and reasoning as one token-level ``*_chunk`` event per
-delta (hundreds per turn). Instead it emits:
+object per line to *its* stdout, which the backend captures as the run's transcript:
 
-* ``tool_call`` / ``tool_call_update`` events verbatim (the structured record of what
-  the agent did -- and what the capability probes classify);
-* one coalesced ``{"sessionUpdate": "agent_message", "text": ...}`` (and
-  ``agent_thought``) per contiguous run of deltas, so a turn's message is a single line
-  rather than one-per-token; and
+* every ``session/update``'s inner ``update`` dict, verbatim (``sessionUpdate`` is the
+  type discriminator: ``tool_call`` / ``tool_call_update`` / ``agent_message_chunk`` /
+  ``agent_thought_chunk`` / ...); and
 * one final ``{"sessionUpdate": "result", ...}`` line with ``stopReason`` and the
   normalized token counts pulled from the response ``_meta``.
-
-Pure-noise updates (``available_commands_update``, the ``user_message_chunk`` echo of
-our own prompt) are dropped.
 
 Config comes from the environment the launch script exports: ``PROMPT`` (the task),
 ``GROK_MODEL`` / ``GROK_EFFORT`` (agent flags), and ``GROK_HOME`` (mounted OAuth).
@@ -39,10 +31,6 @@ import subprocess
 import sys
 import threading
 from typing import Any
-
-#: session/update kinds dropped as noise: the repeated slash-command manifest and the
-#: echo of our own prompt back to us.
-_DROP_UPDATES = frozenset({"available_commands_update", "user_message_chunk"})
 
 
 def _log(msg: str) -> None:
@@ -79,11 +67,6 @@ class ACPDriver:
         self._pending: dict[int, queue.Queue[dict[str, Any]]] = {}
         self._send_lock = threading.Lock()
         self._agent_text: list[str] = []
-        # Token-delta buffers coalesced into one event per contiguous run; guarded by
-        # _out_lock, which also serializes _emit across the reader and main threads.
-        self._out_lock = threading.Lock()
-        self._msg_buf: list[str] = []
-        self._thought_buf: list[str] = []
         threading.Thread(target=self._read_loop, daemon=True).start()
 
     # --- JSON-RPC plumbing ------------------------------------------------
@@ -137,34 +120,11 @@ class ACPDriver:
             self._handle_update((msg.get("params") or {}).get("update") or {})
 
     def _handle_update(self, update: dict[str, Any]) -> None:
-        kind = update.get("sessionUpdate")
-        text = (update.get("content") or {}).get("text") or ""
-        with self._out_lock:
-            # Accumulate token deltas; a run of them collapses to one event, flushed
-            # when the stream moves on to a different (non-delta) update.
-            if kind == "agent_message_chunk":
-                self._msg_buf.append(text)
-                return
-            if kind == "agent_thought_chunk":
-                self._thought_buf.append(text)
-                return
-            self._flush_locked()
-            if kind in _DROP_UPDATES:
-                return
-            self._emit(update)
-
-    def _flush_locked(self) -> None:
-        """Emit the buffered thought/message runs as one event each. Holds _out_lock."""
-        if self._thought_buf:
-            self._emit(
-                {"sessionUpdate": "agent_thought", "text": "".join(self._thought_buf)}
-            )
-            self._thought_buf.clear()
-        if self._msg_buf:
-            text = "".join(self._msg_buf)
-            self._agent_text.append(text)
-            self._emit({"sessionUpdate": "agent_message", "text": text})
-            self._msg_buf.clear()
+        self._emit(update)
+        if update.get("sessionUpdate") == "agent_message_chunk":
+            text = ((update.get("content") or {}).get("text")) or ""
+            if text:
+                self._agent_text.append(text)
 
     def _handle_server_request(
         self, rid: object, method: str | None, params: dict[str, Any]
@@ -229,20 +189,16 @@ class ACPDriver:
             {"sessionId": session_id, "prompt": [{"type": "text", "text": prompt}]},
         )
         meta = resp.get("_meta") or {}
-        with self._out_lock:
-            # Flush any trailing message/thought run the turn ended on (no non-delta
-            # update followed it), then close with the consolidated result line.
-            self._flush_locked()
-            self._emit(
-                {
-                    "sessionUpdate": "result",
-                    "stopReason": resp.get("stopReason"),
-                    "input_tokens": meta.get("inputTokens"),
-                    "output_tokens": meta.get("outputTokens"),
-                    "total_tokens": meta.get("totalTokens"),
-                    "text": "".join(self._agent_text),
-                }
-            )
+        self._emit(
+            {
+                "sessionUpdate": "result",
+                "stopReason": resp.get("stopReason"),
+                "input_tokens": meta.get("inputTokens"),
+                "output_tokens": meta.get("outputTokens"),
+                "total_tokens": meta.get("totalTokens"),
+                "text": "".join(self._agent_text),
+            }
+        )
         return 0
 
     def close(self) -> None:
