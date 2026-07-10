@@ -67,6 +67,16 @@ provers:
     cite: mistral2026leanstral
     source: { label: HuggingFace, url: https://huggingface.co/mistralai/Leanstral-2603 }
 
+  - name: Grok
+    page: grok
+    id:   grok
+    skills: [leanprover]
+    mcp: true               # lean-lsp-mcp via .grok/config.toml
+    company: { label: xAI, url: https://x.ai }
+    paper: null
+    cite: null
+    source: null            # Grok Build (grok CLI) is not open source
+
   - name: Numina
     page: numina
     id:   numina

@@ -127,6 +127,7 @@ STANDARD_PROVERS: dict[str, dict[str, object]] = {
     "opencode": {"type": "agent", "harness": {"type": "opencode"}},
     "leanstral": {"type": "agent", "harness": {"type": "vibe"}},
     "axproverbase": {"type": "agent", "harness": {"type": "axproverbase"}},
+    "grok": {"type": "agent", "harness": {"type": "grok"}},
     "numina": {"type": "numina"},
     "aristotle": {"type": "aristotle"},
 }
@@ -137,7 +138,8 @@ def standard_prover(name: str, *, backend: ComputeBackend) -> AutomatedProver:
 
     ``name`` is a :data:`STANDARD_PROVERS` key -- an agentic default
     (``"claude"``, ``"codex"``, ``"opencode"``, ``"leanstral"``,
-    ``"axproverbase"``) or a standalone prover (``"numina"``, ``"aristotle"``). The
+    ``"axproverbase"``, ``"grok"``) or a standalone prover (``"numina"``,
+    ``"aristotle"``). The
     prover is built with its class's baked-in defaults; to customize any knob (model,
     effort, skills, ...), use :func:`build_prover` with a full config dict instead.
 

@@ -418,12 +418,16 @@ def _build_modal_image(args: argparse.Namespace) -> int:
         # images/Dockerfile ARG. Pinned to a git commit (not a PyPI release) for the
         # lean_interact target discovery -- see AX_PROVER_SPEC above.
         .run_commands(f"pipx install '{AX_PROVER_SPEC}'")
+        # xAI Grok CLI (Grok Build) backing the GrokHarness. The official installer
+        # drops the binary under $HOME/.grok/bin (here root's), added to PATH below.
+        # Keep in sync with images/Dockerfile. https://docs.x.ai/build/overview
+        .run_commands("curl -fsSL https://x.ai/cli/install.sh | bash")
         # Modal's .env() sets literal values (no ${PATH} expansion like Dockerfile
         # ENV), so set an explicit PATH with /opt/elan/bin ahead of the standard dirs.
         .env(
             {
-                "PATH": "/opt/elan/bin:/usr/local/sbin:/usr/local/bin:"
-                "/usr/sbin:/usr/bin:/sbin:/bin"
+                "PATH": "/opt/elan/bin:/root/.grok/bin:/usr/local/sbin:"
+                "/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             }
         )
         .workdir("/workspace")

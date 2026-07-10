@@ -30,6 +30,11 @@ COST_PER_MTOK: dict[str, tuple[float, float]] = {
     "gemini-3.1-pro-preview": (2.0, 12.0),
     "deepseek-v4-pro": (1.74, 3.48),
     "deepseek-v4-flash": (0.14, 0.28),
+    # xAI Grok (https://docs.x.ai/docs/models). The grok CLI does not self-report
+    # USD, so these back the cost estimate for the grok harness.
+    "grok-4.5": (2.0, 6.0),
+    "grok-build-0.1": (1.0, 2.0),
+    "grok-4.3": (1.25, 2.5),
 }
 
 

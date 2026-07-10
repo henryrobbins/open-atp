@@ -52,7 +52,12 @@ WORKDIR /home/agent
 # we copy below pin the version on the first `lake` invocation.
 RUN curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf \
         | sh -s -- -y --default-toolchain none --no-modify-path
-ENV PATH="/home/agent/.elan/bin:/home/agent/.local/bin:${PATH}"
+ENV PATH="/home/agent/.elan/bin:/home/agent/.local/bin:/home/agent/.grok/bin:${PATH}"
+
+# xAI Grok CLI (Grok Build) backing the GrokHarness. Installed per-user (grok, like
+# Claude Code, is not meant to run as root) via the official installer, which drops
+# the binary under ~/.grok/bin (added to PATH above). https://docs.x.ai/build/overview
+RUN curl -fsSL https://x.ai/cli/install.sh | bash
 
 # lean-lsp MCP server (invoked directly as `lean-lsp-mcp` by the harnesses) + uv.
 # https://github.com/oOo0oOo/lean-lsp-mcp

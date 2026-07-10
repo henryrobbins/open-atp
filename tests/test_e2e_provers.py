@@ -131,6 +131,12 @@ PROVER_SPECS = [
         marks=pytest.mark.agent_api,
         id="agent-leanstral",
     ),
+    pytest.param(
+        "grok",
+        _need_env("XAI_API_KEY"),
+        marks=pytest.mark.agent_api,
+        id="agent-grok",
+    ),
 ]
 
 
