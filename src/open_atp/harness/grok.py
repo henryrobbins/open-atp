@@ -14,6 +14,11 @@ from open_atp.harness.base import Harness, HarnessRunResult
 #: The ACP driver staged next to ``agent.sh`` and exec'd by the launch script.
 _ACP_DRIVER = "grok_acp.py"
 
+#: Chars-per-token divisor for the dependency-free output-token estimate (ACP reports
+#: only the final turn's counts). ~4 chars/token is the standard rough heuristic for
+#: English + code; see :ref:`tracking-cost-and-usage-grok`.
+_CHARS_PER_TOKEN = 4
+
 
 class GrokHarness(Harness):
     """xAI's ``grok`` CLI (Grok Build), authenticated by a mounted ``auth.json``.
@@ -127,13 +132,24 @@ class GrokHarness(Harness):
     def _parse_lines(self, lines: list[str]) -> HarnessRunResult:
         """Parse the JSONL stream ``grok_acp.py`` writes.
 
-        The driver emits one ``{"sessionUpdate": "result", ...}`` line at the end,
-        carrying ``stopReason`` and the token counts normalized out of the ACP
-        ``session/prompt`` response ``_meta`` (``input_tokens`` / ``output_tokens``).
-        Cost is left ``None`` so the prover estimates it from the token totals via the
-        pricing table -- the grok CLI does not self-report USD.
+        The driver's final ``{"sessionUpdate": "result", ...}`` line carries
+        ``stopReason`` and the ACP ``session/prompt`` token counts -- but those cover
+        only the **final** assistant turn, so its ``output_tokens`` (a few hundred)
+        badly undercounts a multi-turn agentic run that streamed thousands of reasoning
+        and tool-call tokens. To make the cost estimate meaningful, ``output_tokens``
+        is instead reconstructed as a cumulative estimate over the whole run: sum the
+        characters of everything the model generated -- the coalesced ``agent_message``
+        / ``agent_thought`` text plus each ``tool_call``'s ``rawInput`` (the file
+        contents and arguments it wrote) -- and divide by ``_CHARS_PER_TOKEN``.
+        ``input_tokens`` keeps the reported final-turn value, which approximates the
+        run's distinct (fresh) input.
+
+        Cost is left ``None`` so the prover estimates it from these totals via the
+        pricing table (the grok CLI does not self-report USD). The result is a rough
+        floor -- see :ref:`tracking-cost-and-usage-grok` for its accuracy and limits.
         """
         result = HarnessRunResult()
+        gen_chars = 0
         for line in lines:
             line = line.strip()
             if not line.startswith("{"):
@@ -142,12 +158,20 @@ class GrokHarness(Harness):
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(obj, dict) or obj.get("sessionUpdate") != "result":
+            if not isinstance(obj, dict):
                 continue
-            result.input_tokens = obj.get("input_tokens") or 0
-            result.output_tokens = obj.get("output_tokens") or 0
-            sr = obj.get("stopReason")
-            result.stop_reason = sr if isinstance(sr, str) else None
-            rt = obj.get("text")
-            result.result_text = rt if isinstance(rt, str) else None
+            kind = obj.get("sessionUpdate")
+            if kind in ("agent_message", "agent_thought"):
+                gen_chars += len((obj.get("content") or {}).get("text") or "")
+            elif kind == "tool_call":
+                raw = obj.get("rawInput")
+                if raw is not None:
+                    gen_chars += len(json.dumps(raw))
+            elif kind == "result":
+                result.input_tokens = obj.get("input_tokens") or 0
+                sr = obj.get("stopReason")
+                result.stop_reason = sr if isinstance(sr, str) else None
+                rt = obj.get("text")
+                result.result_text = rt if isinstance(rt, str) else None
+        result.output_tokens = round(gen_chars / _CHARS_PER_TOKEN)
         return result

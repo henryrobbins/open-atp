@@ -101,37 +101,71 @@ def test_codex_cost_falls_back_to_token_table(tmp_path: Path) -> None:
 def test_grok_parse_lines_tokens_and_cost_fallback(tmp_path: Path) -> None:
     """Grok reports no USD, so prove() estimates from the token totals it parses.
 
-    ``grok_acp.py`` emits a terminal ``sessionUpdate:"result"`` line with the counts
-    normalized out of the ACP ``session/prompt`` response ``_meta``.
+    ``input_tokens`` is taken from the terminal ``result`` line (the ACP final-turn
+    figure); ``output_tokens`` is a cumulative estimate reconstructed from the generated
+    text at ~4 chars/token, since the ACP response counts cover only the final turn.
     """
     harness = _HARNESSES["grok"](model="grok-4.5", effort="high")
+    # 800 generated chars (thought + message) -> 200 estimated output tokens.
     lines = [
+        '{"sessionUpdate":"agent_thought","content":{"type":"text","text":"'
+        + "a" * 400
+        + '"}}',
+        '{"sessionUpdate":"agent_message","content":{"type":"text","text":"'
+        + "b" * 400
+        + '"}}',
+        # The result line's own output_tokens (999) is final-turn only and ignored.
         '{"sessionUpdate":"result","stopReason":"end_turn",'
-        '"input_tokens":1000000,"output_tokens":1000000,'
-        '"total_tokens":2000000,"text":"done"}',
+        '"input_tokens":1000000,"output_tokens":999,'
+        '"total_tokens":1000999,"text":"done"}',
     ]
     result = harness.parse_result(lines, tmp_path)
     assert result.input_tokens == 1_000_000
-    assert result.output_tokens == 1_000_000
+    assert result.output_tokens == 200  # 800 chars / 4, not the final-turn 999
     assert result.stop_reason == "end_turn"
     assert result.result_text == "done"
     assert result.cost_usd is None  # grok never self-reports USD
-    # grok-4.5 is (2.0, 6.0): 1M*2 + 1M*6 = 8.
+    # grok-4.5 is (2.0, 6.0): 1M*2 + 200*6/1M = 2.0012.
     estimated = compute_cost_usd("grok-4.5", result.input_tokens, result.output_tokens)
-    assert estimated == pytest.approx(8.0)
+    assert estimated == pytest.approx(2.0012)
 
 
-def test_grok_parse_ignores_event_lines_before_result(tmp_path: Path) -> None:
-    """Only the terminal ``result`` line feeds usage; streamed events are skipped."""
-    harness = _HARNESSES["grok"](model="grok-4.5")
+def test_grok_parse_estimates_output_from_stream(tmp_path: Path) -> None:
+    """Output is reconstructed from the whole stream, not the final-turn count.
+
+    Coalesced ``agent_message`` / ``agent_thought`` text and each ``tool_call``'s
+    ``rawInput`` all count toward the model's generated output; ``input_tokens`` still
+    comes from the ``result`` line.
+    """
+    import json
+
+    raw = {"path": "P.lean", "content": "theorem t : True := trivial"}
+    thought = "c" * 20
     lines = [
-        '{"sessionUpdate":"agent_thought_chunk","content":{"text":"hmm"}}',
-        '{"sessionUpdate":"tool_call","toolCallId":"c1","title":"run_terminal_command"}',
+        '{"sessionUpdate":"agent_thought","content":{"type":"text","text":"'
+        + thought
+        + '"}}',
+        json.dumps(
+            {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "c1",
+                "title": "write",
+                "rawInput": raw,
+            }
+        ),
+        # tool_call_update repeats rawInput but is the tool's result, not model output:
+        # it must not be double-counted.
+        json.dumps(
+            {"sessionUpdate": "tool_call_update", "toolCallId": "c1", "rawInput": raw}
+        ),
         '{"sessionUpdate":"result","stopReason":"end_turn",'
         '"input_tokens":5,"output_tokens":7,"total_tokens":12,"text":"ok"}',
     ]
+    harness = _HARNESSES["grok"](model="grok-4.5")
     result = harness.parse_result(lines, tmp_path)
-    assert (result.input_tokens, result.output_tokens) == (5, 7)
+    expected = round((len(thought) + len(json.dumps(raw))) / 4)
+    assert result.input_tokens == 5  # from the result line
+    assert result.output_tokens == expected  # stream estimate, not the final-turn 7
 
 
 def test_grok_stage_wd_writes_driver_and_lean_lsp_config(tmp_path: Path) -> None:

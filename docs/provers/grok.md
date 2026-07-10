@@ -108,4 +108,54 @@ The agent prompt (below) is written into the working directory and read into `$P
 (tracking-cost-and-usage-grok)=
 ## Tracking cost and usage
 
-The Grok CLI does not self-report a USD cost, so the run cost is estimated from the token totals in its JSON output using the pricing table in {data}`~open_atp.harness.cost.COST_PER_MTOK` (see {func}`~open_atp.harness.cost.compute_cost_usd`). You can also monitor consumption from the [xAI console](https://console.x.ai/) usage dashboard.
+The Grok CLI does not self-report a USD cost, so the run cost is estimated from token
+counts using the pricing table in {data}`~open_atp.harness.cost.COST_PER_MTOK` (see
+{func}`~open_atp.harness.cost.compute_cost_usd`). Getting those counts right takes some
+care, because of how the ACP protocol reports usage.
+
+### Why the token counts are estimated
+
+ACP exposes usage in exactly one place: the `_meta` on the final `session/prompt`
+response (`inputTokens`, `outputTokens`, `cachedReadTokens`, `reasoningTokens`). That
+`_meta` covers **only the final assistant turn**, not the whole agentic loop. A run
+that took hundreds of tool-call turns — streaming thousands of reasoning and file-edit
+tokens — reports an `outputTokens` of only a few hundred (just the closing summary
+message), and an `inputTokens` that is ~99% `cachedReadTokens` (the final turn re-reads
+the whole conversation from cache). None of the intermediate turns' usage is exposed by
+the protocol, and grok's on-disk session state records only *context-window occupancy*
+(a snapshot that rises and falls), never cumulative billed tokens. So the raw ACP
+`outputTokens` undercounts a real run by an order of magnitude or more.
+
+### How the estimate is built
+
+To make the figure meaningful, {class}`~open_atp.harness.grok.GrokHarness` reconstructs
+a **cumulative output estimate** from the event stream instead of trusting the
+final-turn count:
+
+- **Output tokens** — sum the characters of everything the model *generated* across the
+  whole run: the coalesced `agent_message` and `agent_thought` text plus each
+  `tool_call`'s `rawInput` (the file contents and arguments it wrote), then divide by
+  `_CHARS_PER_TOKEN` (≈ 4 chars/token, the standard rough heuristic for English +
+  code). This is dependency-free — no tokenizer is bundled.
+- **Input tokens** — kept as the reported final-turn `inputTokens`. Because every token
+  enters the context as full-price ("fresh") input exactly once and is cache-read
+  thereafter, the final-turn value (≈ peak context size) approximates the run's total
+  *distinct* input.
+
+Cost is then `input × input_rate + output × output_rate` from the pricing table.
+
+### Accuracy and limits
+
+The estimate is a **rough floor**, not an exact charge:
+
+- The `≈ 4 chars/token` heuristic is typically within ~15–20%; grok's real tokenizer is
+  not available locally.
+- **Cumulative cached-context re-reads are not counted.** Each turn re-reads the prior
+  context at the discounted cached-input rate; on a long multi-turn run that volume is
+  large (though individually cheap). The estimate omits it, so it under-counts the
+  input side of long runs.
+- It assumes no context **compaction**; a compacted run re-summarizes history, breaking
+  the "each token is fresh input once" approximation.
+
+For authoritative spend, use the [xAI console](https://console.x.ai/) usage dashboard —
+the CLI uploads usage there for server-side accounting.

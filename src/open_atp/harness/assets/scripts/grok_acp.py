@@ -10,11 +10,25 @@ token usage -- https://docs.x.ai/build/cli/headless-scripting#acp
 This driver speaks that protocol to a child ``grok agent stdio`` and writes one JSON
 object per line to *its* stdout, which the backend captures as the run's transcript:
 
-* every ``session/update``'s inner ``update`` dict, verbatim (``sessionUpdate`` is the
-  type discriminator: ``tool_call`` / ``tool_call_update`` / ``agent_message_chunk`` /
-  ``agent_thought_chunk`` / ...); and
+* every ``session/update``'s inner ``update`` dict (``sessionUpdate`` is the type
+  discriminator: ``tool_call`` / ``tool_call_update`` / ...), **except** the assistant's
+  message and reasoning, which ACP delivers as one token-level ``*_chunk`` event per
+  delta (hundreds per turn). Those are coalesced: each contiguous run of
+  ``agent_message_chunk`` / ``agent_thought_chunk`` deltas collapses to a single
+  ``{"sessionUpdate": "agent_message" | "agent_thought", "content": ...}`` line.
+  Coalescing is flush-on-transition -- a buffered run is emitted the moment the stream
+  switches to a different ``sessionUpdate`` (including switching between message and
+  thought), so at most one buffer is ever non-empty and stream order is preserved.
+  Everything else is passed through unchanged.
 * one final ``{"sessionUpdate": "result", ...}`` line with ``stopReason`` and the
-  normalized token counts pulled from the response ``_meta``.
+  token counts pulled from the response ``_meta`` (the full ``_meta`` is preserved under
+  ``raw_meta``). Those counts cover only the **final** assistant turn; the harness's
+  ``_parse_lines`` reconstructs a cumulative-output estimate from the coalesced stream.
+
+The reader thread never dies on a handler bug: each dispatch is wrapped so a malformed
+event is logged and skipped rather than silently killing the loop (which would leave
+the run hung until timeout). ACP ``content`` is a dict only on the message/thought
+chunks -- on ``tool_call_update`` it is a *list* -- so text is read defensively.
 
 Config comes from the environment the launch script exports: ``PROMPT`` (the task),
 ``GROK_MODEL`` / ``GROK_EFFORT`` (agent flags), and ``GROK_HOME`` (mounted OAuth).
@@ -82,6 +96,12 @@ class ACPDriver:
         self._pending: dict[int, queue.Queue[dict[str, Any]]] = {}
         self._send_lock = threading.Lock()
         self._agent_text: list[str] = []
+        # Token-delta buffers coalesced into one event per contiguous run. _out_lock
+        # serializes _emit and buffer access across the reader thread (streamed
+        # updates) and the main thread (the trailing flush + result line).
+        self._out_lock = threading.Lock()
+        self._msg_buf: list[str] = []
+        self._thought_buf: list[str] = []
         threading.Thread(target=self._read_loop, daemon=True).start()
 
     # --- JSON-RPC plumbing ------------------------------------------------
@@ -116,7 +136,13 @@ class ACPDriver:
                 msg = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            self._dispatch(msg)
+            # Never let a handler bug kill the reader: a dead reader stops draining
+            # grok's stdout, so the session/prompt response is never seen and the run
+            # hangs until timeout. Log and skip the offending event instead.
+            try:
+                self._dispatch(msg)
+            except Exception as exc:  # noqa: BLE001
+                _log(f"[grok-acp] dispatch error ({exc!r}) on: {line[:200]}")
 
     def _dispatch(self, msg: dict[str, Any]) -> None:
         # Response to one of our requests.
@@ -135,11 +161,52 @@ class ACPDriver:
             self._handle_update((msg.get("params") or {}).get("update") or {})
 
     def _handle_update(self, update: dict[str, Any]) -> None:
-        self._emit(update)
-        if update.get("sessionUpdate") == "agent_message_chunk":
-            text = ((update.get("content") or {}).get("text")) or ""
-            if text:
-                self._agent_text.append(text)
+        kind = update.get("sessionUpdate")
+        # `content` is a {type,text} dict only on the message/thought chunks; on other
+        # updates (e.g. tool_call_update) it can be a list, so read text defensively.
+        content = update.get("content")
+        text = content.get("text") or "" if isinstance(content, dict) else ""
+        with self._out_lock:
+            # Coalesce contiguous message/thought deltas. Flush-on-transition: the
+            # other buffer is flushed the moment the stream switches type, so at most
+            # one buffer holds data at a time and arrival order is preserved.
+            if kind == "agent_message_chunk":
+                if self._thought_buf:
+                    self._flush_locked()
+                self._msg_buf.append(text)
+                return
+            if kind == "agent_thought_chunk":
+                if self._msg_buf:
+                    self._flush_locked()
+                self._thought_buf.append(text)
+                return
+            self._flush_locked()
+            self._emit(update)
+
+    def _flush_locked(self) -> None:
+        """Emit the buffered thought/message run as one event. Holds ``_out_lock``.
+
+        At most one buffer is non-empty (flush-on-transition), so order between the two
+        never matters here.
+        """
+        if self._thought_buf:
+            self._emit(
+                {
+                    "sessionUpdate": "agent_thought",
+                    "content": {"type": "text", "text": "".join(self._thought_buf)},
+                }
+            )
+            self._thought_buf.clear()
+        if self._msg_buf:
+            text = "".join(self._msg_buf)
+            self._agent_text.append(text)
+            self._emit(
+                {
+                    "sessionUpdate": "agent_message",
+                    "content": {"type": "text", "text": text},
+                }
+            )
+            self._msg_buf.clear()
 
     def _handle_server_request(
         self, rid: object, method: str | None, params: dict[str, Any]
@@ -210,38 +277,37 @@ class ACPDriver:
             )
         except queue.Empty:
             _log(f"[grok-acp] session/prompt timed out after {budget}s")
+            with self._out_lock:
+                self._flush_locked()
+                self._emit(
+                    {
+                        "sessionUpdate": "result",
+                        "stopReason": "timeout",
+                        "input_tokens": None,
+                        "output_tokens": None,
+                        "total_tokens": None,
+                        "text": "".join(self._agent_text),
+                    }
+                )
+            return 1
+        meta = resp.get("_meta") or {}
+        with self._out_lock:
+            # Flush any trailing message/thought run the turn ended on, then close with
+            # the result line. The token counts here are the final assistant turn only,
+            # not the whole loop; raw_meta preserves every field xAI ships (e.g.
+            # cachedReadTokens, reasoningTokens) for the harness's cost estimate.
+            self._flush_locked()
             self._emit(
                 {
                     "sessionUpdate": "result",
-                    "stopReason": "timeout",
-                    "input_tokens": None,
-                    "output_tokens": None,
-                    "total_tokens": None,
+                    "stopReason": resp.get("stopReason"),
+                    "input_tokens": meta.get("inputTokens"),
+                    "output_tokens": meta.get("outputTokens"),
+                    "total_tokens": meta.get("totalTokens"),
+                    "raw_meta": meta,
                     "text": "".join(self._agent_text),
                 }
             )
-            return 1
-        meta = resp.get("_meta") or {}
-        # Instrumentation: the ACP usage counts look per-turn (final assistant
-        # message only), not run-cumulative. Dump the whole response envelope
-        # (top-level keys + full _meta) so we can see every field xAI ships and
-        # decide whether any of them is cumulative. Prompt echo is stripped to
-        # keep it readable.
-        envelope = {k: v for k, v in resp.items() if k != "prompt"}
-        _log(f"[grok-acp] prompt response keys: {sorted(resp.keys())}")
-        _log(f"[grok-acp] prompt response _meta: {json.dumps(meta)}")
-        _log(f"[grok-acp] prompt response envelope: {json.dumps(envelope)}")
-        self._emit(
-            {
-                "sessionUpdate": "result",
-                "stopReason": resp.get("stopReason"),
-                "input_tokens": meta.get("inputTokens"),
-                "output_tokens": meta.get("outputTokens"),
-                "total_tokens": meta.get("totalTokens"),
-                "raw_meta": meta,
-                "text": "".join(self._agent_text),
-            }
-        )
         return 0
 
     def close(self) -> None:

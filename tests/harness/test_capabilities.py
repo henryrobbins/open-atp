@@ -558,7 +558,7 @@ def _grok_skill_classify(
     Like codex, grok has no distinct Skill tool -- skills under ``.agents/skills/`` are
     injected as context/slash-commands (grok just reads/loads them) -- so use the same
     negative behavioral check, over the assembled final text ``grok_acp.py`` records on
-    the ``result`` line (falling back to the ``agent_message_chunk`` deltas).
+    the ``result`` line (falling back to the coalesced ``agent_message`` events).
     """
     text = ""
     for ev in events:
@@ -568,7 +568,7 @@ def _grok_skill_classify(
         text = "".join(
             (ev.get("content") or {}).get("text") or ""
             for ev in events
-            if ev.get("sessionUpdate") == "agent_message_chunk"
+            if ev.get("sessionUpdate") == "agent_message"
         ).lower()
     for needle in _SKILL_MISSING_PHRASES:
         if needle in text:
