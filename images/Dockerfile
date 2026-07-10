@@ -57,10 +57,12 @@ ENV PATH="/home/agent/.elan/bin:/home/agent/.local/bin:${PATH}"
 # lean-lsp MCP server (invoked directly as `lean-lsp-mcp` by the harnesses) + uv.
 # https://github.com/oOo0oOo/lean-lsp-mcp
 # mistral-vibe provides the `vibe` CLI the VibeHarness drives (Leanstral's `lean`
-# agent). https://github.com/mistralai/mistral-vibe
+# agent). https://github.com/mistralai/mistral-vibe -- pinned so the builtin `lean`
+# agent's model pin (Leanstral 1.5) stays stable across rebuilds; keep in sync with
+# the Modal image in src/open_atp/__main__.py.
 RUN pipx install lean-lsp-mcp \
  && pipx install uv \
- && pipx install mistral-vibe
+ && pipx install mistral-vibe==2.19.0
 
 # ax-prover (LangGraph Lean agent) backing the AxProverHarness. pipx keeps its heavy
 # stack (langgraph, langchain-*, lean-interact, omegaconf, tavily) fully isolated from

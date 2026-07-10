@@ -32,8 +32,8 @@ Prerequisites:
   - codex: ``~/.codex/auth.json`` from ``codex login``
   - opencode: ``DEEPSEEK_API_KEY`` in env (tests use deepseek-chat to keep
     integration spend off the Anthropic bill)
-  - vibe: ``MISTRAL_API_KEY`` in env (tests run the non-Labs ``lean-standin``
-    stand-in so they don't need Labs access to the builtin ``lean`` agent)
+  - vibe: ``MISTRAL_API_KEY`` in env, with Labs access to the builtin ``lean``
+    agent (pins Leanstral 1.5)
   - docker backend: docker on PATH + the ``open-atp:latest`` image
   - modal backend: ``MODAL_TOKEN_*`` env or ``~/.modal.toml`` + the published image
 """
@@ -101,9 +101,8 @@ _MODELS = {
     # deepseek-chat keeps cost low and exercises OpenCode's non-anthropic branch
     # (provider is inferred from the model prefix in the harness).
     "opencode": "deepseek-chat",
-    # The builtin ``lean`` agent pins a deprecated Leanstral; the ``lean-labs``
-    # profile (selected in _make_harness) runs this model. Leanstral is $0-priced,
-    # so the probe uses the real lab model.
+    # The builtin ``lean`` agent pins Leanstral 1.5 itself; recorded in metadata
+    # only (vibe has no --model flag). Leanstral is $0-priced.
     "vibe": "labs-leanstral-1-5",
 }
 
@@ -162,13 +161,8 @@ def _make_backend(backend: str) -> ComputeBackend:
 
 def _make_harness(harness: str) -> Harness:
     if harness == "vibe":
-        # The builtin ``lean`` agent pins a deprecated Leanstral; drive the vendored
-        # ``lean-labs`` profile so the probe controls the model.
-        return VibeHarness(
-            model=_MODELS["vibe"],
-            effort="low",
-            agent="lean-labs",
-        )
+        # The builtin ``lean`` agent (default) pins Leanstral 1.5.
+        return VibeHarness(model=_MODELS["vibe"], effort="low")
     if harness == "claude_code":
         # No plugins -- plugin loading isn't what these probes exercise.
         return ClaudeCodeHarness(model=_MODELS[harness], effort="low", plugins=[])

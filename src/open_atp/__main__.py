@@ -404,11 +404,14 @@ def _build_modal_image(args: argparse.Namespace) -> int:
         )
         # pipx tools (lean-lsp-mcp, uv, mistral-vibe) to global dirs so their
         # entrypoints land on PATH. mistral-vibe provides the `vibe` CLI the
-        # VibeHarness drives. Shared uv cache for the Numina skills' `uv run` deps.
+        # VibeHarness drives; pinned so the builtin `lean` agent's model pin (Leanstral
+        # 1.5) stays stable across rebuilds (keep in sync with images/Dockerfile).
+        # Shared uv cache for the Numina skills' `uv run` deps.
         .env({"PIPX_HOME": "/opt/pipx", "PIPX_BIN_DIR": "/usr/local/bin"})
         .env({"UV_CACHE_DIR": "/opt/uv-cache"})
         .run_commands(
-            "pipx install lean-lsp-mcp && pipx install uv && pipx install mistral-vibe"
+            "pipx install lean-lsp-mcp && pipx install uv "
+            "&& pipx install mistral-vibe==2.19.0"
         )
         # ax-prover (LangGraph Lean agent) backing the AxProverBaseHarness,
         # pipx-isolated from open-atp and the CLIs. Keep AX_PROVER_REF in sync with the

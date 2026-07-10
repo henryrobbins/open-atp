@@ -10,9 +10,9 @@
 # event stream (newline-delimited JSON, one message per line) goes to stdout.
 #
 # VIBE_HOME is pinned under the workdir so vibe's config (which un-gates the
-# builtin `lean` agent via installed_agents), the vendored `lean-standin` agent
-# under agents/, and the per-session log -- the only place vibe records cost/tokens --
-# are all sandbox-local and sync back out with the workdir for cost parsing.
+# builtin `lean` agent via installed_agents) and the per-session log -- the only
+# place vibe records cost/tokens -- are sandbox-local and sync back out with the
+# workdir for cost parsing.
 #
 # https://docs.mistral.ai/mistral-vibe/
 export VIBE_HOME="$PWD/.vibe"

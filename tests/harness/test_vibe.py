@@ -3,16 +3,15 @@
 Fast unit layer (no Docker, no creds, no API):
 
 * ``stage_wd`` bootstraps a workdir-local VIBE_HOME (config that un-gates the
-  builtin ``lean`` agent + the vendored ``lean-labs`` profile, with the model
-  templated in).
-* ``_agent_command`` renders the chosen agent profile + the ``-p`` run guards.
+  builtin ``lean`` agent via ``installed_agents``).
+* ``_agent_command`` renders the chosen agent + the ``-p`` run guards.
 * ``parse_result`` pulls cost/tokens from the per-session ``meta.json`` (the
   vibe-specific seam -- the NDJSON stream carries no cost), and the final assistant
   text from the stream.
 * ``prove`` diffs the workdir after a stubbed run that writes a solved file and a
   synthetic session log, with no Docker.
 
-The live path (the ``vibe`` lean-labs profile on the real Mistral Vibe CLI) lives in
+The live path (the builtin ``lean`` agent on the real Mistral Vibe CLI) lives in
 the single parametrized ``test_e2e_provers.py`` suite, alongside every other prover.
 """
 
@@ -81,7 +80,7 @@ def _write_session_log(log_dir: Path, stats: dict[str, object]) -> None:
 def prover(fake_session_backend: object) -> AgentProver:
     # The in-process fake session keeps the diff unit test (which stubs _run_agent)
     # off a live backend while _generate opens its session and verifies in it.
-    harness = VibeHarness(agent="lean-labs", model="labs-leanstral-1-5")
+    harness = VibeHarness(model="labs-leanstral-1-5")
     return AgentProver(harness=harness, backend=fake_session_backend)
 
 
@@ -116,9 +115,9 @@ def test_agent_command_renders_agent_and_run_guards() -> None:
 
 
 def test_agent_command_omits_unset_guards() -> None:
-    harness = VibeHarness(model="magistral-medium-latest", agent="lean-labs")
+    harness = VibeHarness()
     script = harness._agent_command()
-    assert "--agent lean-labs" in script
+    assert "--agent lean" in script
     assert "--max-turns" not in script
     assert "--max-price" not in script
 
@@ -143,7 +142,7 @@ def test_agent_auth_explicit_key_overrides_env(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
-    harness = VibeHarness(model="magistral-medium-latest", agent="lean-labs")
+    harness = VibeHarness()
     harness.stage_wd(tmp_path)
     harness.write_prompt(tmp_path, "fill the sorrys")
 
@@ -151,11 +150,13 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
     assert (tmp_path / "agent_prompt.txt").read_text() == "fill the sorrys"
 
     config = (tmp_path / ".vibe" / "config.toml").read_text()
+    # `installed_agents = ["lean"]` is what `/leanstall` writes -- it un-gates the
+    # install_required builtin `lean` agent so `--agent lean` resolves in `vibe -p`.
     assert 'installed_agents = ["lean"]' in config
     assert "[session_logging]" in config
     # Ungate mutating tools in `vibe -p` (otherwise `edit` is denied) and wire in the
-    # lean-lsp compile-check loop -- both live on the base config so they cover the
-    # builtin `lean` agent and the lean-labs profile alike.
+    # lean-lsp compile-check loop -- both live on the base config so they apply to the
+    # selected `--agent`.
     assert "bypass_tool_permissions = true" in config
     assert "[[mcp_servers]]" in config
     assert 'command = "lean-lsp-mcp"' in config
@@ -163,13 +164,9 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
     # the opencode fix). Vibe's field is in seconds.
     assert "tool_timeout_sec = 180" in config
 
-    profile = tmp_path / ".vibe" / "agents" / "lean-labs.toml"
-    assert profile.is_file()
-    profile_text = profile.read_text()
-    assert 'system_prompt_id = "lean"' in profile_text
-    # Vibe has no --model flag, so the model is templated into the profile.
-    assert 'name = "magistral-medium-latest"' in profile_text
-    assert "<<MODEL>>" not in profile_text
+    # The builtin `lean` agent ships with vibe and pins its own model, so no agent
+    # profile is written into the workdir.
+    assert not (tmp_path / ".vibe" / "agents").exists()
 
     # Skills are staged by the prover (stage_skills), not stage_wd(); the VIBE_HOME
     # skills location is covered by test_stage_skills_copies_into_harness_location.

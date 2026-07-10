@@ -7,7 +7,7 @@
 Leanstral {cite:p}`mistral2026leanstral` is a Mistral Labs model fine-tuned for Lean theorem proving using Mistral's [Vibe](https://docs.mistral.ai/mistral-vibe/) agent harness. The prover uses the {class}`~open_atp.provers.agent_prover.AgentProver` with the {class}`~open_atp.harness.vibe.VibeHarness`.
 
 ```{note}
-The standard prover pins [Leanstral 1.5](https://docs.mistral.ai/models/model-cards/leanstral-1-5) (`labs-leanstral-1-5`), the updated Leanstral lab model. Reaching it requires Lab Model access enabled by a Mistral org admin. Vibe's builtin `lean` agent pins a deprecated Leanstral and exposes no `--model` flag, so the prover drives the `lean-labs` profile — the same Lean scaffold with the model templated in — to control the version.
+The prover drives Vibe's builtin `lean` agent, which pins [Leanstral 1.5](https://docs.mistral.ai/models/model-cards/leanstral-1-5) (`labs-leanstral-1-5`). Reaching it requires Lab Model access enabled by a Mistral org admin. Vibe exposes no `--model` flag, so the model is fixed by the agent; the harness's `model` field is recorded in the run metadata but not passed to Vibe. Vibe gates the `lean` agent behind an opt-in — the interactive `/leanstall` command — which does nothing but add `"lean"` to `installed_agents`; the harness writes that config key directly, so no interactive install step is needed.
 ```
 
 ## Authentication
@@ -56,7 +56,7 @@ open-atp prove path/to/task.lean output_dir leanstral
 
 ### Customizing the prover
 
-To override knobs like `model`, `agent`, `max_turns`, and `max_price`, construct the class directly. The standard defaults are `agent="lean-labs"` with `model="labs-leanstral-1-5"`:
+To override knobs like `max_turns` and `max_price`, construct the class directly.
 
 ```{testcode}
 from pathlib import Path
@@ -70,7 +70,6 @@ from open_atp.provers import AgentProver
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
     harness=VibeHarness(
-        model="labs-leanstral-1-5",
         max_turns=None,                  # passed to `vibe -p --max-turns`
         max_price=None,                  # passed to `vibe -p --max-price`
     ),

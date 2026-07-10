@@ -8,29 +8,27 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from open_atp.harness._paths import _SCRIPTS, _VIBE_ASSETS
+from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult
 
 
 class VibeHarness(Harness):
     """Mistral Vibe CLI driving its builtin ``lean`` agent (Leanstral) in a sandbox.
 
-    Vibe's ``lean`` agent *is* Leanstral: ``vibe -p ... --agent lean`` pins the model
-    via the builtin agent profile (there is no ``--model`` flag), but that pin is a
-    deprecated Leanstral and cannot be changed. So the ``lean-labs`` profile (vendored
-    under ``assets/vibe/``) mirrors the same Lean scaffold while templating in a chosen
-    model: it carries ``<<MODEL>>`` and the harness substitutes :attr:`model` at
-    :meth:`stage_wd` time -- so the model is a knob (default the ``labs-leanstral-1-5``
-    lab model) just like the other harnesses' ``--model``. The selected profile is
-    named by :attr:`agent`. Reaching a Labs model requires Lab Model access enabled by
-    a Mistral org admin.
+    Vibe's builtin ``lean`` agent *is* Leanstral: ``vibe -p ... --agent lean`` pins
+    the model via the builtin agent profile (there is no ``--model`` flag), which as
+    of vibe 2.19 is `Leanstral 1.5 <https://mistral.ai/news/leanstral-1-5>`_
+    (``labs-leanstral-1-5``). Reaching it requires Lab Model access enabled by a
+    Mistral org admin. The ``lean`` agent is ``install_required`` -- vibe gates it
+    behind an opt-in (the interactive ``/leanstall`` command), which does nothing but
+    add ``"lean"`` to ``installed_agents``; :meth:`stage_wd` writes that config key
+    directly, so no interactive install step is needed.
 
     Two things differ from the other harnesses:
 
     * **VIBE_HOME is workdir-local.** ``vibe_agent.sh`` exports
       ``VIBE_HOME=$PWD/.vibe`` so vibe's config (which un-gates the builtin ``lean``
-      agent), the vendored stand-in agent, and the per-session log all live under the
-      workdir and sync back out with it.
+      agent) and the per-session log all live under the workdir and sync back out.
     * **Cost comes from the session log, not stdout.** ``--output streaming`` carries
       only conversation messages -- no token/cost totals. Those live in vibe's
       per-session ``meta.json``; :meth:`parse_result` reads it from the synced-back
@@ -39,14 +37,14 @@ class VibeHarness(Harness):
     Parameters
     ----------
     model : str
-        Model templated into the ``lean-labs`` profile (vibe has no ``--model`` flag).
-        Ignored by the builtin ``lean`` agent, which pins its own (deprecated)
-        Leanstral. Default ``"labs-leanstral-1-5"``.
+        Model id recorded in the run metadata. Vibe has no ``--model`` flag and the
+        builtin ``lean`` agent pins its own model, so this is *reported only*, not
+        passed to vibe. Default ``"labs-leanstral-1-5"`` (the model the ``lean`` agent
+        pins).
     effort : str
         Reasoning-effort level. Default ``"high"``.
     agent : str, optional
-        Which vibe agent profile to drive: ``"lean"`` (builtin, deprecated Leanstral)
-        or the model-templated ``"lean-labs"``. Default ``"lean-labs"``.
+        Which builtin vibe agent to drive. Default ``"lean"`` (Leanstral).
     max_turns : int, optional
         ``vibe -p`` turn guard; ``None`` (default) leaves it unset.
     max_price : float, optional
@@ -62,7 +60,7 @@ class VibeHarness(Harness):
     >>> harness.name
     'vibe'
     >>> harness.agent
-    'lean-labs'
+    'lean'
 
     With the key supplied explicitly, :meth:`agent_auth` forwards it as
     ``MISTRAL_API_KEY`` without reading the host environment:
@@ -88,7 +86,7 @@ class VibeHarness(Harness):
         *,
         model: str = "labs-leanstral-1-5",
         effort: str = "high",
-        agent: str = "lean-labs",
+        agent: str = "lean",
         max_turns: int | None = None,
         max_price: float | None = None,
         mistral_api_key: str | None = None,
@@ -102,8 +100,8 @@ class VibeHarness(Harness):
         self._session_log_dir: Path | None = None
 
     def _required_env(self) -> dict[str, str]:
-        # The lean agent's provider reads MISTRAL_API_KEY from the process env
-        # (api_key_env_var in lean-standin.toml); forward it into the sandbox.
+        # The builtin lean agent's provider reads MISTRAL_API_KEY from the process
+        # env (its api_key_env_var); forward it into the sandbox.
         key = self._mistral_api_key or os.environ.get("MISTRAL_API_KEY")
         if not key:
             raise RuntimeError(
@@ -114,11 +112,14 @@ class VibeHarness(Harness):
     def stage_wd(self, wd: Path) -> None:
         super().stage_wd(wd)
         # Workdir-local VIBE_HOME: a minimal config that un-gates the builtin `lean`
-        # agent, plus the vendored model-templated `lean-labs` profile. Session logs
-        # default to VIBE_HOME/logs/session, so they land here and sync back out.
+        # agent. Session logs default to VIBE_HOME/logs/session, so they land here and
+        # sync back out.
         vibe_home = wd / self.VIBE_HOME_DIR
-        agents_dir = vibe_home / "agents"
-        agents_dir.mkdir(parents=True, exist_ok=True)
+        vibe_home.mkdir(parents=True, exist_ok=True)
+        # ``installed_agents = ["lean"]`` is what vibe's interactive ``/leanstall``
+        # writes; it un-gates the ``install_required`` builtin ``lean`` agent
+        # (Leanstral) so ``--agent lean`` resolves in non-interactive ``vibe -p``.
+        #
         # ``bypass_tool_permissions`` is the *only* thing that ungates mutating tools
         # (``edit``, ``write_file``) in ``vibe -p`` programmatic mode: there is no
         # approval callback, so any tool that resolves to ``ASK`` is answered "Tool
@@ -126,8 +127,8 @@ class VibeHarness(Harness):
         # to EXECUTE when this is set). The ``--auto-approve``/``--yolo`` CLI flag can't
         # be used instead -- it forces ``--agent auto-approve``, discarding the ``lean``
         # scaffold. The builtin ``lean`` profile sets no permission bypass, so without
-        # this even the real Leanstral cannot write its proof. Set it on the base config
-        # so it applies to ``--agent lean`` and the vendored stand-ins alike.
+        # this even the real Leanstral cannot write its proof. It lives on the base
+        # config so it applies regardless of the selected ``--agent``.
         #
         # ``mcp_servers`` wires in lean-lsp-mcp (the same server the other harnesses
         # mount via .mcp.json) so the agent actually gets the compile/diagnostic
@@ -151,14 +152,6 @@ class VibeHarness(Harness):
             'command = "lean-lsp-mcp"\n'
             "tool_timeout_sec = 180\n"
         )
-        # The vendored profile lives as ``<agent>.toml`` (``lean-labs``). Vibe has no
-        # ``--model`` flag, so the model is templated into the profile: ``_render``
-        # substitutes ``<<MODEL>>`` with ``self.model`` (default the lab Leanstral) as
-        # it writes the copy into the workdir. The builtin ``lean`` agent ships with
-        # vibe and pins its own (deprecated) model, so it needs no profile.
-        if self.agent != "lean":
-            profile = _VIBE_ASSETS / f"{self.agent}.toml"
-            (agents_dir / profile.name).write_text(self._render(profile.read_text()))
         self._session_log_dir = vibe_home / "logs" / "session"
 
     def _agent_command(self) -> str:
