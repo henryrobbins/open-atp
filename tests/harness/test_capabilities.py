@@ -1,9 +1,9 @@
 """End-to-end capability probes: does each agent CLI have what it needs?
 
 Ported from milp_flare's ``test_docker.py`` harness suite. Each test drives a
-real agent (``claude_code`` / ``codex`` / ``opencode`` / ``vibe``) through a real
-compute backend (``docker`` / ``modal``) with a "make exactly one tool call then stop"
-prompt, then inspects the streamed JSON event stream to confirm the capability
+real agent (``claude_code`` / ``codex`` / ``opencode`` / ``vibe`` / ``grok``) through a
+real compute backend (``docker`` / ``modal``) with a "make exactly one tool call then
+stop" prompt, then inspects the streamed JSON event stream to confirm the capability
 actually works inside the sandbox -- not merely that the harness *configured* it
 (that is covered by the no-creds unit tests in ``test_agent_prover.py``).
 
@@ -17,19 +17,19 @@ The four capabilities the :class:`AgentProver` design depends on:
 * **edit sync-back** -- a file the agent writes lands on the *host* workdir after
   the run completes (Docker bind-mounts it live; Modal pulls it on completion).
 
-All four harnesses, ``vibe`` included, mount the ``probe-skill`` fixture (a no-op
-skill, in place of the default bundle's skills) and run every probe; vibe stages
-it under ``VIBE_HOME/skills`` (its trust-independent user skills dir) rather than
-the project ``.agents/skills`` the others use.
+Every harness mounts the ``probe-skill`` fixture (a no-op skill, in place of the
+default bundle's skills) and runs every probe; vibe stages it under
+``VIBE_HOME/skills`` (its trust-independent user skills dir) rather than the project
+``.agents/skills`` the others use.
 
-``grok`` runs *only* the ``edits_present_on_host`` probe. The other three classify
-a per-tool-call event stream (``tool_use`` + ``tool_result`` with a status), but
-grok's headless output exposes none: ``--output-format json`` emits a single final
-result object, and ``streaming-json`` emits only token-level ``thought``/``text``
-deltas plus a terminal ``end`` -- tool calls run but are never surfaced as events.
-The edit-sync probe asserts on the host filesystem, not the stream, so it is the one
-capability that can be checked for grok here; its full pipeline lives in
-``test_e2e_provers``.
+``grok`` runs every probe now that it is driven over ACP (``grok agent stdio``): the
+old ``--single`` path emitted only a terminal result object, but the ACP stream
+(re-emitted as JSONL by ``grok_acp.py``) surfaces each tool call as a ``tool_call`` +
+``tool_call_update`` pair. Two grok quirks the classifier absorbs: the shell tool is
+``run_terminal_command`` (not ``bash``), and MCP tools run through grok's ``use_tool``
+proxy, so the server-qualified name (``lean-lsp__<tool>``) rides in
+``rawInput.tool_name``. Skills, as with codex, expose no tool -- grok injects them as
+context/slash-commands -- so the skill probe uses the behavioral check.
 
 Every test is marked ``agent_api`` (billable, needs agent creds) and excluded by
 default via ``addopts``; the backend dimension carries the ``docker`` / ``modal``
@@ -100,14 +100,14 @@ Rules:
 - Do not summarize. Make the one call, then stop.
 """
 
-#: The four harnesses whose headless output exposes a per-tool-call event stream the
-#: classifiers can inspect; every probe runs against these.
-HARNESS_NAMES = ["claude_code", "codex", "opencode", "vibe"]
+#: The harnesses whose headless output exposes a per-tool-call event stream the
+#: classifiers can inspect; every probe runs against these. ``grok`` qualifies via its
+#: ACP stream (see module docstring).
+HARNESS_NAMES = ["claude_code", "codex", "opencode", "vibe", "grok"]
 
-#: Harnesses for the ``edits_present_on_host`` probe, which asserts on the host
-#: filesystem rather than the event stream. ``grok`` joins here (and only here): it
-#: surfaces no tool-call events, so the other three probes can't classify it.
-EDIT_SYNC_HARNESS_NAMES = [*HARNESS_NAMES, "grok"]
+#: Harnesses for the ``edits_present_on_host`` probe (asserts on the host filesystem
+#: rather than the event stream); identical to :data:`HARNESS_NAMES`.
+EDIT_SYNC_HARNESS_NAMES = HARNESS_NAMES
 
 #: Cheap models per agent to keep the (billable) integration run inexpensive.
 _MODELS = {
@@ -459,6 +459,19 @@ def _vibe_classify(
     return "missing", "no tool result for id"
 
 
+#: Phrases in a final agent message that signal the skill wasn't discovered. Used by
+#: the behavioral skill checks for agents with no distinct Skill tool (codex, grok).
+_SKILL_MISSING_PHRASES = (
+    "not installed",
+    "not available",
+    "no skill",
+    "skills are not",
+    "couldn't find",
+    "could not find",
+    "cannot find",
+)
+
+
 def _codex_skill_classify(
     events: list[dict],
     _tool: str | None,
@@ -470,15 +483,7 @@ def _codex_skill_classify(
     ``.agents/skills/<name>/SKILL.md`` the agent reads on its own -- so a positive
     tool-call check is impossible; use the negative behavioral check instead.
     """
-    NEG = (
-        "not installed",
-        "not available",
-        "no skill",
-        "skills are not",
-        "couldn't find",
-        "could not find",
-        "cannot find",
-    )
+    NEG = _SKILL_MISSING_PHRASES
     for ev in events:
         if ev.get("type") != "item.completed":
             continue
@@ -490,6 +495,84 @@ def _codex_skill_classify(
             if needle in text:
                 return "error", f"agent reported skill missing: {needle!r}"
     return "success", "no skill-missing report in agent_message"
+
+
+def _grok_classify(
+    events: list[dict],
+    tool_name: str,
+    matches: Callable[[dict], bool] = lambda _: True,
+) -> tuple[str, str]:
+    """Classify grok ACP ``tool_call`` / ``tool_call_update`` events.
+
+    ``grok_acp.py`` emits each ``session/update``'s inner dict. A ``tool_call`` names
+    its tool via ``_meta["x.ai/tool"].name`` (== the initial ``title``) and carries
+    ``rawInput``; the matching ``tool_call_update``s (keyed by ``toolCallId``) report a
+    ``status`` (``completed`` / ``failed`` / ``canceled``) and, for the shell tool,
+    ``rawOutput.exit_code``. MCP tools run through grok's ``use_tool`` proxy, so the
+    server-qualified name lives in ``rawInput.tool_name`` and the matcher keys on that.
+    """
+    target_id: str | None = None
+    for ev in events:
+        if ev.get("sessionUpdate") != "tool_call":
+            continue
+        meta = (ev.get("_meta") or {}).get("x.ai/tool") or {}
+        name = meta.get("name") or ev.get("title")
+        if name != tool_name or not matches(ev.get("rawInput") or {}):
+            continue
+        target_id = ev.get("toolCallId")
+        break
+    if target_id is None:
+        return "missing", f"no tool_call for `{tool_name}`"
+    status: str | None = None
+    exit_code: object = None
+    for ev in events:
+        if (
+            ev.get("sessionUpdate") != "tool_call_update"
+            or ev.get("toolCallId") != target_id
+        ):
+            continue
+        if ev.get("status"):
+            status = ev.get("status")
+        raw_output = ev.get("rawOutput")
+        if isinstance(raw_output, dict) and "exit_code" in raw_output:
+            exit_code = raw_output.get("exit_code")
+    if status is None:
+        return "missing", "no terminal tool_call_update for id"
+    if status != "completed":
+        return "error", f"status={status!r}"
+    # The shell tool reports the process exit code; a completed call with a nonzero
+    # exit still means the capability worked but the command failed.
+    if tool_name == "run_terminal_command" and exit_code not in (0, None):
+        return "error", f"exit={exit_code!r}"
+    return "success", f"status={status!r}"
+
+
+def _grok_skill_classify(
+    events: list[dict],
+    _tool: str | None,
+    _matches: Callable[[dict], bool] | None,
+) -> tuple[str, str]:
+    """Pass iff grok's final message doesn't report the skill missing.
+
+    Like codex, grok has no distinct Skill tool -- skills under ``.agents/skills/`` are
+    injected as context/slash-commands (grok just reads/loads them) -- so use the same
+    negative behavioral check, over the assembled final text ``grok_acp.py`` records on
+    the ``result`` line (falling back to the coalesced ``agent_message`` events).
+    """
+    text = ""
+    for ev in events:
+        if ev.get("sessionUpdate") == "result":
+            text = (ev.get("text") or "").lower()
+    if not text:
+        text = "".join(
+            ev.get("text") or ""
+            for ev in events
+            if ev.get("sessionUpdate") == "agent_message"
+        ).lower()
+    for needle in _SKILL_MISSING_PHRASES:
+        if needle in text:
+            return "error", f"agent reported skill missing: {needle!r}"
+    return "success", "no skill-missing report in final message"
 
 
 # --- per-agent check shapes (action prompt + classifier + tool + matcher) ----
@@ -524,6 +607,15 @@ def _bash_check(harness: str, command: str):
             "bash",
             lambda inp: command in (inp.get("command") or ""),
         )
+    if harness == "grok":
+        # grok's shell tool is `run_terminal_command`; the command is in rawInput.
+        return (
+            f"Use your terminal tool (run_terminal_command) to run exactly: "
+            f"`{command}`.",
+            _grok_classify,
+            "run_terminal_command",
+            lambda inp: command in (inp.get("command") or ""),
+        )
     raise AssertionError(harness)
 
 
@@ -555,6 +647,13 @@ def _skill_check(harness: str, skill_name: str):
             _vibe_classify,
             "skill",
             lambda inp: skill_name in str(inp.get("name") or inp),
+        )
+    if harness == "grok":
+        return (
+            f"Look up the `{skill_name}` skill and use it.",
+            _grok_skill_classify,
+            None,
+            None,
         )
     raise AssertionError(harness)
 
@@ -590,6 +689,16 @@ def _lean_lsp_check(harness: str, file_rel: str):
             _vibe_classify,
             vibe_tool,
             lambda _: True,
+        )
+    if harness == "grok":
+        # grok invokes MCP tools through its `use_tool` proxy; the server-qualified
+        # name (`lean-lsp__<tool>`, `__`-separated) rides in rawInput.tool_name.
+        grok_tool = "lean-lsp__lean_diagnostic_messages"
+        return (
+            f"Call the MCP tool `{grok_tool}` on the file `{file_rel}`.",
+            _grok_classify,
+            "use_tool",
+            lambda inp: "lean_diagnostic_messages" in (inp.get("tool_name") or ""),
         )
     raise AssertionError(harness)
 

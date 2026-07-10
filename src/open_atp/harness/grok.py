@@ -7,10 +7,12 @@ import shutil
 import tempfile
 import threading
 from pathlib import Path
-from typing import Any
 
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult
+
+#: The ACP driver staged next to ``agent.sh`` and exec'd by the launch script.
+_ACP_DRIVER = "grok_acp.py"
 
 
 class GrokHarness(Harness):
@@ -23,8 +25,14 @@ class GrokHarness(Harness):
     the installed CLI binary under ``bin/`` and personal state); the launch script
     points ``GROK_HOME`` at the mount so grok reads the credential there and
     self-populates the rest, leaving the image's ``~/.grok`` binary intact.
-    ``grok --single`` runs one prompt headlessly; the lean-lsp MCP server is wired in
-    via a project-scope ``.grok/config.toml`` that :meth:`stage_wd` writes.
+    The run is driven over ACP (xAI's Agent Client Protocol: ``grok agent stdio``,
+    JSON-RPC 2.0), not ``grok --single``: the single-shot mode emits only one terminal
+    JSON object, so a run's tool calls and progress never reach stdout, whereas ACP
+    streams them as ``session/update`` events. :meth:`stage_wd` writes a small Python
+    driver (``grok_acp.py``) that the launch script exec's; it speaks ACP to a child
+    ``grok agent stdio`` and re-emits the event stream as JSONL. The lean-lsp MCP
+    server is wired in via a project-scope ``.grok/config.toml`` that :meth:`stage_wd`
+    also writes.
 
     Parameters
     ----------
@@ -32,8 +40,8 @@ class GrokHarness(Harness):
         Model id the agent runs. Default ``"grok-4.5"`` (xAI's recommended model for
         code); ``"grok-build-0.1"`` selects the code-specialized model instead.
     effort : str
-        Reasoning-effort level. Recorded in run metadata only -- ``grok --single``
-        exposes no effort flag. Default ``"high"``.
+        Reasoning-effort level, passed to ``grok agent`` as ``--reasoning-effort``
+        (ACP honors it; the old ``--single`` path did not). Default ``"high"``.
     auth_file : Path, optional
         The grok ``auth.json`` to mount. ``None`` (default) uses ``~/.grok/auth.json``
         (from ``grok`` login); resolution fails if the file is absent.
@@ -94,6 +102,9 @@ class GrokHarness(Harness):
 
     def stage_wd(self, wd: Path) -> None:
         super().stage_wd(wd)
+        # ACP driver the launch script exec's (see grok_agent.sh); needs python3 in
+        # the image (present -- lean-lsp-mcp is a Python tool).
+        shutil.copy2(_SCRIPTS / _ACP_DRIVER, wd / _ACP_DRIVER)
         # Project-scope grok config: wires lean-lsp-mcp (the same server the other
         # harnesses mount) into `grok --single`. tool_timeout_sec mirrors the
         # opencode/vibe fix -- the first lean_diagnostic_messages call starts
@@ -114,64 +125,29 @@ class GrokHarness(Harness):
         return self._render((_SCRIPTS / "grok_agent.sh").read_text())
 
     def _parse_lines(self, lines: list[str]) -> HarnessRunResult:
-        """Parse ``grok --single --output-format json`` output.
+        """Parse the JSONL stream ``grok_acp.py`` writes.
 
-        ``--output-format json`` emits a single JSON object (which may span lines);
-        pull token usage out of it defensively across the common field names. Cost is
-        left ``None`` so the prover estimates it from the token totals via the pricing
-        table -- the grok CLI does not self-report USD.
+        The driver emits one ``{"sessionUpdate": "result", ...}`` line at the end,
+        carrying ``stopReason`` and the token counts normalized out of the ACP
+        ``session/prompt`` response ``_meta`` (``input_tokens`` / ``output_tokens``).
+        Cost is left ``None`` so the prover estimates it from the token totals via the
+        pricing table -- the grok CLI does not self-report USD.
         """
         result = HarnessRunResult()
-        obj = _decode_json(lines)
-        if obj is None:
-            return result
-        usage = obj.get("usage")
-        if isinstance(usage, dict):
-            result.input_tokens = _first_int(
-                usage, ("input_tokens", "prompt_tokens", "inputTokens")
-            )
-            result.output_tokens = _first_int(
-                usage, ("output_tokens", "completion_tokens", "outputTokens")
-            )
-        sr = obj.get("stop_reason") or obj.get("finish_reason")
-        if isinstance(sr, str):
-            result.stop_reason = sr
-        rt = obj.get("result") or obj.get("text")
-        result.result_text = rt if isinstance(rt, str) else None
+        for line in lines:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict) or obj.get("sessionUpdate") != "result":
+                continue
+            result.input_tokens = obj.get("input_tokens") or 0
+            result.output_tokens = obj.get("output_tokens") or 0
+            sr = obj.get("stopReason")
+            result.stop_reason = sr if isinstance(sr, str) else None
+            rt = obj.get("text")
+            result.result_text = rt if isinstance(rt, str) else None
         return result
-
-
-def _decode_json(lines: list[str]) -> dict[str, Any] | None:
-    """Decode the grok JSON result, tolerating whether it is one line or many.
-
-    Tries each line as a standalone object first (the last decodable one wins), then
-    the whole buffer joined -- covering both a compact single line and a pretty-printed
-    multi-line object.
-    """
-    obj: dict[str, Any] | None = None
-    for line in lines:
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(parsed, dict):
-            obj = parsed
-    if obj is not None:
-        return obj
-    try:
-        parsed = json.loads("\n".join(lines))
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
-def _first_int(d: dict[str, Any], keys: tuple[str, ...]) -> int:
-    """First key in ``keys`` whose value is an int, else 0."""
-    for key in keys:
-        v = d.get(key)
-        if isinstance(v, int):
-            return v
-    return 0

@@ -99,37 +99,50 @@ def test_codex_cost_falls_back_to_token_table(tmp_path: Path) -> None:
 
 
 def test_grok_parse_lines_tokens_and_cost_fallback(tmp_path: Path) -> None:
-    """Grok reports no USD, so prove() estimates from the token totals it parses."""
+    """Grok reports no USD, so prove() estimates from the token totals it parses.
+
+    ``grok_acp.py`` emits a terminal ``sessionUpdate:"result"`` line with the counts
+    normalized out of the ACP ``session/prompt`` response ``_meta``.
+    """
     harness = _HARNESSES["grok"](model="grok-4.5", effort="high")
     lines = [
-        '{"result":"done","stop_reason":"stop",'
-        '"usage":{"input_tokens":1000000,"output_tokens":1000000}}',
+        '{"sessionUpdate":"result","stopReason":"end_turn",'
+        '"input_tokens":1000000,"output_tokens":1000000,'
+        '"total_tokens":2000000,"text":"done"}',
     ]
     result = harness.parse_result(lines, tmp_path)
     assert result.input_tokens == 1_000_000
     assert result.output_tokens == 1_000_000
-    assert result.stop_reason == "stop"
+    assert result.stop_reason == "end_turn"
+    assert result.result_text == "done"
     assert result.cost_usd is None  # grok never self-reports USD
     # grok-4.5 is (2.0, 6.0): 1M*2 + 1M*6 = 8.
     estimated = compute_cost_usd("grok-4.5", result.input_tokens, result.output_tokens)
     assert estimated == pytest.approx(8.0)
 
 
-def test_grok_parse_handles_multiline_json(tmp_path: Path) -> None:
-    """`--output-format json` may pretty-print; the object still parses."""
+def test_grok_parse_ignores_event_lines_before_result(tmp_path: Path) -> None:
+    """Only the terminal ``result`` line feeds usage; streamed events are skipped."""
     harness = _HARNESSES["grok"](model="grok-4.5")
-    lines = ["{", '  "usage": {"prompt_tokens": 5, "completion_tokens": 7}', "}"]
+    lines = [
+        '{"sessionUpdate":"agent_thought_chunk","content":{"text":"hmm"}}',
+        '{"sessionUpdate":"tool_call","toolCallId":"c1","title":"run_terminal_command"}',
+        '{"sessionUpdate":"result","stopReason":"end_turn",'
+        '"input_tokens":5,"output_tokens":7,"total_tokens":12,"text":"ok"}',
+    ]
     result = harness.parse_result(lines, tmp_path)
-    assert result.input_tokens == 5
-    assert result.output_tokens == 7
+    assert (result.input_tokens, result.output_tokens) == (5, 7)
 
 
-def test_grok_stage_wd_writes_lean_lsp_config(tmp_path: Path) -> None:
+def test_grok_stage_wd_writes_driver_and_lean_lsp_config(tmp_path: Path) -> None:
     harness = _HARNESSES["grok"](model="grok-4.5", effort="high")
     harness.stage_wd(tmp_path)
     script = (tmp_path / "agent.sh").read_text()
-    assert "grok --single" in script and "grok-4.5" in script
-    assert "<<MODEL>>" not in script
+    # ACP driver, not `grok --single`; model/effort exported for it.
+    assert "python3 grok_acp.py" in script
+    assert "grok-4.5" in script and "high" in script
+    assert "<<MODEL>>" not in script and "<<EFFORT>>" not in script
+    assert (tmp_path / "grok_acp.py").is_file()
     config = (tmp_path / ".grok" / "config.toml").read_text()
     assert "[mcp_servers.lean-lsp]" in config
     assert 'command = "lean-lsp-mcp"' in config

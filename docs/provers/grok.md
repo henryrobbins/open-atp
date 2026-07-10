@@ -80,7 +80,7 @@ By default, the Grok harness is equipped with:
 - Official Lean skills {cite:p}`leanprover_skills`.
 - `lean-lsp-mcp` MCP server {cite:p}`lean_lsp_mcp`, wired in via a project-scope `.grok/config.toml`.
 
-The agent prompt (below) is written into the working directory and read into `$PROMPT`. The Grok CLI is then invoked in non-interactive mode (`grok --single`) with `$PROMPT` as the input. See the script below for the full Grok CLI invocation.
+The agent prompt (below) is written into the working directory and read into `$PROMPT`. Grok is then driven over [ACP](https://docs.x.ai/build/cli/headless-scripting#acp) (its Agent Client Protocol: `grok agent stdio`, JSON-RPC 2.0) by a small staged Python driver, `grok_acp.py`, rather than `grok --single` — the single-shot mode emits only a terminal result object, so a run's tool calls never reach stdout, whereas the ACP stream surfaces them (and the token usage) as events the driver re-emits as JSONL. See the launch script below for the full invocation.
 
 :::{dropdown} Agent Prompt
 :icon: book
@@ -95,6 +95,13 @@ The agent prompt (below) is written into the working directory and read into `$P
 :icon: code
 ```{literalinclude} ../../src/open_atp/harness/assets/scripts/grok_agent.sh
 :language: bash
+```
+:::
+
+:::{dropdown} `src/open_atp/harness/assets/scripts/grok_acp.py`
+:icon: code
+```{literalinclude} ../../src/open_atp/harness/assets/scripts/grok_acp.py
+:language: python
 ```
 :::
 
