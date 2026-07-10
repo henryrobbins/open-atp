@@ -257,7 +257,8 @@ def _event_summary(events: list[dict]) -> str:
     from collections import Counter
 
     def _key(ev: dict) -> str:
-        t = ev.get("type", "?")
+        # grok's ACP events discriminate on `sessionUpdate`, not `type`.
+        t = ev.get("type") or ev.get("sessionUpdate") or "?"
         item_t = (
             (ev.get("item") or {}).get("type")
             or (ev.get("part") or {}).get("tool")
@@ -693,9 +694,14 @@ def _lean_lsp_check(harness: str, file_rel: str):
     if harness == "grok":
         # grok invokes MCP tools through its `use_tool` proxy; the server-qualified
         # name (`lean-lsp__<tool>`, `__`-separated) rides in rawInput.tool_name.
+        # Unlike the harnesses that expose each MCP tool directly (so the model reads
+        # its JSON schema), grok's proxy lets the model guess arg names -- and it
+        # guesses `file`, which the server rejects (`file_path` required). Name the
+        # parameter so the probe tests MCP reachability, not arg-name guessing.
         grok_tool = "lean-lsp__lean_diagnostic_messages"
         return (
-            f"Call the MCP tool `{grok_tool}` on the file `{file_rel}`.",
+            f"Call the MCP tool `{grok_tool}` with the argument `file_path` set to "
+            f"`{file_rel}`.",
             _grok_classify,
             "use_tool",
             lambda inp: "lean_diagnostic_messages" in (inp.get("tool_name") or ""),
