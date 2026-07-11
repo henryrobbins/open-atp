@@ -1,58 +1,61 @@
-# OpenCode
+# OpenCode harness
 
-```{include} _meta_opencode.md
-:parser: myst
-```
+[OpenCode](https://opencode.ai/) is a provider-agnostic coding agent: one CLI fronts
+any of its [supported providers](https://opencode.ai/docs/providers/). open-atp drives
+it through the {class}`~open_atp.harness.opencode.OpenCodeHarness` (paired with the
+{class}`~open_atp.provers.agent_prover.AgentProver`), so a single harness backs several
+standard provers on different providers — {doc}`/provers/deepseek` (DeepSeek) and
+{doc}`/provers/grok` (xAI Grok) today.
 
-Use [OpenCode](https://opencode.ai/) as an automated theorem prover with Lean skills and MCP tooling. This prover uses the {class}`~open_atp.provers.agent_prover.AgentProver` with the {class}`~open_atp.harness.opencode.OpenCodeHarness`. Unlike Claude Code and Codex, OpenCode is provider-agnostic: one CLI fronts Anthropic, OpenAI, Google, or DeepSeek models.
+This page documents the harness the OpenCode-backed provers share: the two
+authentication strategies, the launch script, and cost tracking. For a ready-to-run
+prover, see the {doc}`/provers/deepseek` and {doc}`/provers/grok` pages.
 
+(opencode-authentication)=
 ## Authentication
 
-OpenCode bills directly against an API provider rather than a flat-rate subscription. Sign up for an API account with your chosen provider, fund it, and find the full provider list at [OpenCode providers](https://opencode.ai/docs/providers/). By default the harness reads the provider's key from the host environment, for example:
+OpenCode resolves a provider's credentials from two channels, selected by the harness's
+`auth` argument:
 
-```bash
-export DEEPSEEK_API_KEY=...
-```
+`auth="api_key"` (default)
+: Forward the provider's API key as its canonical env var. The harness reads the key
+  from the host environment (or an explicit `provider_api_key`) and forwards it under
+  the provider's standard name (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`,
+  `XAI_API_KEY`, …; any other provider falls back to `<PROVIDER>_API_KEY`). Best for
+  providers billed against an API account:
 
-It is recommended to define this in a `.env` file in your project root. Alternatively, pass the key matching your chosen provider to the harness explicitly:
+  ```bash
+  export DEEPSEEK_API_KEY=...
+  ```
 
-```{testcode}
-from open_atp.harness import OpenCodeHarness
+  ```{testcode}
+  from open_atp.harness import OpenCodeHarness
 
-OpenCodeHarness(model="claude-opus-4-8", provider_api_key="sk-...")
-```
+  OpenCodeHarness(model="deepseek-v4-pro", provider_api_key="sk-...")
+  ```
 
-The provider is inferred from the model prefix unless you pass `provider` explicitly. Either way the harness forwards the key into the sandbox under its canonical env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `DEEPSEEK_API_KEY`). See {ref}`tracking-cost-and-usage-opencode` for details.
+`auth="login"`
+: Authenticate from OpenCode's own credential store, so an OAuth login (e.g. a
+  subscription plan) or an `opencode auth login` API key works without exporting a key.
+  Log in once on the host:
 
-## Using the prover
+  ```bash
+  opencode auth login
+  ```
 
-### Standard prover via Python API
+  This writes the provider's entry into `~/.local/share/opencode/auth.json`. The harness
+  stages **only** the selected provider's entry into the sandbox (never the whole file,
+  which may hold other providers' credentials) and points `XDG_DATA_HOME` at the mount,
+  so OpenCode reads the credential there. See {doc}`/provers/grok` for a worked example.
 
-The simplest way to run the prover is through {func}`~open_atp.config.standard_prover` which uses a standard configuration pointing at a DeepSeek model. Either set `DEEPSEEK_API_KEY` in the host environment or pass it explicitly to the harness. Here, we prove the {ref}`MUL_REORDER` example theorem:
+The provider is inferred from the model prefix (`claude-*` → `anthropic`, `grok-*` →
+`xai`, `deepseek-*` → `deepseek`, …) unless you pass `provider` explicitly; any OpenCode
+provider is accepted, not just the inferable ones.
 
-```{testcode}
-from pathlib import Path
+## Customizing the harness
 
-from open_atp.backends.docker import DockerBackend
-from open_atp.config import standard_prover
-from open_atp.examples import EXAMPLE, example_task
-
-task = example_task(EXAMPLE.MUL_REORDER)
-prover = standard_prover("opencode", backend=DockerBackend())
-result = prover.prove(task, output_dir=Path("demo"))
-```
-
-### Standard prover via CLI
-
-The standard prover can also be run from the CLI:
-
-```bash
-open-atp prove path/to/task.lean output_dir opencode
-```
-
-### Customizing the prover
-
-To override knobs like `model` and `effort`, construct the class directly. The `provider` is inferred from the model prefix unless set explicitly:
+To override knobs like `model`, `effort`, `provider`, or `auth`, construct the harness
+directly and wrap it in an {class}`~open_atp.provers.agent_prover.AgentProver`:
 
 ```{testcode}
 from pathlib import Path
@@ -65,14 +68,16 @@ from open_atp.provers import AgentProver
 
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
-    harness=OpenCodeHarness(model="claude-opus-4-8", effort="medium"),
+    harness=OpenCodeHarness(model="deepseek-v4-pro", effort="medium"),
     backend=DockerBackend(image=DEFAULT_IMAGE),
 )
 result = prover.prove(task, output_dir=Path("demo"))
 ```
 
 :::{tip}
-If you are harness agnostic and want to use Anthropic or OpenAI models, it is recommended to use the {doc}`/provers/claude_code` or {doc}`/provers/codex`  provers. These provers are billed against subscription plans rather than API usage, which is often much cheaper.
+If you are harness agnostic and want to use Anthropic or OpenAI models, prefer the
+{doc}`/provers/claude_code` or {doc}`/provers/codex` provers. These are billed against
+subscription plans rather than API usage, which is often much cheaper.
 :::
 
 ## Harness details
@@ -82,7 +87,9 @@ By default, the OpenCode harness is equipped with:
 - Official Lean skills {cite:p}`leanprover_skills`.
 - `lean-lsp-mcp` MCP server {cite:p}`lean_lsp_mcp`.
 
-The agent prompt (below) is written into the working directory and read into `$PROMPT`. The OpenCode CLI is then invoked in non-interactive mode with `$PROMPT` as the input. See the script below for the full OpenCode CLI invocation.
+The agent prompt (below) is written into the working directory and read into `$PROMPT`.
+The OpenCode CLI is then invoked in non-interactive mode with `$PROMPT` as the input. See
+the script below for the full OpenCode CLI invocation.
 
 :::{dropdown} Agent Prompt
 :icon: book
@@ -103,4 +110,10 @@ The agent prompt (below) is written into the working directory and read into `$P
 (tracking-cost-and-usage-opencode)=
 ## Tracking cost and usage
 
-The OpenCode CLI reports a per-step cost and token breakdown for each provider call. The cost is summed to populate `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. You can also monitor consumption from your provider's usage dashboard. For example, DeepSeek's dashboard is at [DeepSeek Usage](https://platform.deepseek.com/usage).
+The OpenCode CLI reports a per-step cost and token breakdown for each provider call.
+When present, the cost is summed to populate `cost_usd` in
+{class}`~open_atp.provers.base.ProofResult`; when a provider does not self-report USD
+(e.g. an OAuth plan), the cost is estimated from the token counts using
+{data}`~open_atp.harness.cost.COST_PER_MTOK` (see
+{func}`~open_atp.harness.cost.compute_cost_usd`). You can also monitor consumption from
+your provider's usage dashboard.

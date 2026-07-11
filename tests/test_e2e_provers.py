@@ -23,6 +23,7 @@ if a new prover lands in the standard catalog without an e2e row here.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -68,6 +69,16 @@ def _need_codex() -> str | None:
     return None if (Path.home() / ".codex").exists() else "no ~/.codex (codex login)"
 
 
+def _need_grok() -> str | None:
+    """Grok runs via opencode's xai provider (``opencode auth login`` -> xAI)."""
+    store = Path.home() / ".local" / "share" / "opencode" / "auth.json"
+    try:
+        ok = "xai" in json.loads(store.read_text())
+    except (OSError, ValueError):
+        ok = False
+    return None if ok else "no xai login in opencode auth.json (opencode auth login)"
+
+
 def _need_modal() -> str | None:
     """Modal: env tokens or a ``~/.modal.toml`` profile (``modal token set``)."""
     if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
@@ -108,10 +119,16 @@ PROVER_SPECS = [
         id="agent-codex",
     ),
     pytest.param(
-        "opencode",
-        _need_env("ANTHROPIC_API_KEY"),
+        "deepseek",
+        _need_env("DEEPSEEK_API_KEY"),
         marks=pytest.mark.agent_api,
-        id="agent-opencode",
+        id="agent-deepseek",
+    ),
+    pytest.param(
+        "grok",
+        _need_grok,
+        marks=pytest.mark.agent_api,
+        id="agent-grok",
     ),
     pytest.param(
         "axproverbase",

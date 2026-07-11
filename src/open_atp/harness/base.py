@@ -36,7 +36,19 @@ _PROVIDER_ENV = {
     "openai": "OPENAI_API_KEY",
     "google": "GOOGLE_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
+    "xai": "XAI_API_KEY",
 }
+
+
+def _provider_env_var(provider: str) -> str:
+    """The env var an API-key ``provider`` reads its key from.
+
+    Known providers come from :data:`_PROVIDER_ENV`; any other opencode provider
+    falls back to the ``<PROVIDER>_API_KEY`` convention so it works without a
+    per-provider entry here.
+    """
+    return _PROVIDER_ENV.get(provider, f"{provider.upper()}_API_KEY")
+
 
 #: Files the harness writes into the workdir; named so they never collide with a
 #: project's own sources.
@@ -210,7 +222,8 @@ class Harness(ABC):
         """Resolve a provider API key, forwarded under its canonical env-var name.
 
         ``explicit`` (a constructor override) wins; otherwise read the host env under
-        :data:`_PROVIDER_ENV`'s name for ``provider``. Raise if neither is set. No
+        the provider's canonical name (:func:`_provider_env_var`: :data:`_PROVIDER_ENV`
+        for known providers, else ``<PROVIDER>_API_KEY``). Raise if neither is set. No
         format check -- OpenAI and DeepSeek keys are both ``sk-...`` and
         indistinguishable, so the key is assumed correct for the selected provider.
 
@@ -233,7 +246,7 @@ class Harness(ABC):
         RuntimeError
             If neither ``explicit`` nor the host env supplies the key.
         """
-        env_name = _PROVIDER_ENV[provider]
+        env_name = _provider_env_var(provider)
         key = explicit or os.environ.get(env_name)
         if not key:
             raise RuntimeError(
@@ -401,4 +414,6 @@ def _infer_provider(model: str) -> str:
         return "deepseek"
     if model.startswith("gemini"):
         return "google"
+    if model.startswith("grok"):
+        return "xai"
     return "openai"

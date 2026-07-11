@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +15,31 @@ from open_atp.harness.base import (
     _infer_provider,
 )
 
+#: The authentication strategies :class:`OpenCodeHarness` supports.
+_AUTH_MODES = ("api_key", "login")
+
+#: opencode's data dir under the sandbox ``$HOME``; the launch script points
+#: ``XDG_DATA_HOME`` here so opencode reads ``<dir>/opencode/auth.json``.
+_OPENCODE_DATA_MOUNT = ".opencode-data"
+
 
 class OpenCodeHarness(Harness):
-    """OpenCode CLI, authenticated by a provider API key forwarded from the host.
+    """OpenCode CLI, driving any opencode provider under either auth strategy.
+
+    opencode resolves a provider's credentials from two channels, exposed here as
+    :attr:`auth`:
+
+    * ``"api_key"`` -- forward the provider's API key as its canonical env var
+      (:func:`~open_atp.harness.base._provider_env_var`), read from
+      :attr:`provider_api_key` or the host environment. Works for any API-key provider
+      (DeepSeek, OpenAI, ...).
+    * ``"login"`` -- authenticate from opencode's own credential store, so an OAuth
+      login (e.g. a SuperGrok / X-Premium subscription) or an ``opencode auth login``
+      API key works without exporting a key. :meth:`_home_dirs` stages **only** the
+      :attr:`provider` entry of the host ``opencode auth.json`` (never other providers'
+      credentials) and mounts it; the launch script points ``XDG_DATA_HOME`` at the
+      mount so opencode reads the credential. Run ``opencode auth login`` for the
+      provider on the host first.
 
     Parameters
     ----------
@@ -24,14 +48,16 @@ class OpenCodeHarness(Harness):
     effort : str
         Reasoning-effort level. Default ``"high"``.
     provider : str, optional
-        API provider name. ``None`` infers it from the model prefix (``claude-*`` ->
-        ``anthropic``, ``gpt-*`` -> ``openai``, ...).
+        opencode provider name. ``None`` infers it from the model prefix (``claude-*``
+        -> ``anthropic``, ``grok-*`` -> ``xai``, ...). Any opencode provider is
+        accepted, not just the inferable ones.
+    auth : str
+        Authentication strategy, ``"api_key"`` (default) or ``"login"`` (see above).
     provider_api_key : str, optional
-        The selected provider's API key, forwarded under its canonical env var
-        (``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY`` / ...). ``None`` (default) reads
-        that env var from the host; resolution fails if neither is set. The key is
-        assumed to match :attr:`provider` (OpenAI and DeepSeek keys are
-        indistinguishable, so no format check is done).
+        For ``auth="api_key"``, the provider's API key, forwarded under its canonical
+        env var. ``None`` (default) reads that env var from the host; resolution fails
+        if neither is set. No format check is done (OpenAI and DeepSeek keys are
+        indistinguishable). Ignored when ``auth="login"``.
 
     Examples
     --------
@@ -44,8 +70,9 @@ class OpenCodeHarness(Harness):
     >>> harness.provider
     'openai'
 
-    With the provider key supplied explicitly, :meth:`agent_auth` forwards it under
-    the provider's canonical env var without reading the host environment:
+    With ``auth="api_key"`` (the default) and the key supplied explicitly,
+    :meth:`agent_auth` forwards it under the provider's canonical env var without
+    reading the host environment:
 
     >>> harness = OpenCodeHarness(model="claude-opus-4-8", provider_api_key="sk-fake")
     >>> harness.agent_auth().env
@@ -56,21 +83,33 @@ class OpenCodeHarness(Harness):
 
     skills_dest = ".agents/skills"
 
+    #: Holds the staged minimal opencode data dir (just the selected provider's
+    #: ``auth.json`` entry) so it outlives :meth:`_home_dirs` until the backend mounts
+    #: it; cleaned up on collection. Only used by the ``"login"`` auth strategy.
+    _opencode_data: tempfile.TemporaryDirectory[str] | None = None
+
     def __init__(
         self,
         *,
         model: str = "deepseek-v4-pro",
         effort: str = "high",
         provider: str | None = None,
+        auth: str = "api_key",
         provider_api_key: str | None = None,
     ) -> None:
         super().__init__(model=model, effort=effort)
+        if auth not in _AUTH_MODES:
+            raise ValueError(f"unknown auth {auth!r}; choose from {list(_AUTH_MODES)}")
         self._provider = provider
+        self.auth = auth
         self._provider_api_key = provider_api_key
+        # Guards the lazy _opencode_data init: a benchmark sweep shares one harness
+        # instance across tasks run concurrently, so check-then-create must be atomic.
+        self._opencode_data_lock = threading.Lock()
 
     @property
     def provider(self) -> str:
-        """API provider, taken from config or inferred from the model prefix."""
+        """opencode provider, taken from config or inferred from the model prefix."""
         return self._provider or _infer_provider(self.model)
 
     def stage_wd(self, wd: Path) -> None:
@@ -106,7 +145,44 @@ class OpenCodeHarness(Harness):
         }
 
     def _required_env(self) -> dict[str, str]:
+        # "login" authenticates from the mounted opencode credential store (see
+        # _home_dirs), so no API key is forwarded.
+        if self.auth == "login":
+            return {}
         return self._provider_key_env(self.provider, self._provider_api_key)
+
+    def _home_dirs(self) -> list[tuple[Path, str]]:
+        # Only "login" needs a mount; "api_key" forwards an env var instead.
+        if self.auth != "login":
+            return []
+        # opencode stores credentials in $XDG_DATA_HOME/opencode/auth.json (default
+        # ~/.local/share/opencode/auth.json). Stage a minimal data dir holding only
+        # this provider's entry -- never the whole auth.json, which also carries other
+        # providers' keys -- and mount it; the launch script points XDG_DATA_HOME at
+        # the mount.
+        store = Path.home() / ".local" / "share" / "opencode" / "auth.json"
+        try:
+            entry = json.loads(store.read_text()).get(self.provider)
+        except FileNotFoundError:
+            entry = None
+        if not entry:
+            raise RuntimeError(
+                f"opencode harness with auth='login' requires a {self.provider!r} "
+                f"login in {store}; run `opencode auth login` and choose "
+                f"{self.provider}"
+            )
+        # Lock the check-then-create: without it two concurrent runs on a shared
+        # harness both see None, the second's TemporaryDirectory overwrites the first,
+        # and the orphaned finalizer deletes its dir out from under the staging run.
+        with self._opencode_data_lock:
+            if self._opencode_data is None:
+                self._opencode_data = tempfile.TemporaryDirectory(prefix="opencode-")
+                auth_dir = Path(self._opencode_data.name) / "opencode"
+                auth_dir.mkdir()
+                auth = auth_dir / "auth.json"
+                auth.write_text(json.dumps({self.provider: entry}))
+                auth.chmod(0o600)
+        return [(Path(self._opencode_data.name), _OPENCODE_DATA_MOUNT)]
 
     def _agent_command(self) -> str:
         template = (_SCRIPTS / "opencode_agent.sh").read_text()

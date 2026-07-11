@@ -119,12 +119,30 @@ def build_prover(config: Mapping[str, object]) -> AutomatedProver:
 #: The standard catalog: a friendly name -> the canonical ``prover`` spec for that
 #: ready-to-run default. The agentic entries (``claude``, ``codex``, ...) are all the
 #: shared :class:`~open_atp.provers.agent_prover.AgentProver` on a different harness;
-#: ``numina`` and ``aristotle`` are the standalone provers. Build one with
-#: :func:`standard_prover`.
+#: ``deepseek`` and ``grok`` are both the ``opencode`` harness on different providers
+#: and auth strategies. ``numina`` and ``aristotle`` are the standalone provers. Build
+#: one with :func:`standard_prover`.
 STANDARD_PROVERS: dict[str, dict[str, object]] = {
     "claude": {"type": "agent", "harness": {"type": "claude_code"}},
     "codex": {"type": "agent", "harness": {"type": "codex"}},
-    "opencode": {"type": "agent", "harness": {"type": "opencode"}},
+    "deepseek": {
+        "type": "agent",
+        "harness": {
+            "type": "opencode",
+            "model": "deepseek-v4-pro",
+            "provider": "deepseek",
+            "auth": "api_key",
+        },
+    },
+    "grok": {
+        "type": "agent",
+        "harness": {
+            "type": "opencode",
+            "model": "grok-4.5",
+            "provider": "xai",
+            "auth": "login",
+        },
+    },
     "leanstral": {"type": "agent", "harness": {"type": "vibe"}},
     "axproverbase": {"type": "agent", "harness": {"type": "axproverbase"}},
     "numina": {"type": "numina"},
@@ -136,7 +154,7 @@ def standard_prover(name: str, *, backend: ComputeBackend) -> AutomatedProver:
     """Construct a standard default prover ``name`` against ``backend``.
 
     ``name`` is a :data:`STANDARD_PROVERS` key -- an agentic default
-    (``"claude"``, ``"codex"``, ``"opencode"``, ``"leanstral"``,
+    (``"claude"``, ``"codex"``, ``"deepseek"``, ``"grok"``, ``"leanstral"``,
     ``"axproverbase"``) or a standalone prover (``"numina"``, ``"aristotle"``). The
     prover is built with its class's baked-in defaults; to customize any knob (model,
     effort, skills, ...), use :func:`build_prover` with a full config dict instead.

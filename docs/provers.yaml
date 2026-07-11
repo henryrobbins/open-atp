@@ -37,15 +37,25 @@ provers:
     cite: null
     source: { label: GitHub, url: https://github.com/openai/codex }
 
-  - name: OpenCode
-    page: opencode
-    id:   opencode
+  - name: DeepSeek
+    page: deepseek
+    id:   deepseek
     skills: [leanprover]
-    mcp: true
-    company: null
+    mcp: true               # lean-lsp-mcp via opencode.json (runs on the opencode harness)
+    company: { label: DeepSeek, url: https://www.deepseek.com }
     paper: null
     cite: null
-    source: { label: GitHub, url: https://github.com/sst/opencode }
+    source: { label: GitHub, url: https://github.com/sst/opencode }  # opencode-backed
+
+  - name: Grok
+    page: grok
+    id:   grok
+    skills: [leanprover]
+    mcp: true               # lean-lsp-mcp via opencode.json (runs on the opencode harness)
+    company: { label: xAI, url: https://x.ai }
+    paper: null
+    cite: null
+    source: { label: GitHub, url: https://github.com/sst/opencode }  # opencode-backed
 
   - name: AxProverBase
     page: axproverbase

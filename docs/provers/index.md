@@ -17,6 +17,8 @@ Each prover is implemented as a subclass of {class}`~open_atp.provers.base.Autom
 
 claude_code
 codex
+deepseek
+grok
 opencode
 axproverbase
 leanstral

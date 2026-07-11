@@ -85,7 +85,8 @@ and the `STANDARD_PROVERS` registry (`config.py`):
 | `aristotle` | Harmonic Aristotle (hosted) | remote API via `aristotlelib`, no local gen sandbox |
 | `claude` | Claude Code (`claude_code` harness) | default; coding agent + lean-lsp-mcp |
 | `codex` | OpenAI Codex CLI | model `gpt-5.5` |
-| `opencode` | opencode | |
+| `deepseek` | DeepSeek via opencode | `opencode` harness on the `deepseek` provider, `auth="api_key"` (`DEEPSEEK_API_KEY`); model `deepseek-v4-pro` |
+| `grok` | xAI Grok via opencode | `opencode` harness on the `xai` provider, `auth="login"`; model `grok-4.5`; auth via `opencode auth login` -> xAI, bills the xAI plan |
 | `axproverbase` | ax-prover (LangGraph) | proposer→builder→reviewer loop; default model `claude-opus-4-8`, effort `high` |
 | `numina` | Numina skills/prompts on Claude Code | round-continuation loop |
 | `leanstral` | Mistral Vibe `lean` scaffold | hosted model (default `magistral-medium-latest`), no GPU; `--model` configurable |
@@ -215,6 +216,10 @@ skill/test degrade or skip:
 - `GEMINI_API_KEY` / `OPENAI_API_KEY` / `LEAN_LEANDEX_API_KEY` — Numina helper skills
 - `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` — `axproverbase` (raw provider key matching
   the configured `model`); `TAVILY_API_KEY` optional (ax-prover web search)
+- `DEEPSEEK_API_KEY` — the `deepseek` prover (opencode harness, `auth="api_key"`)
+- `opencode auth login` -> xAI (writes an `xai` entry to opencode's `auth.json`) —
+  the `grok` prover (opencode harness, `auth="login"`); that entry is mounted into the
+  sandbox (no API key), so runs bill against your xAI plan
 - `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` — Modal backend
 
 ## Docs: API reference convention
