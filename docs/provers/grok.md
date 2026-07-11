@@ -4,7 +4,37 @@
 :parser: myst
 ```
 
-Use xAI's [Grok CLI](https://docs.x.ai/build/overview) (Grok Build) as an automated theorem prover with Lean skills and MCP tooling. This prover uses the {class}`~open_atp.provers.agent_prover.AgentProver` with the {class}`~open_atp.harness.grok.GrokHarness`, driving the `grok` coding agent non-interactively against an xAI model (default `grok-4.5`).
+Use xAI's Grok as an automated theorem prover with Lean skills and MCP tooling
+(default model `grok-4.5`).
+
+The **standard `grok` prover** ({func}`~open_atp.config.standard_prover`) drives Grok
+through the {class}`~open_atp.harness.opencode.OpenCodeHarness`'s `xai` provider, **not**
+the native Grok CLI. The Grok CLI drives tools over [ACP](https://docs.x.ai/build/cli/headless-scripting#acp)
+with aggressive parallel dispatch: it fires several `lean-lsp` MCP calls at once at the
+single-threaded language server, they serialize behind the first cold
+`lean_diagnostic_messages`, and each trips the MCP tool timeout — burning the whole
+generation budget. Grok exposes no knob to serialize tool calls, so the standard prover
+routes Grok through opencode instead, which drives `lean-lsp` without that contention.
+
+The native {class}`~open_atp.harness.grok.GrokHarness` (Grok Build, `grok agent`) is
+still available for explicit use and is documented below.
+
+:::{warning}
+**Regional availability.** Grok is a hosted xAI model and `grok-4.5` is geo-gated:
+requests are refused with `403 permission-denied: The model grok-4.5 is not available in
+your region` from some countries. This depends only on the country the request egresses
+from, not your account. On the {class}`~open_atp.backends.modal.ModalBackend`, sandboxes
+are scheduled wherever Modal has capacity, so **without a region pin some sandboxes
+egress from outside the US and 403 while others succeed in the same sweep**. The backend
+therefore defaults to `region="us"`. Override it via the benchmark `compute` config if
+you need a different region:
+
+```yaml
+compute:
+  type: modal
+  region: us   # or "eu", "us-east", ["us-east", "us-west"], ...
+```
+:::
 
 ## Authentication
 

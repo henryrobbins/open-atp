@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -302,8 +303,20 @@ def _benchmark(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
     directory = Path(args.dataset)
 
-    compute = args.compute or config.get("compute", "docker")
-    backend = build_backend({"type": compute})
+    # `compute` may be a bare type string ("modal") or a full backend spec
+    # ({"type": "modal", "region": "us", "cpu": 4}). --compute overrides the type;
+    # if it selects a *different* backend than the config block, the block's
+    # backend-specific keys don't apply, so fall back to a bare spec.
+    compute = config.get("compute", "docker")
+    if isinstance(compute, str):
+        spec: dict[str, object] = {"type": compute}
+    elif isinstance(compute, Mapping):
+        spec = dict(compute)
+    else:
+        raise SystemExit("config 'compute' must be a string or a mapping")
+    if args.compute is not None:
+        spec = {"type": args.compute} if args.compute != spec.get("type") else spec
+    backend = build_backend(spec)
     registry = _build_registry(config.get("provers"), backend)
     provers = _select_provers(registry, args.provers, backend)
     # --timeout is the per-task generation budget: chain it onto each prover
