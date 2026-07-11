@@ -40,9 +40,21 @@ from pathlib import Path
 import structlog
 from tqdm import tqdm
 
+from open_atp.backends.base import ExecTimeout
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
-from open_atp.provers.base import AutomatedProver, ProofResult
+from open_atp.provers.base import (
+    AutomatedProver,
+    ProofResult,
+    status_for_exception,
+)
+
+#: Extra wall-clock added to a prover's generation + verify budgets to form a hard
+#: per-task ceiling. The backend already bounds every individual Modal call, so this is
+#: a last-resort backstop: if a task somehow still exceeds it, the sweep abandons that
+#: run (recorded as a timeout) rather than letting one wedged cell block every other
+#: result.
+TASK_WALLCLOCK_OVERHEAD_S = 600
 
 log = structlog.get_logger(__name__)
 
@@ -98,6 +110,46 @@ class BenchmarkResult:
                 for run in self.runs
             ],
         }
+
+
+def _task_ceiling(prover: AutomatedProver) -> float:
+    """Hard per-task wall-clock: generation + verify budgets + overhead.
+
+    Reads the budgets defensively (a scripted test prover may not set them) so the
+    ceiling is always defined.
+    """
+    gen = getattr(prover, "timeout_s", 1800)
+    verify = getattr(getattr(prover, "verifier", None), "timeout_s", 600)
+    return gen + verify + TASK_WALLCLOCK_OVERHEAD_S
+
+
+def _prove_bounded(
+    prover: AutomatedProver, task: ProofTask, run_dir: Path, ceiling_s: float
+) -> ProofResult:
+    """Run ``prover.prove`` on a daemon thread, bounded by a hard wall-clock ceiling.
+
+    The backend already bounds each Modal call, so this rarely fires; it is the outer
+    backstop guaranteeing no single wedged run can stall the whole sweep. On timeout
+    the worker thread is abandoned (daemon, so it can't block process exit) and
+    :class:`~open_atp.backends.base.ExecTimeout` is raised for the caller to classify.
+    """
+    result: list[ProofResult] = []
+    error: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            result.append(prover.prove(task, run_dir))
+        except BaseException as exc:  # re-raised on the caller's thread
+            error.append(exc)
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    worker.join(ceiling_s)
+    if worker.is_alive():
+        raise ExecTimeout(f"task exceeded {ceiling_s:.0f}s wall-clock ceiling")
+    if error:
+        raise error[0]
+    return result[0]
 
 
 def run_benchmark(
@@ -170,13 +222,14 @@ def run_benchmark(
         run_dir.mkdir(parents=True, exist_ok=True)
         with gates[prover_name]:
             try:
-                result = prover.prove(task, run_dir)
+                result = _prove_bounded(prover, task, run_dir, _task_ceiling(prover))
             except Exception as exc:
                 result = ProofResult(
                     prover=prover.name,
                     verification=None,
                     output_dir=run_dir,
                     error=str(exc),
+                    status=status_for_exception(exc),
                 )
         (run_dir / "results.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str)
@@ -194,7 +247,7 @@ def run_benchmark(
     def record(index: int, run: BenchmarkRun) -> None:
         slots[index] = run
         r = run.result
-        status = "✓" if r.success else ("error" if r.error else "✗")
+        status = "✓" if r.success else r.status.value
         log.info(
             "run complete",
             task=run.task,

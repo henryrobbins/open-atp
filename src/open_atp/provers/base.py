@@ -20,17 +20,61 @@ and ``logs`` is the run record.
 from __future__ import annotations
 
 import abc
+import enum
 import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from open_atp.backends.base import ComputeBackend
-from open_atp.lean import LeanProject, ProofTask
+from open_atp.backends.base import ComputeBackend, ComputeError, ExecTimeout
+from open_atp.lean import (
+    LeanProject,
+    MathlibRevMismatch,
+    ProofTask,
+    ToolchainMismatch,
+)
 from open_atp.verify import VerificationReport, Verifier
 
 #: Heading the optional per-task ``user_prompt`` is appended under.
 _ADDITIONAL_INSTRUCTIONS = "\n\n# Additional instructions\n\n{user_prompt}"
+
+
+class ProofStatus(enum.Enum):
+    """Coarse outcome bucket for a :class:`ProofResult`.
+
+    Deliberately small: each member is a *distinct caller action* (score it, retry
+    it, retry with more budget, fix the input, file a bug), not a distinct cause.
+    Same-bucket runs are told apart by the free-text :attr:`ProofResult.error`, so the
+    enum stays the index and the string carries the "why".
+    """
+
+    #: Verified proof: compiles, ``sorry``-free, no foreign axioms.
+    VERIFIED = "verified"
+    #: Ran to completion but the candidate did not verify -- a genuine miss.
+    UNVERIFIED = "unverified"
+    #: Generation or verification exceeded its wall-clock budget.
+    TIMEOUT = "timeout"
+    #: The compute substrate failed (sandbox disconnect, worker gone, pull failed).
+    INFRA_ERROR = "infra_error"
+    #: The input was rejected before compute (toolchain / Mathlib pin mismatch).
+    INPUT_ERROR = "input_error"
+    #: An unexpected error -- a prover bug, not a classified operational failure.
+    ERROR = "error"
+
+
+def status_for_exception(exc: BaseException) -> ProofStatus:
+    """Classify an exception raised out of :meth:`AutomatedProver.prove`.
+
+    Maps the backend's typed operational failures and the input-contract mismatches
+    onto a :class:`ProofStatus`; anything unrecognised is :attr:`ProofStatus.ERROR`.
+    """
+    if isinstance(exc, ExecTimeout):
+        return ProofStatus.TIMEOUT
+    if isinstance(exc, ComputeError):
+        return ProofStatus.INFRA_ERROR
+    if isinstance(exc, (ToolchainMismatch, MathlibRevMismatch)):
+        return ProofStatus.INPUT_ERROR
+    return ProofStatus.ERROR
 
 
 def compose_prompt(prover_prompt: str, user_prompt: str | None) -> str:
@@ -80,6 +124,11 @@ class ProofResult:
         Set when the prover raised before producing a result (Docker down, API error,
         toolchain mismatch). :attr:`verification` is ``None`` and :attr:`success` is
         ``False``.
+    status : ProofStatus
+        Coarse outcome bucket -- ``VERIFIED``/``UNVERIFIED`` from the verification, or
+        a failure bucket (``TIMEOUT``/``INFRA_ERROR``/``INPUT_ERROR``/``ERROR``) set by
+        the caller that caught the raising prover (see :func:`status_for_exception`).
+        The free-text :attr:`error` distinguishes same-bucket failures.
     wd : pathlib.Path
         The completed working directory (``output_dir/wd``) -- a complete lake project
         with the completed ``.lean`` files. The proof output.
@@ -101,6 +150,7 @@ class ProofResult:
     duration_s: float | None = None
     metadata: dict[str, object] = field(default_factory=dict)
     error: str | None = None
+    status: ProofStatus = ProofStatus.ERROR
 
     @property
     def wd(self) -> Path:
@@ -121,6 +171,7 @@ class ProofResult:
         return {
             "prover": self.prover,
             "success": self.success,
+            "status": self.status.value,
             "error": self.error,
             "verification": self.verification.to_dict() if self.verification else None,
             "completed_files": dict(self.completed_files),
@@ -225,6 +276,10 @@ class AutomatedProver(abc.ABC):
         # the standalone check.
         if result.verification is None:
             result.verification = self.verifier.verify(LeanProject(wd))
+
+        result.status = (
+            ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
+        )
 
         # A self-describing summary so a downloaded logs dir stands on its own.
         (logs_dir / "result.json").write_text(
