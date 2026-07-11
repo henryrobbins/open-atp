@@ -67,8 +67,8 @@ Workflow:
 2. Confirm the lean-lsp MCP server is live before relying on it: call
    `mcp__lean-lsp__lean_diagnostic_messages` on a file you have not yet edited.
    `success:true, items:[]` means it compiles cleanly; real errors come back as
-   `items`. `success:false, items:[]` usually means imports aren't built yet —
-   run `lake build` for the relevant modules first.
+   `items`. `success:false, items:[]` usually means the import oleans aren't
+   materialized yet — run `lake env lean <file>` once to build them.
 3. Write a proof for one `sorry` at a time. Mathlib is available; prefer library
    lemmas, `simp`, `omega`, `linarith`, `exact?`/`apply?` suggestions, and
    `aesop` over long bespoke arguments.
@@ -76,13 +76,18 @@ Workflow:
    `mcp__lean-lsp__lean_diagnostic_messages` and iterate until it is clean.
 5. When a file looks done, verify it has no stubbed proofs with
    `mcp__lean-lsp__lean_verify` — the reported axioms must NOT contain `sorryAx`.
-6. Repeat until no `.lean` file contains a `sorry` and the whole project builds
-   (`lake build`).
+6. Repeat until no `.lean` file contains a `sorry` and every file compiles
+   cleanly. Do the final compile check per file with `lake env lean <file>`:
+   exit code 0 and no output means it compiles. This is the exact command the
+   grader uses, so it is the source of truth.
 
 Tips:
 - Use the lean-lsp tools (`mcp__lean-lsp__*`) as your primary feedback loop; they
-  are far faster than a full `lake build` per change. Use `lake build` to
-  materialize oleans for imports and as the final whole-project check.
+  are far faster than compiling per change.
+- Do NOT trust `lake build` as a compile check: the `.lean` files here are not
+  lake library targets, so `lake build` reports `Build completed successfully
+  (0 jobs)` without ever compiling them. Always confirm with
+  `lake env lean <file>`, which compiles the file by path.
 - If a goal looks false or unprovable from the given hypotheses, re-read the
   statement: you likely misread a binder or a coercion. Do not "fix" it by
   changing the statement — finish the proof as stated.
