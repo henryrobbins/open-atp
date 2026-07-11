@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +15,20 @@ from open_atp.harness.base import (
     _infer_provider,
 )
 
+#: opencode's data dir under the sandbox ``$HOME``; the launch script points
+#: ``XDG_DATA_HOME`` here so opencode reads ``<dir>/opencode/auth.json``.
+_XAI_DATA_MOUNT = ".opencode-data"
+
 
 class OpenCodeHarness(Harness):
     """OpenCode CLI, authenticated by a provider API key forwarded from the host.
+
+    The ``xai`` provider (Grok, inferred from a ``grok-*`` model) is the exception: it
+    authenticates from opencode's own credential store rather than an ``XAI_API_KEY``,
+    so a SuperGrok/X-Premium subscription login works. :meth:`_home_dirs` stages just
+    the ``xai`` entry of the host ``opencode auth.json`` (never other providers' keys)
+    and mounts it; the launch script points ``XDG_DATA_HOME`` at the mount so opencode
+    reads the credential there. Run ``opencode auth login`` -> xAI on the host first.
 
     Parameters
     ----------
@@ -25,13 +38,14 @@ class OpenCodeHarness(Harness):
         Reasoning-effort level. Default ``"high"``.
     provider : str, optional
         API provider name. ``None`` infers it from the model prefix (``claude-*`` ->
-        ``anthropic``, ``gpt-*`` -> ``openai``, ...).
+        ``anthropic``, ``grok-*`` -> ``xai``, ...).
     provider_api_key : str, optional
         The selected provider's API key, forwarded under its canonical env var
         (``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY`` / ...). ``None`` (default) reads
         that env var from the host; resolution fails if neither is set. The key is
         assumed to match :attr:`provider` (OpenAI and DeepSeek keys are
-        indistinguishable, so no format check is done).
+        indistinguishable, so no format check is done). Ignored for the ``xai``
+        provider, which authenticates from the mounted opencode credential store.
 
     Examples
     --------
@@ -56,6 +70,11 @@ class OpenCodeHarness(Harness):
 
     skills_dest = ".agents/skills"
 
+    #: Holds the staged minimal opencode data dir (just the xai ``auth.json`` entry)
+    #: so it outlives :meth:`_home_dirs` until the backend mounts it; cleaned up on
+    #: collection. Only used by the ``xai`` (OAuth) provider path.
+    _opencode_data: tempfile.TemporaryDirectory[str] | None = None
+
     def __init__(
         self,
         *,
@@ -67,6 +86,9 @@ class OpenCodeHarness(Harness):
         super().__init__(model=model, effort=effort)
         self._provider = provider
         self._provider_api_key = provider_api_key
+        # Guards the lazy _opencode_data init: a benchmark sweep shares one harness
+        # instance across tasks run concurrently, so check-then-create must be atomic.
+        self._opencode_data_lock = threading.Lock()
 
     @property
     def provider(self) -> str:
@@ -106,7 +128,42 @@ class OpenCodeHarness(Harness):
         }
 
     def _required_env(self) -> dict[str, str]:
+        # xai authenticates from the mounted opencode credential store (see
+        # _home_dirs), so no API key is forwarded.
+        if self.provider == "xai":
+            return {}
         return self._provider_key_env(self.provider, self._provider_api_key)
+
+    def _home_dirs(self) -> list[tuple[Path, str]]:
+        # Only xai needs a mount; every other provider forwards an API-key env var.
+        if self.provider != "xai":
+            return []
+        # opencode stores credentials in $XDG_DATA_HOME/opencode/auth.json (default
+        # ~/.local/share/opencode). Stage a minimal data dir holding only the xai
+        # entry -- never the whole auth.json, which also carries other providers'
+        # keys -- and mount it; the launch script points XDG_DATA_HOME at the mount.
+        store = Path.home() / ".local" / "share" / "opencode" / "auth.json"
+        try:
+            entry = json.loads(store.read_text()).get("xai")
+        except FileNotFoundError:
+            entry = None
+        if not entry:
+            raise RuntimeError(
+                "opencode harness with the xai provider requires an 'xai' login in "
+                f"{store}; run `opencode auth login` and choose xAI"
+            )
+        # Lock the check-then-create: without it two concurrent runs on a shared
+        # harness both see None, the second's TemporaryDirectory overwrites the first,
+        # and the orphaned finalizer deletes its dir out from under the staging run.
+        with self._opencode_data_lock:
+            if self._opencode_data is None:
+                self._opencode_data = tempfile.TemporaryDirectory(prefix="opencode-")
+                auth_dir = Path(self._opencode_data.name) / "opencode"
+                auth_dir.mkdir()
+                auth = auth_dir / "auth.json"
+                auth.write_text(json.dumps({"xai": entry}))
+                auth.chmod(0o600)
+        return [(Path(self._opencode_data.name), _XAI_DATA_MOUNT)]
 
     def _agent_command(self) -> str:
         template = (_SCRIPTS / "opencode_agent.sh").read_text()

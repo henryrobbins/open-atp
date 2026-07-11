@@ -127,7 +127,10 @@ STANDARD_PROVERS: dict[str, dict[str, object]] = {
     "opencode": {"type": "agent", "harness": {"type": "opencode"}},
     "leanstral": {"type": "agent", "harness": {"type": "vibe"}},
     "axproverbase": {"type": "agent", "harness": {"type": "axproverbase"}},
-    "grok": {"type": "agent", "harness": {"type": "grok"}},
+    "grok": {
+        "type": "agent",
+        "harness": {"type": "opencode", "model": "grok-4.5", "provider": "xai"},
+    },
     "numina": {"type": "numina"},
     "aristotle": {"type": "aristotle"},
 }

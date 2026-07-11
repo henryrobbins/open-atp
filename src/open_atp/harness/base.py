@@ -36,6 +36,7 @@ _PROVIDER_ENV = {
     "openai": "OPENAI_API_KEY",
     "google": "GOOGLE_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
+    "xai": "XAI_API_KEY",
 }
 
 #: Files the harness writes into the workdir; named so they never collide with a
@@ -401,4 +402,6 @@ def _infer_provider(model: str) -> str:
         return "deepseek"
     if model.startswith("gemini"):
         return "google"
+    if model.startswith("grok"):
+        return "xai"
     return "openai"

@@ -23,6 +23,7 @@ if a new prover lands in the standard catalog without an e2e row here.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -69,9 +70,13 @@ def _need_codex() -> str | None:
 
 
 def _need_grok() -> str | None:
-    """Grok mounts ``~/.grok/auth.json`` (``grok`` login), not an env var."""
-    auth = Path.home() / ".grok" / "auth.json"
-    return None if auth.is_file() else "no ~/.grok/auth.json (grok login)"
+    """Grok runs via opencode's xai provider (``opencode auth login`` -> xAI)."""
+    store = Path.home() / ".local" / "share" / "opencode" / "auth.json"
+    try:
+        ok = "xai" in json.loads(store.read_text())
+    except (OSError, ValueError):
+        ok = False
+    return None if ok else "no xai login in opencode auth.json (opencode auth login)"
 
 
 def _need_modal() -> str | None:
