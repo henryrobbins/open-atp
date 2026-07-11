@@ -52,7 +52,7 @@ src/open_atp/
   provers/          base.py  agent_prover.py  numina.py  numina_tracker.py  aristotle.py
   harness/          coding-agent CLIs staged into the sandbox:
                       base.py  claude_code.py  codex.py  opencode.py
-                      axproverbase.py  vibe.py  grok.py  cost.py  _catalog.py
+                      axproverbase.py  vibe.py  cost.py  _catalog.py
                       _numina.py  _paths.py
                     assets/  scripts/*.sh  configs/mcp.json  vibe/lean-standin.toml
 
@@ -90,7 +90,7 @@ and the `STANDARD_PROVERS` registry (`config.py`):
 | `axproverbase` | ax-prover (LangGraph) | proposer→builder→reviewer loop; default model `claude-opus-4-8`, effort `high` |
 | `numina` | Numina skills/prompts on Claude Code | round-continuation loop |
 | `leanstral` | Mistral Vibe `lean` scaffold | hosted model (default `magistral-medium-latest`), no GPU; `--model` configurable |
-| `grok` | xAI Grok CLI (Grok Build) | coding agent + lean-lsp-mcp; default model `grok-4.5`; mounts `grok login` OAuth (`~/.grok/auth.json`), bills the xAI plan |
+| `grok` | xAI Grok via opencode | opencode harness on the `xai` provider; default model `grok-4.5`; auth via `opencode auth login` -> xAI, bills the xAI plan |
 
 Agentic harnesses share **lean-lsp-mcp** as their LSP server. The shared `Verifier`
 does the final compile/sorry/axiom check regardless of which tool generated the proof.
@@ -217,8 +217,9 @@ skill/test degrade or skip:
 - `GEMINI_API_KEY` / `OPENAI_API_KEY` / `LEAN_LEANDEX_API_KEY` — Numina helper skills
 - `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` — `axproverbase` (raw provider key matching
   the configured `model`); `TAVILY_API_KEY` optional (ax-prover web search)
-- `grok login` (writes `~/.grok/auth.json`) — `grok` harness; the OAuth login is
-  mounted into the sandbox (no API key), so runs bill against your xAI plan
+- `opencode auth login` -> xAI (writes an `xai` entry to opencode's `auth.json`) —
+  the `grok` prover; that entry is mounted into the sandbox (no API key), so runs
+  bill against your xAI plan
 - `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` — Modal backend
 
 ## Docs: API reference convention
