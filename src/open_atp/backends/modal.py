@@ -294,6 +294,9 @@ class ModalBackend(ComputeBackend):
     app : str
         Modal app the Sandbox is associated with (also the publish target of
         ``open-atp build-modal-image``). Default ``open-atp``.
+    region : str or Sequence[str], optional
+        Region(s) to schedule sandboxes in (see Modal region selection docs).
+        Default ``"us"``; ``None`` lets Modal choose freely.
 
     Examples
     --------
@@ -307,6 +310,8 @@ class ModalBackend(ComputeBackend):
     4.0
     >>> backend.app
     'open-atp'
+    >>> backend.region
+    'us'
     """
 
     # Modal ignores the image USER and runs everything as root; credential mounts
@@ -321,11 +326,13 @@ class ModalBackend(ComputeBackend):
         cpu: float = 2.0,
         memory_mib: int = 4096,
         app: str = "open-atp",
+        region: str | Sequence[str] | None = "us",
     ) -> None:
         super().__init__(image=image, env=env)
         self.cpu = cpu
         self.memory_mib = memory_mib
         self.app = app
+        self.region = region
 
     @property
     def name(self) -> str:
@@ -376,6 +383,7 @@ class ModalBackend(ComputeBackend):
             cpu=cpu,
             memory=self.memory_mib,
             timeout=timeout_s + SYNC_HEADROOM_S,
+            region=self.region,
         )
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces

@@ -118,6 +118,30 @@ def test_load_config_rejects_non_mapping(tmp_path: Path) -> None:
         cli._load_config(str(cfg))
 
 
+def test_compute_spec_bare_string() -> None:
+    assert cli._compute_spec("modal", None) == {"type": "modal"}
+
+
+def test_compute_spec_full_block_preserved() -> None:
+    block = {"type": "modal", "region": "us"}
+    assert cli._compute_spec(block, None) == {"type": "modal", "region": "us"}
+
+
+def test_compute_spec_cli_matching_type_keeps_block_keys() -> None:
+    block = {"type": "modal", "region": "us"}
+    assert cli._compute_spec(block, "modal") == {"type": "modal", "region": "us"}
+
+
+def test_compute_spec_cli_overrides_to_bare_when_type_differs() -> None:
+    block = {"type": "modal", "region": "us"}
+    assert cli._compute_spec(block, "docker") == {"type": "docker"}
+
+
+def test_compute_spec_rejects_non_string_non_mapping() -> None:
+    with pytest.raises(SystemExit):
+        cli._compute_spec(["modal"], None)
+
+
 def test_task_filter_normalizes_string_and_list() -> None:
     assert cli._task_filter("a, b ,") == ["a", "b"]
     assert cli._task_filter(["a", " b "]) == ["a", "b"]

@@ -17,6 +17,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -294,6 +295,25 @@ def _task_filter(value: object) -> list[str] | None:
     return [str(t).strip() for t in items if str(t).strip()] or None
 
 
+def _compute_spec(config_compute: object, cli_compute: str | None) -> dict[str, object]:
+    """Resolve the compute setting + ``--compute`` flag into a backend spec.
+
+    ``config_compute`` may be a bare type string (``"modal"``) or a full backend
+    spec (``{"type": "modal", "region": "us", "cpu": 4}``). ``--compute`` overrides
+    the type; if it selects a *different* backend than the config block, that block's
+    backend-specific keys don't apply, so fall back to a bare spec.
+    """
+    if isinstance(config_compute, str):
+        spec: dict[str, object] = {"type": config_compute}
+    elif isinstance(config_compute, Mapping):
+        spec = dict(config_compute)
+    else:
+        raise SystemExit("config 'compute' must be a string or a mapping")
+    if cli_compute is not None and cli_compute != spec.get("type"):
+        spec = {"type": cli_compute}
+    return spec
+
+
 def _benchmark(args: argparse.Namespace) -> int:
     """Run the configured provers over a directory of tasks and print a table.
 
@@ -302,8 +322,8 @@ def _benchmark(args: argparse.Namespace) -> int:
     config = _load_config(args.config)
     directory = Path(args.dataset)
 
-    compute = args.compute or config.get("compute", "docker")
-    backend = build_backend({"type": compute})
+    spec = _compute_spec(config.get("compute", "docker"), args.compute)
+    backend = build_backend(spec)
     registry = _build_registry(config.get("provers"), backend)
     provers = _select_provers(registry, args.provers, backend)
     # --timeout is the per-task generation budget: chain it onto each prover
