@@ -14,10 +14,17 @@
 # place vibe records cost/tokens -- are sandbox-local and sync back out with the
 # workdir for cost parsing.
 #
+# --trust trusts the workdir for this invocation (the documented flag for
+# non-interactive automation). Without it vibe treats the workdir's `.vibe/` as
+# an untrusted project-config folder and ignores it -- "/workspace/wd is not
+# trusted; project configuration (.vibe/) will be ignored" -- silently dropping
+# our config.toml (mcp_servers, bypass_tool_permissions, installed_agents).
+#
 # https://docs.mistral.ai/mistral-vibe/
 export VIBE_HOME="$PWD/.vibe"
 
 vibe -p "$PROMPT" \
     --agent <<AGENT>> \
     --output streaming \
+    --trust \
     --workdir "$PWD"<<EXTRA>>

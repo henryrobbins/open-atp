@@ -75,10 +75,10 @@ class VibeHarness(Harness):
     #: Workdir-relative VIBE_HOME (matches the export in ``vibe_agent.sh``).
     VIBE_HOME_DIR = ".vibe"
 
-    #: Skills mount under VIBE_HOME's *user* skills dir, which loads regardless of
-    #: project-folder trust. The other harnesses use project dirs (``.claude/skills`` /
-    #: ``.agents/skills``), which ``vibe -p`` gates behind ``--trust``, so the
-    #: VIBE_HOME-relative spot is the parity-preserving one.
+    #: Skills mount under VIBE_HOME's *user* skills dir. ``vibe_agent.sh`` passes
+    #: ``--trust`` so the workdir's project config loads too, but the user-skills
+    #: spot loads unconditionally (independent of folder trust), so it's the
+    #: robust place to stage them.
     skills_dest = f"{VIBE_HOME_DIR}/skills"
 
     def __init__(

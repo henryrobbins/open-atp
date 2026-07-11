@@ -112,6 +112,9 @@ def test_agent_command_renders_agent_and_run_guards() -> None:
     assert "--max-turns 8" in script
     assert "--max-price 0.5" in script
     assert 'export VIBE_HOME="$PWD/.vibe"' in script
+    # --trust keeps vibe from ignoring the workdir-local `.vibe/` config as an
+    # untrusted project-config folder in non-interactive runs.
+    assert "--trust" in script
 
 
 def test_agent_command_omits_unset_guards() -> None:
