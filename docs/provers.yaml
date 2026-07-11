@@ -71,11 +71,11 @@ provers:
     page: grok
     id:   grok
     skills: [leanprover]
-    mcp: true               # lean-lsp-mcp via .grok/config.toml
+    mcp: true               # lean-lsp-mcp via opencode.json (runs on the opencode harness)
     company: { label: xAI, url: https://x.ai }
     paper: null
     cite: null
-    source: null            # Grok Build (grok CLI) is not open source
+    source: { label: GitHub, url: https://github.com/sst/opencode }  # opencode-backed
 
   - name: Numina
     page: numina

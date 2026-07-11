@@ -98,109 +98,6 @@ def test_codex_cost_falls_back_to_token_table(tmp_path: Path) -> None:
     assert estimated == pytest.approx(20.0)
 
 
-def test_grok_parse_lines_tokens_and_cost_fallback(tmp_path: Path) -> None:
-    """Grok reports no USD, so prove() estimates from the token totals it parses.
-
-    ``input_tokens`` is taken from the terminal ``result`` line (the ACP final-turn
-    figure); ``output_tokens`` is a cumulative estimate reconstructed from the generated
-    text at ~4 chars/token, since the ACP response counts cover only the final turn.
-    """
-    harness = _HARNESSES["grok"](model="grok-4.5", effort="high")
-    # 800 generated chars (thought + message) -> 200 estimated output tokens.
-    lines = [
-        '{"sessionUpdate":"agent_thought","content":{"type":"text","text":"'
-        + "a" * 400
-        + '"}}',
-        '{"sessionUpdate":"agent_message","content":{"type":"text","text":"'
-        + "b" * 400
-        + '"}}',
-        # The result line's own output_tokens (999) is final-turn only and ignored.
-        '{"sessionUpdate":"result","stopReason":"end_turn",'
-        '"input_tokens":1000000,"output_tokens":999,'
-        '"total_tokens":1000999,"text":"done"}',
-    ]
-    result = harness.parse_result(lines, tmp_path)
-    assert result.input_tokens == 1_000_000
-    assert result.output_tokens == 200  # 800 chars / 4, not the final-turn 999
-    assert result.stop_reason == "end_turn"
-    assert result.result_text == "done"
-    assert result.cost_usd is None  # grok never self-reports USD
-    # grok-4.5 is (2.0, 6.0): 1M*2 + 200*6/1M = 2.0012.
-    estimated = compute_cost_usd("grok-4.5", result.input_tokens, result.output_tokens)
-    assert estimated == pytest.approx(2.0012)
-
-
-def test_grok_parse_estimates_output_from_stream(tmp_path: Path) -> None:
-    """Output is reconstructed from the whole stream, not the final-turn count.
-
-    Coalesced ``agent_message`` / ``agent_thought`` text and each ``tool_call``'s
-    ``rawInput`` all count toward the model's generated output; ``input_tokens`` still
-    comes from the ``result`` line.
-    """
-    import json
-
-    raw = {"path": "P.lean", "content": "theorem t : True := trivial"}
-    thought = "c" * 20
-    lines = [
-        '{"sessionUpdate":"agent_thought","content":{"type":"text","text":"'
-        + thought
-        + '"}}',
-        json.dumps(
-            {
-                "sessionUpdate": "tool_call",
-                "toolCallId": "c1",
-                "title": "write",
-                "rawInput": raw,
-            }
-        ),
-        # tool_call_update repeats rawInput but is the tool's result, not model output:
-        # it must not be double-counted.
-        json.dumps(
-            {"sessionUpdate": "tool_call_update", "toolCallId": "c1", "rawInput": raw}
-        ),
-        '{"sessionUpdate":"result","stopReason":"end_turn",'
-        '"input_tokens":5,"output_tokens":7,"total_tokens":12,"text":"ok"}',
-    ]
-    harness = _HARNESSES["grok"](model="grok-4.5")
-    result = harness.parse_result(lines, tmp_path)
-    expected = round((len(thought) + len(json.dumps(raw))) / 4)
-    assert result.input_tokens == 5  # from the result line
-    assert result.output_tokens == expected  # stream estimate, not the final-turn 7
-
-
-def test_grok_stage_wd_writes_driver_and_lean_lsp_config(tmp_path: Path) -> None:
-    harness = _HARNESSES["grok"](model="grok-4.5", effort="high")
-    harness.stage_wd(tmp_path)
-    script = (tmp_path / "agent.sh").read_text()
-    # ACP driver, not `grok --single`; model/effort exported for it.
-    assert "python3 grok_acp.py" in script
-    assert "grok-4.5" in script and "high" in script
-    assert "<<MODEL>>" not in script and "<<EFFORT>>" not in script
-    assert (tmp_path / "grok_acp.py").is_file()
-    config = (tmp_path / ".grok" / "config.toml").read_text()
-    assert "[mcp_servers.lean-lsp]" in config
-    assert 'command = "lean-lsp-mcp"' in config
-
-
-def test_grok_auth_mounts_only_auth_json(tmp_path: Path) -> None:
-    auth = tmp_path / "auth.json"
-    auth.write_text('{"key": "oidc-token"}')
-    harness = _HARNESSES["grok"](auth_file=auth)
-    result = harness.agent_auth()
-    assert result.env == {}  # OAuth login is mounted, not forwarded as an env key
-    (src, dest) = result.mounts[0]
-    assert dest == ".grok-home"  # NOT `.grok`: that would shadow the image binary
-    staged = sorted(p.name for p in src.iterdir())
-    assert staged == ["auth.json"]
-    assert (src / "auth.json").read_text() == '{"key": "oidc-token"}'
-
-
-def test_grok_auth_requires_auth_file(tmp_path: Path) -> None:
-    harness = _HARNESSES["grok"](auth_file=tmp_path / "missing.json")
-    with pytest.raises(RuntimeError, match="auth.json"):
-        harness.agent_auth()
-
-
 # --- stage / write_prompt --------------------------------------------------
 
 
@@ -249,7 +146,6 @@ def test_skills_resolve_by_name_and_path(tmp_path: Path) -> None:
         ("codex", ".agents/skills"),
         ("opencode", ".agents/skills"),
         ("vibe", ".vibe/skills"),
-        ("grok", ".agents/skills"),
     ],
 )
 def test_stage_skills_copies_into_harness_location(

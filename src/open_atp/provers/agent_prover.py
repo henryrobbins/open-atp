@@ -322,8 +322,8 @@ class AgentProver(AutomatedProver):
         """
         env, _ = self._auth(harness)
         # Forward the agent's wall-clock budget so a harness whose own driver blocks
-        # on a long call (e.g. grok's ACP session/prompt) can bound that wait by the
-        # run's budget instead of a hardcoded default. Harnesses that don't need it
+        # on a long call can bound that wait by the run's budget instead of a
+        # hardcoded default. Harnesses that don't need it
         # ignore it. Docker doesn't enforce timeout_s itself, so this is the only cap
         # such a driver gets there.
         if timeout_s is not None:
