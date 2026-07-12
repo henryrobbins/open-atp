@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Any
 
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult
+
+log = logging.getLogger("open_atp")
 
 
 class VibeHarness(Harness):
@@ -102,6 +105,10 @@ class VibeHarness(Harness):
         # env (its api_key_env_var); forward it into the sandbox.
         key = self._mistral_api_key or os.environ.get("MISTRAL_API_KEY")
         if not key:
+            log.error(
+                "missing credential",
+                extra={"harness": self.name, "env": "MISTRAL_API_KEY"},
+            )
             raise RuntimeError(
                 "vibe harness requires MISTRAL_API_KEY (a Mistral La Plateforme key)"
             )
@@ -150,6 +157,10 @@ class VibeHarness(Harness):
             'command = "lean-lsp-mcp"\n'
             "tool_timeout_sec = 180\n"
         )
+        log.debug(
+            "staged VIBE_HOME config",
+            extra={"harness": self.name, "agent": self.agent},
+        )
 
     def _session_log_dir(self, wd: Path) -> Path:
         """Where vibe writes its per-session logs under the workdir-local VIBE_HOME."""
@@ -175,6 +186,12 @@ class VibeHarness(Harness):
                 result.cost_usd = float(cost)
             result.input_tokens = int(stats.get("session_prompt_tokens", 0) or 0)
             result.output_tokens = int(stats.get("session_completion_tokens", 0) or 0)
+        else:
+            log.warning(
+                "no vibe session stats found; tokens/cost unavailable",
+                extra={"harness": self.name, "wd": str(wd)},
+            )
+        self._log_usage(result)
         return result
 
     def collect_logs(self, wd: Path, logs_dir: Path) -> None:
@@ -187,6 +204,7 @@ class VibeHarness(Harness):
         if src.is_dir():
             logs_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src), str(logs_dir / "vibe-session"))
+            log.debug("collected vibe session logs", extra={"harness": self.name})
 
     def _read_session_stats(self, wd: Path) -> dict[str, Any] | None:
         """Load ``stats`` from the most recent session ``meta.json`` under ``wd``."""

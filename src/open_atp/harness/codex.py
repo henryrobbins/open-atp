@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import tempfile
 import threading
@@ -10,6 +11,8 @@ from pathlib import Path
 
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult
+
+log = logging.getLogger("open_atp")
 
 
 class CodexHarness(Harness):
@@ -70,6 +73,10 @@ class CodexHarness(Harness):
         # it survives until the backend mounts it.
         auth = self._auth_file or Path.home() / ".codex" / "auth.json"
         if not auth.is_file():
+            log.error(
+                "missing codex auth file",
+                extra={"harness": self.name, "auth_file": str(auth)},
+            )
             raise RuntimeError(
                 "codex harness requires ~/.codex/auth.json from `codex login`"
             )
@@ -82,6 +89,10 @@ class CodexHarness(Harness):
                 self._codex_home = tempfile.TemporaryDirectory(prefix="codex-home-")
                 # copy2 preserves auth.json's 0600 mode, which codex requires.
                 shutil.copy2(auth, Path(self._codex_home.name) / "auth.json")
+                log.debug(
+                    "staged minimal .codex home",
+                    extra={"harness": self.name, "home": self._codex_home.name},
+                )
         return [(Path(self._codex_home.name), ".codex")]
 
     def _agent_command(self) -> str:

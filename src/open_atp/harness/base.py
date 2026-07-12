@@ -174,7 +174,16 @@ class Harness(ABC):
         env: dict[str, str] = {}
         env.update(self._static_env())
         env.update(self._required_env())
-        return AgentAuth(env=env, mounts=self._home_dirs())
+        auth = AgentAuth(env=env, mounts=self._home_dirs())
+        log.debug(
+            "resolved agent auth",
+            extra={
+                "harness": self.name,
+                "env_keys": sorted(auth.env),
+                "mounts": [dest for _, dest in auth.mounts],
+            },
+        )
+        return auth
 
     def _static_env(self) -> dict[str, str]:
         """Non-secret env vars to set for this harness (e.g. ``IS_SANDBOX``).
@@ -239,6 +248,10 @@ class Harness(ABC):
         env_name = _PROVIDER_ENV[provider]
         key = explicit or os.environ.get(env_name)
         if not key:
+            log.error(
+                "missing provider credential",
+                extra={"harness": self.name, "provider": provider, "env": env_name},
+            )
             raise RuntimeError(
                 f"{self.name} harness requires {env_name} for provider {provider!r}"
             )
@@ -263,6 +276,10 @@ class Harness(ABC):
             If ``wd`` does not exist.
         """
         if not wd.exists():
+            log.error(
+                "agent working directory missing",
+                extra={"harness": self.name, "wd": str(wd)},
+            )
             raise RuntimeError("The agent working directory must be created first.")
         (wd / SCRIPT_FILE).write_text(self._agent_command())
         log.debug("staged launch script", extra={"harness": self.name})
@@ -308,7 +325,27 @@ class Harness(ABC):
         HarnessRunResult
             Token totals, cost, and stop metadata parsed from the run.
         """
-        return self._parse_lines(lines)
+        result = self._parse_lines(lines)
+        self._log_usage(result)
+        return result
+
+    def _log_usage(self, result: HarnessRunResult) -> None:
+        """Log a run's parsed token/cost totals at INFO.
+
+        Called by every :meth:`parse_result` (the base one and the Vibe/ax-prover
+        overrides) so a run's usage is visible on the ``open_atp`` logger regardless
+        of which harness produced it.
+        """
+        log.info(
+            "parsed agent usage",
+            extra={
+                "harness": self.name,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "cost_usd": result.cost_usd,
+                "stop_reason": result.stop_reason,
+            },
+        )
 
     def collect_logs(self, wd: Path, logs_dir: Path) -> None:
         """Move this harness's rich log files out of ``wd`` into ``logs_dir``.

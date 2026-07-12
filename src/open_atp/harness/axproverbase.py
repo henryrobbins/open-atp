@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 from pathlib import Path
 from typing import Any, ClassVar
@@ -13,6 +14,8 @@ from open_atp.harness.base import (
     HarnessRunResult,
     _infer_provider,
 )
+
+log = logging.getLogger("open_atp")
 
 #: Cap on ax-prover's per-call LLM retries (its ``DEFAULT_LLM_RETRY_CONFIG`` ships
 #: ``stop_after_attempt=10000`` -- ~8h20m). That ``with_retry`` fires on *any* exception
@@ -116,6 +119,14 @@ class AxProverBaseHarness(Harness):
         # launch contract still cats it, so one is still written.
         super().stage_wd(wd)
         (wd / "axprover.yaml").write_text(self._render_config())
+        log.debug(
+            "wrote axprover.yaml",
+            extra={
+                "harness": self.name,
+                "model": self._ax_model(),
+                "max_iterations": self.max_iterations,
+            },
+        )
 
     def _ax_model(self) -> str:
         """``self.model`` as ax-prover's ``provider:model`` string."""
@@ -202,18 +213,28 @@ class AxProverBaseHarness(Harness):
         # stream itself carries no usage. Leave cost_usd None so the prover derives USD
         # from the token table (like CodexHarness).
         result = self._parse_lines(lines)
-        if wd.is_dir():
-            for path in sorted(wd.glob("ax_output.*.json")):
-                try:
-                    data = json.loads(path.read_text())
-                except (OSError, json.JSONDecodeError):
+        output_files = sorted(wd.glob("ax_output.*.json")) if wd.is_dir() else []
+        if not output_files:
+            log.warning(
+                "no ax-prover output files found; tokens/cost unavailable",
+                extra={"harness": self.name, "wd": str(wd)},
+            )
+        for path in output_files:
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, json.JSONDecodeError):
+                log.warning(
+                    "unreadable ax-prover output file",
+                    extra={"harness": self.name, "path": str(path)},
+                )
+                continue
+            entries = data.values() if isinstance(data, dict) else []
+            for entry in entries:
+                if not isinstance(entry, dict):
                     continue
-                entries = data.values() if isinstance(data, dict) else []
-                for entry in entries:
-                    if not isinstance(entry, dict):
-                        continue
-                    result.input_tokens += int(entry.get("input_tokens", 0) or 0)
-                    result.output_tokens += int(entry.get("output_tokens", 0) or 0)
+                result.input_tokens += int(entry.get("input_tokens", 0) or 0)
+                result.output_tokens += int(entry.get("output_tokens", 0) or 0)
+        self._log_usage(result)
         return result
 
     def collect_logs(self, wd: Path, logs_dir: Path) -> None:
@@ -226,6 +247,10 @@ class AxProverBaseHarness(Harness):
             logs_dir.mkdir(parents=True, exist_ok=True)
             for path in moved:
                 shutil.move(str(path), str(logs_dir / path.name))
+            log.debug(
+                "collected ax-prover logs",
+                extra={"harness": self.name, "files": [p.name for p in moved]},
+            )
 
     def _parse_lines(self, lines: list[str]) -> HarnessRunResult:
         # ax-prover's stdout is human-readable logs, not a JSON event stream; keep the

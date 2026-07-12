@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -10,6 +11,8 @@ from pathlib import Path
 from open_atp.harness._catalog import resolve_plugin
 from open_atp.harness._paths import _MCP_JSON, _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult
+
+log = logging.getLogger("open_atp")
 
 
 class ClaudeCodeHarness(Harness):
@@ -75,6 +78,7 @@ class ClaudeCodeHarness(Harness):
         # Project-scope MCP config (passed via --mcp-config) and plugins.
         shutil.copy2(_MCP_JSON, wd / ".mcp.json")
         self._copy_plugins(wd)
+        log.debug("staged MCP config and plugins", extra={"plugins": self.plugins})
 
     def _resolved_plugins(self) -> list[Path]:
         """``self.plugins`` (names or paths) resolved to plugin source dirs."""
@@ -117,6 +121,10 @@ class ClaudeCodeHarness(Harness):
         # subscription rather than at the higher per-API-call rate.
         token = self._oauth_token or os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
         if not token:
+            log.error(
+                "missing credential",
+                extra={"harness": self.name, "env": "CLAUDE_CODE_OAUTH_TOKEN"},
+            )
             raise RuntimeError(
                 "claude_code harness requires CLAUDE_CODE_OAUTH_TOKEN"
                 " from `claude setup-token`"
