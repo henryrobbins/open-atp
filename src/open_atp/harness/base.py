@@ -336,7 +336,7 @@ class Harness(ABC):
         overrides) so a run's usage is visible on the ``open_atp`` logger regardless
         of which harness produced it.
         """
-        log.info(
+        log.debug(
             "parsed agent usage",
             extra={
                 "harness": self.name,

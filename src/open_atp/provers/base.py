@@ -251,6 +251,8 @@ class AutomatedProver(abc.ABC):
                 "prover": self.name,
                 "success": result.success,
                 "cost_usd": result.cost_usd,
+                "input_tokens": result.metadata.get("input_tokens"),
+                "output_tokens": result.metadata.get("output_tokens"),
                 "duration_s": round(result.duration_s, 1),
             },
         )

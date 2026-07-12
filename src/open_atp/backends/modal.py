@@ -377,7 +377,7 @@ class ModalBackend(ComputeBackend):
         # Give the Sandbox SYNC_HEADROOM_S beyond the work budget: commands are
         # coreutils-capped at the budget (see _exec_payload), so the Sandbox outlives
         # a timed-out command and the partial workdir can still be pulled back.
-        log.info(
+        log.debug(
             "provisioning modal sandbox",
             extra={
                 "image": self.image.name,

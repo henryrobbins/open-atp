@@ -290,7 +290,7 @@ class Verifier:
             )
             return VerificationReport(compiles=True, sorry_free=True)
 
-        log.info(
+        log.debug(
             "verifying",
             extra={"files": len(rel), "backend": self.backend.name},
         )
