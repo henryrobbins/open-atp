@@ -14,7 +14,15 @@ The architecture rests on two reusable primitives:
 Everything else is a candidate generator
 (:class:`~open_atp.provers.base.AutomatedProver`) that produces completed files, which
 are then funnelled through the shared verifier.
+
+All of open-atp logs to a single ``open_atp`` logger. As a well-behaved library it
+installs only a :class:`~logging.NullHandler` here and configures nothing else --
+output is silent by default. To see or capture the logs, configure that logger from
+your application, e.g. ``logging.getLogger("open_atp").setLevel(logging.INFO)`` and
+attach a handler (the ``open-atp`` CLI does this itself).
 """
+
+import logging
 
 from open_atp.benchmark import (
     DATASET,
@@ -35,6 +43,10 @@ from open_atp.images import DEFAULT_IMAGE, Image
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
 from open_atp.verify import VerificationReport
+
+# Well-behaved library: emit to the ``open_atp`` logger, but leave all output
+# decisions to the importing application. The NullHandler keeps us silent by default.
+logging.getLogger("open_atp").addHandler(logging.NullHandler())
 
 __all__ = [
     "AutomatedProver",

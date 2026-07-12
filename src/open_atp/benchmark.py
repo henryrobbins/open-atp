@@ -27,6 +27,7 @@ straight to such a directory.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 import tempfile
@@ -37,14 +38,13 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
-import structlog
 from tqdm import tqdm
 
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
 
-log = structlog.get_logger(__name__)
+log = logging.getLogger("open_atp")
 
 
 @dataclass(frozen=True)
@@ -148,7 +148,7 @@ def run_benchmark(
     progress : bool
         Show a :mod:`tqdm` progress bar over the ``(task, prover)`` pairs. Default
         ``True``. Each completed pair is logged (task, prover, status, duration, cost)
-        via :mod:`structlog` regardless.
+        on the ``open_atp`` logger regardless.
 
     Returns
     -------
@@ -197,11 +197,15 @@ def run_benchmark(
         status = "✓" if r.success else ("error" if r.error else "✗")
         log.info(
             "run complete",
-            task=run.task,
-            prover=run.prover,
-            status=status,
-            duration_s=round(r.duration_s, 1) if r.duration_s is not None else None,
-            cost_usd=r.cost_usd,
+            extra={
+                "task": run.task,
+                "prover": run.prover,
+                "status": status,
+                "duration_s": (
+                    round(r.duration_s, 1) if r.duration_s is not None else None
+                ),
+                "cost_usd": r.cost_usd,
+            },
         )
         bar.update(1)
 

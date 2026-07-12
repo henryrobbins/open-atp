@@ -89,54 +89,69 @@ _LOG_LEVELS = {
 
 
 def _configure_logging(console_level: int, log_file: Path | None = None) -> None:
-    """Route structlog through the stdlib logging tree with up to two sinks.
+    """Render the ``open_atp`` logger's records with up to two sinks.
 
-    The console keeps structlog's pretty ``ConsoleRenderer`` (via the tqdm-aware
-    stream) at ``console_level`` with compact ``HH:MM:SS`` timestamps. When
-    ``log_file`` is given, a second handler writes full-detail JSONL there (one
-    event per line) at ``DEBUG`` regardless of the console level, with ISO-8601
-    timestamps, so a quiet terminal never costs you the audit log. The file handler
-    writes straight to disk and does not touch the tqdm progress bar.
+    open-atp is a well-behaved library: every module logs to the plain stdlib
+    ``open_atp`` logger and configures nothing itself. As the application, the CLI owns
+    that logger here -- it attaches the handlers, sets the level, and turns off
+    propagation so the output stays isolated (a rude third-party library that hijacks
+    the root logger, e.g. ``aristotlelib``, can neither duplicate nor swallow our logs).
+
+    :mod:`structlog` appears only as a formatter, never as a global config: a
+    ``ProcessorFormatter`` renders each stdlib record through structlog's processors, so
+    ``extra={...}`` fields and exception tracebacks come out structured. The console
+    keeps the pretty ``ConsoleRenderer`` (via the tqdm-aware stream) at the console
+    level with compact ``HH:MM:SS`` timestamps. When ``log_file`` is given, a handler
+    writes full-detail JSONL there (one event per line) at ``DEBUG`` regardless of the
+    console level, with ISO-8601 timestamps, so a quiet terminal never costs you the
+    audit log.
     """
-    structlog.configure(
-        processors=[
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-        ],
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
 
     def formatter(
-        renderer: Processor, timestamp_fmt: str
+        render: list[Processor], timestamp_fmt: str
     ) -> structlog.stdlib.ProcessorFormatter:
-        # The timestamper lives here (not in the shared chain) so each sink stamps
-        # its own way; it runs for structlog- and stdlib-originated records alike.
+        # Every open_atp record is a plain stdlib record ("foreign" to structlog), so
+        # the pre-chain rebuilds the event dict: merge the ``extra={...}`` fields and
+        # the level in before the shared timestamp/render tail runs.
         return structlog.stdlib.ProcessorFormatter(
-            foreign_pre_chain=[structlog.stdlib.add_log_level],
+            foreign_pre_chain=[
+                structlog.stdlib.ExtraAdder(),
+                structlog.stdlib.add_log_level,
+            ],
             processors=[
                 structlog.processors.TimeStamper(fmt=timestamp_fmt),
                 structlog.stdlib.ProcessorFormatter.remove_processors_meta,
-                renderer,
+                *render,
             ],
         )
 
     console = logging.StreamHandler(cast("TextIO", _TqdmStream()))
-    console.setFormatter(formatter(structlog.dev.ConsoleRenderer(), "%H:%M:%S"))
+    console.setFormatter(formatter([structlog.dev.ConsoleRenderer()], "%H:%M:%S"))
     console.setLevel(console_level)
     handlers: list[logging.Handler] = [console]
 
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
-        file_handler.setFormatter(formatter(structlog.processors.JSONRenderer(), "iso"))
+        file_handler.setFormatter(
+            formatter(
+                [
+                    structlog.processors.format_exc_info,
+                    structlog.processors.JSONRenderer(),
+                ],
+                "iso",
+            )
+        )
         file_handler.setLevel(logging.DEBUG)
         handlers.append(file_handler)
 
-    root = logging.getLogger()
-    root.handlers = handlers
-    root.setLevel(min(handler.level for handler in handlers))
+    # Own the open_atp logger directly (not root): the handlers hang here, the logger
+    # passes everything the sinks might want (DEBUG when a file sink is present), and
+    # propagate=False keeps our records off the root logger entirely.
+    logger = logging.getLogger("open_atp")
+    logger.handlers = handlers
+    logger.setLevel(logging.DEBUG if log_file is not None else console_level)
+    logger.propagate = False
 
 
 def _load_dotenv() -> None:

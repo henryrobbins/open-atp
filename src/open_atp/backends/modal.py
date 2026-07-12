@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     import modal
     from modal.container_process import ContainerProcess
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("open_atp")
 
 #: Working directory inside the Sandbox (same convention as Docker's bind mount).
 REMOTE_WD = "/workspace/wd"

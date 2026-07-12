@@ -39,7 +39,7 @@ from open_atp.provers.base import (
     compose_prompt,
 )
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("open_atp")
 
 PROVER_PROMPT = """\
 The working directory is a complete Lean 4 lake project. One or more `.lean`
