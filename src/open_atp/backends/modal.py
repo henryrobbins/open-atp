@@ -85,8 +85,10 @@ BAKED_LAKE = "/workspace/.lake"
 #: the last command hits its coreutils ``timeout``, the Sandbox is still alive long
 #: enough to tar the partial workdir back out. Without it, the Sandbox timeout and the
 #: work budget coincide and the pull races a Sandbox Modal has already terminated --
-#: dropping every edit the agent made.
-SYNC_HEADROOM_S = 180
+#: dropping every edit the agent made. Kept above the coreutils ``--kill-after=30``
+#: grace (2x it): a command that runs to budget and ignores SIGTERM isn't dead until
+#: ``budget + 30``, so anything <= 30 would leave no window to pull its partial workdir.
+SYNC_HEADROOM_S = 60
 
 #: Seconds a command's *client* deadline sits above its in-sandbox coreutils cap. The
 #: coreutils ``timeout`` (which does the clean group-kill + leaves the Sandbox alive
@@ -102,8 +104,9 @@ INFRA_EXEC_TIMEOUT_S = 600
 TRANSFER_TIMEOUT_S = 300
 #: Client wall-clock ceiling for the pre-Sandbox control-plane RPCs (``App.lookup``,
 #: ``Sandbox.create``) -- there is no Sandbox to poll yet, so a flat ceiling is all
-#: that bounds them.
-PROVISION_RPC_TIMEOUT_S = 300
+#: that bounds them. Size-independent control-plane calls (observed p100 ~0.3s), so a
+#: tight ceiling still fails a genuinely wedged provision fast without false positives.
+PROVISION_RPC_TIMEOUT_S = 30
 #: Client wall-clock ceiling for ``Sandbox.terminate`` (best effort).
 TERMINATE_TIMEOUT_S = 60
 #: Grace window for the best-effort stdout drain *after* a process has exited: enough
