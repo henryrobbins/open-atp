@@ -21,12 +21,15 @@ the prover (``AgentProver.skills``, resolved to source dirs and handed to
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
+
+log = logging.getLogger("open_atp")
 
 #: Provider name (see :func:`_infer_provider`) -> the canonical env var the agent
 #: CLI reads its key from. OpenCode/ax-prover forward the selected provider's key
@@ -262,6 +265,7 @@ class Harness(ABC):
         if not wd.exists():
             raise RuntimeError("The agent working directory must be created first.")
         (wd / SCRIPT_FILE).write_text(self._agent_command())
+        log.debug("staged launch script", extra={"harness": self.name})
 
     def write_prompt(self, wd: Path, prompt: str) -> None:
         """Write the composed prompt where this harness's launch script reads it.
@@ -278,6 +282,9 @@ class Harness(ABC):
             The composed prompt text to write to :data:`PROMPT_FILE`.
         """
         (wd / PROMPT_FILE).write_text(prompt)
+        log.debug(
+            "wrote prompt", extra={"harness": self.name, "prompt_chars": len(prompt)}
+        )
 
     def parse_result(self, lines: list[str], wd: Path) -> HarnessRunResult:
         """Parse the agent's run into a :class:`HarnessRunResult`.
@@ -350,6 +357,10 @@ class Harness(ABC):
                 ignore=shutil.ignore_patterns("tests"),
                 dirs_exist_ok=True,
             )
+        log.debug(
+            "staged skills",
+            extra={"harness": self.name, "skills": [s.name for s in skill_dirs]},
+        )
 
     def _render(self, template: str) -> str:
         """Substitute ``<<MODEL>>``/``<<EFFORT>>`` into a launch-script template.
