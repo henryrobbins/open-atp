@@ -134,9 +134,16 @@ def _configure_logging(console_level: int, log_file: Path | None = None) -> None
         file_handler.setLevel(logging.DEBUG)
         handlers.append(file_handler)
 
+    # Only our own loggers honor the requested verbosity; third-party libraries
+    # (asyncio, hpack/h2 under Modal's gRPC client, ...) stay at WARNING so their
+    # debug chatter never floods the sinks. The root gate does not re-filter
+    # propagated records, so open_atp DEBUG still reaches the file handler.
     root = logging.getLogger()
     root.handlers = handlers
-    root.setLevel(min(handler.level for handler in handlers))
+    root.setLevel(logging.WARNING)
+    logging.getLogger("open_atp").setLevel(
+        logging.DEBUG if log_file is not None else console_level
+    )
 
 
 def _load_dotenv() -> None:
