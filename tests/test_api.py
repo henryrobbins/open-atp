@@ -72,6 +72,7 @@ class FakeProver(AutomatedProver):
         # check_compatible (a toolchain comparison against the image) needs no Docker.
         # The ``toolchain`` knob rides on the backend image to simulate a mismatch.
         self.name = name
+        self.timeout_s = 1800
         self.verifier = Verifier(DockerBackend(image=Image(lean_toolchain=toolchain)))
         self._verified = verified
         self._cost = cost_usd

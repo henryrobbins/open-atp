@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import abc
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +29,8 @@ from pathlib import Path
 from open_atp.backends.base import ComputeBackend
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.verify import VerificationReport, Verifier
+
+log = logging.getLogger("open_atp")
 
 #: Heading the optional per-task ``user_prompt`` is appended under.
 _ADDITIONAL_INSTRUCTIONS = "\n\n# Additional instructions\n\n{user_prompt}"
@@ -215,8 +218,20 @@ class AutomatedProver(abc.ABC):
         logs_dir.mkdir(parents=True, exist_ok=True)
 
         result = ProofResult(prover=self.name, verification=None, output_dir=output_dir)
+        log.info(
+            "prove",
+            extra={
+                "prover": self.name,
+                "backend": self.verifier.backend.name,
+                "timeout_s": self.timeout_s,
+            },
+        )
         start = time.monotonic()
-        self._generate(task, wd, logs_dir, result)
+        try:
+            self._generate(task, wd, logs_dir, result)
+        except Exception:
+            log.exception("generation failed", extra={"prover": self.name})
+            raise
         result.duration_s = time.monotonic() - start
 
         # An agentic prover ran generation and the final check in one live session and
@@ -229,5 +244,14 @@ class AutomatedProver(abc.ABC):
         # A self-describing summary so a downloaded logs dir stands on its own.
         (logs_dir / "result.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str)
+        )
+        log.info(
+            "prove complete",
+            extra={
+                "prover": self.name,
+                "success": result.success,
+                "cost_usd": result.cost_usd,
+                "duration_s": round(result.duration_s, 1),
+            },
         )
         return result
