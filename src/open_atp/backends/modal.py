@@ -215,6 +215,7 @@ def _terminate(sb: modal.Sandbox) -> None:
 
 def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
     """Tar ``src`` and extract it into ``dest`` inside the Sandbox."""
+    log.debug("pushing dir into sandbox", extra={"src": str(src), "dest": dest})
     with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
         tmp.write(_tar_dir(src))
         tmp.flush()
@@ -376,6 +377,17 @@ class ModalBackend(ComputeBackend):
         # Give the Sandbox SYNC_HEADROOM_S beyond the work budget: commands are
         # coreutils-capped at the budget (see _exec_payload), so the Sandbox outlives
         # a timed-out command and the partial workdir can still be pulled back.
+        log.info(
+            "provisioning modal sandbox",
+            extra={
+                "image": self.image.name,
+                "cpu": cpu,
+                "memory_mib": self.memory_mib,
+                "timeout_s": timeout_s,
+                "region": self.region,
+            },
+        )
+        started_at = time.time()
         sb = modal.Sandbox.create(
             app=app,
             image=image,
@@ -394,6 +406,7 @@ class ModalBackend(ComputeBackend):
 
             # Warm the Lean cache (and wire the .lake symlink) before timing real
             # work: Modal pages image layers in lazily, so the first build is slow.
+            log.debug("warming lean cache", extra={"workdir": REMOTE_WD})
             sb.exec(
                 "bash",
                 "-c",
@@ -401,8 +414,13 @@ class ModalBackend(ComputeBackend):
                 workdir=REMOTE_WD,
             ).wait()
         except BaseException:
+            log.error("modal sandbox provisioning failed", exc_info=True)
             _terminate(sb)
             raise
+        log.info(
+            "modal sandbox ready",
+            extra={"duration_s": round(time.time() - started_at, 1)},
+        )
         return sb
 
     def start(
@@ -447,6 +465,7 @@ class ModalBackend(ComputeBackend):
         )
         try:
             started_at = time.time()
+            log.debug("modal exec", extra={"timeout_s": timeout_s})
             # Cap the command a headroom below the Sandbox timeout so a timed-out run
             # is killed while the Sandbox is still alive to pull the workdir back.
             proc = sb.exec(
@@ -546,6 +565,10 @@ class ModalSession(ComputeSession):
         # this is usually an empty secret list.
         secrets = [modal.Secret.from_dict(dict(env))] if env else []
         started_at = time.time()
+        log.debug(
+            "modal exec (session)",
+            extra={"env_keys": sorted(env or {}), "timeout_s": timeout_s},
+        )
         proc = self.sb.exec(
             "bash",
             "-c",

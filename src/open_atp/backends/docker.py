@@ -309,7 +309,7 @@ class DockerBackend(ComputeBackend):
             argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
         )
         if proc.returncode != 0:
-            log.warning(
+            log.error(
                 "docker session container failed to start",
                 extra={"container": container, "stderr": proc.stderr.strip()},
             )

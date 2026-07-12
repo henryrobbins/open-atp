@@ -11,6 +11,7 @@ back the output." It is used in two distinct roles:
 from __future__ import annotations
 
 import abc
+import logging
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from pathlib import Path
 from typing import cast
 
 from open_atp.images import DEFAULT_IMAGE, Image
+
+log = logging.getLogger("open_atp")
 
 
 @dataclass
@@ -351,9 +354,12 @@ class ComputeBackend(abc.ABC):
         from open_atp.lean import create_project
         from open_atp.verify import Verifier
 
+        log.info("backend smoke test", extra={"backend": self.name})
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             lean_file = tmp_path / "Trivial.lean"
             lean_file.write_text("theorem trivial_proof : True := trivial\n")
             project = create_project([lean_file], tmp_path / "project")
-            return Verifier(self).verify(project).verified
+            ok = Verifier(self).verify(project).verified
+        log.info("backend smoke test complete", extra={"backend": self.name, "ok": ok})
+        return ok
