@@ -172,6 +172,10 @@ def run_benchmark(
             try:
                 result = prover.prove(task, run_dir)
             except Exception as exc:
+                log.exception(
+                    "prove crashed",
+                    extra={"task": task_name, "prover": prover_name},
+                )
                 result = ProofResult(
                     prover=prover.name,
                     verification=None,
