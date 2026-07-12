@@ -45,7 +45,6 @@ So each blocking Modal call carries its own bound:
 from __future__ import annotations
 
 import io
-import logging
 import shlex
 import tarfile
 import tempfile
@@ -55,6 +54,8 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
+
+import structlog
 
 from open_atp.backends.base import (
     CommandHandle,
@@ -72,7 +73,7 @@ if TYPE_CHECKING:
     import modal
     from modal.container_process import ContainerProcess
 
-log = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 #: Working directory inside the Sandbox (same convention as Docker's bind mount).
 REMOTE_WD = "/workspace/wd"
@@ -130,11 +131,18 @@ def _sandbox_dead(sb: modal.Sandbox) -> bool:
     traverse the worker command-router path -- so it still answers when the *worker*
     is the thing that has gone unreachable. Any error answering is treated as "not
     known dead" so a flaky control-plane call can't spuriously abort a healthy run.
+
+    Emits the ``poll`` latency at ``debug``: it fires once per
+    :data:`LIVENESS_POLL_INTERVAL_S` while a call is blocked, so its cost is what caps
+    how tight that interval can go.
     """
+    started = time.monotonic()
     try:
         return sb.poll() is not None
     except Exception:
         return False
+    finally:
+        log.debug("liveness poll", elapsed_s=round(time.monotonic() - started, 3))
 
 
 def _run_bounded[T](
@@ -142,6 +150,7 @@ def _run_bounded[T](
     *,
     timeout_s: float | None = None,
     sb: modal.Sandbox | None = None,
+    label: str = "modal_call",
 ) -> T:
     """Run blocking ``fn()`` in a thread, bounded by liveness and a wall-clock.
 
@@ -158,6 +167,12 @@ def _run_bounded[T](
     ``fn``'s own return value is returned and its own exception re-raised. On abort the
     daemon thread is abandoned (it holds a doomed Sandbox that Modal will GC); the
     caller is never blocked on it.
+
+    Every exit path emits a ``debug`` event tagged with ``label``, the observed
+    ``elapsed_s``, and the ``timeout_s`` ceiling it ran under -- so ``elapsed_s`` read
+    against the ceiling shows real per-call latency and headroom (control-plane RPCs,
+    transfers, exec waits) when right-sizing the wall-clock constants above. Phases
+    *inside* a bounded call (transfer vs. untar) are timed separately by :func:`_timed`.
     """
     result: list[T] = []
     error: list[BaseException] = []
@@ -169,6 +184,7 @@ def _run_bounded[T](
             error.append(exc)
 
     worker = threading.Thread(target=target, daemon=True)
+    started = time.monotonic()
     worker.start()
     waited = 0.0
     while True:
@@ -177,12 +193,53 @@ def _run_bounded[T](
             break
         waited += LIVENESS_POLL_INTERVAL_S
         if sb is not None and _sandbox_dead(sb):
+            log.debug(
+                "modal call aborted",
+                label=label,
+                reason="sandbox_dead",
+                elapsed_s=round(time.monotonic() - started, 1),
+            )
             raise SandboxUnreachable("Sandbox terminated while awaiting a Modal call")
         if timeout_s is not None and waited >= timeout_s:
+            log.debug(
+                "modal call aborted",
+                label=label,
+                reason="timeout",
+                elapsed_s=round(time.monotonic() - started, 1),
+                timeout_s=timeout_s,
+            )
             raise ExecTimeout(f"Modal call exceeded {timeout_s:.0f}s client deadline")
+    elapsed_s = round(time.monotonic() - started, 2)
     if error:
+        log.debug(
+            "modal call raised",
+            label=label,
+            elapsed_s=elapsed_s,
+            timeout_s=timeout_s,
+            error=type(error[0]).__name__,
+        )
         raise error[0]
+    log.debug("modal call", label=label, elapsed_s=elapsed_s, timeout_s=timeout_s)
     return result[0]
+
+
+def _timed[T](label: str, fn: Callable[[], T]) -> T:
+    """Time one *phase* inside an already-bounded call; emit a debug event.
+
+    A lighter companion to :func:`_run_bounded` (no thread, no liveness -- the enclosing
+    ``_run_bounded`` still supplies the safety bound). It splits an opaque combined
+    bound into representative per-phase latencies -- the filesystem transfer vs. the
+    untar/tar exec inside a push/pull -- so :data:`TRANSFER_TIMEOUT_S` and
+    :data:`INFRA_EXEC_TIMEOUT_S` can each be sized from real numbers on a full-size
+    workdir rather than one merged total (or only the tiny ``pull_stderr`` transfer).
+    """
+    started = time.monotonic()
+    try:
+        return fn()
+    finally:
+        log.debug(
+            "modal phase", label=label, elapsed_s=round(time.monotonic() - started, 2)
+        )
 
 
 def _raise_stream_error(exc: Exception, sb: modal.Sandbox) -> NoReturn:
@@ -302,7 +359,7 @@ class ModalCommandHandle(CommandHandle):
                 self._buf += chunk
 
         try:
-            _run_bounded(pull, timeout_s=DRAIN_GRACE_S, sb=self.sb)
+            _run_bounded(pull, timeout_s=DRAIN_GRACE_S, sb=self.sb, label="drain")
         except ComputeError:
             log.warning("drain: stdout did not close after exit; using partial output")
         while "\n" in self._buf:
@@ -320,7 +377,9 @@ class ModalCommandHandle(CommandHandle):
         still holding the stdout pipe open -- so a budget-killed command returns at its
         budget instead of blocking on an EOF that never arrives.
         """
-        exit_code = _run_bounded(self.proc.wait, timeout_s=self.deadline_s, sb=self.sb)
+        exit_code = _run_bounded(
+            self.proc.wait, timeout_s=self.deadline_s, sb=self.sb, label="proc_wait"
+        )
         self._drain_remaining()
         stderr = _pull_stderr(self.sb)
         return CommandResult(
@@ -369,7 +428,9 @@ class ModalSessionHandle(ModalCommandHandle):
 def _terminate(sb: modal.Sandbox) -> None:
     """Tear down the Sandbox; idempotent (safe if it is already gone)."""
     try:
-        _run_bounded(lambda: sb.terminate(), timeout_s=TERMINATE_TIMEOUT_S)
+        _run_bounded(
+            lambda: sb.terminate(), timeout_s=TERMINATE_TIMEOUT_S, label="terminate"
+        )
     except Exception:
         log.debug("terminate: Sandbox already gone or unreachable")
 
@@ -386,15 +447,26 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
             tmp.write(_tar_dir(src))
             tmp.flush()
-            sb.filesystem.copy_from_local(tmp.name, "/tmp/push.tar.gz")
-        sb.exec(
-            "bash",
-            "-c",
-            f"mkdir -p {dest} && tar -xzf /tmp/push.tar.gz -C {dest}",
-            timeout=INFRA_EXEC_TIMEOUT_S,
-        ).wait()
+            _timed(
+                "push_copy",
+                lambda: sb.filesystem.copy_from_local(tmp.name, "/tmp/push.tar.gz"),
+            )
+        _timed(
+            "push_untar",
+            lambda: sb.exec(
+                "bash",
+                "-c",
+                f"mkdir -p {dest} && tar -xzf /tmp/push.tar.gz -C {dest}",
+                timeout=INFRA_EXEC_TIMEOUT_S,
+            ).wait(),
+        )
 
-    _run_bounded(do_push, timeout_s=INFRA_EXEC_TIMEOUT_S + TRANSFER_TIMEOUT_S, sb=sb)
+    _run_bounded(
+        do_push,
+        timeout_s=INFRA_EXEC_TIMEOUT_S + TRANSFER_TIMEOUT_S,
+        sb=sb,
+        label="push_dir",
+    )
 
 
 def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
@@ -412,7 +484,7 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
     fixes.
     """
     if _sandbox_dead(sb):
-        log.warning("pull_wd: Sandbox already terminated; skipping pull of %s", wd)
+        log.warning("pull_wd: Sandbox already terminated; skipping pull", wd=str(wd))
         return
 
     def do_pull() -> None:
@@ -424,21 +496,29 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
         )
         # tar exits non-zero on e.g. a file that changed/vanished mid-archive; surface
         # it rather than letting the (possibly partial/missing) copy fail opaquely.
-        exit_code = proc.wait()
+        exit_code = _timed("pull_tar", proc.wait)
         if exit_code != 0:
             stderr = "".join(proc.stderr).strip() or "(no stderr)"
-            log.warning("pull_wd: tar exited %s: %s", exit_code, stderr)
+            log.warning(
+                "pull_wd: tar exited nonzero", exit_code=exit_code, stderr=stderr
+            )
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
-            sb.filesystem.copy_to_local("/tmp/out.tar.gz", tmp.name)
+            _timed(
+                "pull_copy",
+                lambda: sb.filesystem.copy_to_local("/tmp/out.tar.gz", tmp.name),
+            )
             with tarfile.open(tmp.name, mode="r:gz") as tf:
                 tf.extractall(wd, filter="data")
 
     try:
         _run_bounded(
-            do_pull, timeout_s=INFRA_EXEC_TIMEOUT_S + TRANSFER_TIMEOUT_S, sb=sb
+            do_pull,
+            timeout_s=INFRA_EXEC_TIMEOUT_S + TRANSFER_TIMEOUT_S,
+            sb=sb,
+            label="pull_wd",
         )
     except Exception:
-        log.warning("pull_wd: failed to pull artifacts from %s", wd, exc_info=True)
+        log.warning("pull_wd: failed to pull artifacts", wd=str(wd), exc_info=True)
 
 
 def _pull_stderr(sb: modal.Sandbox) -> str:
@@ -456,7 +536,9 @@ def _pull_stderr(sb: modal.Sandbox) -> str:
             return Path(tmp.name).read_text(errors="replace")
 
     try:
-        return _run_bounded(read, timeout_s=TRANSFER_TIMEOUT_S, sb=sb)
+        return _run_bounded(
+            read, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_stderr"
+        )
     except Exception:
         return ""
 
@@ -557,6 +639,7 @@ class ModalBackend(ComputeBackend):
         app = _run_bounded(
             lambda: modal.App.lookup(self.app, create_if_missing=True),
             timeout_s=PROVISION_RPC_TIMEOUT_S,
+            label="app_lookup",
         )
         image = modal.Image.from_name(_modal_image_name(self.image.name))
 
@@ -586,6 +669,7 @@ class ModalBackend(ComputeBackend):
                 region=self.region,
             ),
             timeout_s=PROVISION_RPC_TIMEOUT_S,
+            label="sandbox_create",
         )
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces
@@ -606,6 +690,7 @@ class ModalBackend(ComputeBackend):
                 ).wait(),
                 timeout_s=INFRA_EXEC_TIMEOUT_S + EXEC_DEADLINE_MARGIN_S,
                 sb=sb,
+                label="warm_build",
             )
         except BaseException:
             _terminate(sb)
