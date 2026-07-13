@@ -26,6 +26,7 @@ still tracked (and surfaced in metadata) for parity/observability.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import time
@@ -45,6 +46,8 @@ from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver
 from open_atp.provers.base import ProofResult, compose_prompt
 from open_atp.provers.numina_tracker import StatementTracker
+
+log = logging.getLogger("open_atp")
 
 # Directories never worth copying into the agent workdir (mirrors AgentProver).
 _IGNORE = shutil.ignore_patterns(".lake", ".git", "*.tar.gz")
@@ -380,6 +383,10 @@ class NuminaProver(AgentProver):
             remaining = deadline - time.monotonic()
             if remaining < _MIN_ROUND_S:
                 end_reason = "TIMEOUT"
+                log.warning(
+                    "numina round loop out of budget",
+                    extra={"round": round_num, "remaining_s": round(remaining, 1)},
+                )
                 break
 
             # A fresh session is started whenever we have hit too many consecutive
@@ -387,6 +394,7 @@ class NuminaProver(AgentProver):
             if consecutive_limits >= self.max_consecutive_limits:
                 consecutive_limits = 0
                 session_resets += 1
+                log.debug("session reset", extra={"round": round_num})
 
             round_lines, round_stderr = self._run_agent(
                 workdir, harness, stdout_path, session=session, timeout_s=int(remaining)
@@ -441,6 +449,15 @@ class NuminaProver(AgentProver):
                         break
 
             round_history.append(record)
+            log.debug(
+                "round complete",
+                extra={
+                    "round": round_num,
+                    "max_rounds": self.max_rounds,
+                    "end_reason": end_reason,
+                    "cost_usd": round_cost,
+                },
+            )
 
             if end_reason == "COMPLETE":
                 break

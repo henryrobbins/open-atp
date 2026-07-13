@@ -13,10 +13,13 @@ don't carry it.
 
 from __future__ import annotations
 
+import logging
 import os
 
 from open_atp.harness.base import AgentAuth
 from open_atp.harness.claude_code import ClaudeCodeHarness
+
+log = logging.getLogger("open_atp")
 
 #: Helper-skill credentials forwarded into the sandbox when present in the host env;
 #: skills degrade/skip when their key is absent. ``ANTHROPIC_API_KEY`` backs the
@@ -70,9 +73,17 @@ class NuminaHarness(ClaudeCodeHarness):
     def agent_auth(self) -> AgentAuth:
         """Claude Code's auth plus best-effort helper keys; literal ``env`` wins."""
         auth = super().agent_auth()
+        forwarded = []
         for key in self._helper_env_keys:
             value = os.environ.get(key)
             if value is not None:
                 auth.env.setdefault(key, value)
+                forwarded.append(key)
+        missing = [k for k in self._helper_env_keys if k not in forwarded]
+        if missing:
+            log.debug(
+                "numina helper credentials absent; dependent skills will degrade",
+                extra={"forwarded": forwarded, "missing": missing},
+            )
         auth.env.update(self._extra_env)
         return auth

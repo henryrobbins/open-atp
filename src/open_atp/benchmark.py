@@ -27,24 +27,24 @@ straight to such a directory.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 import tempfile
 import threading
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 
-import structlog
 from tqdm import tqdm
 
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
 
-log = structlog.get_logger(__name__)
+log = logging.getLogger("open_atp")
 
 
 @dataclass(frozen=True)
@@ -56,9 +56,10 @@ class BenchmarkRun:
     task : str
         The task's key in the benchmark's ``tasks`` mapping.
     prover : str
-        The prover's key in the benchmark's ``provers`` mapping (which may differ
-        from :attr:`~open_atp.provers.base.ProofResult.prover`, e.g. ``"claude"``
-        vs the prover class's ``"agent"``).
+        The prover's key in the benchmark's ``provers`` mapping. Caller-chosen, so
+        it may differ from the prover's own
+        :attr:`~open_atp.provers.base.ProofResult.prover` (e.g. two entries running
+        the same prover under different labels).
     result : ~open_atp.provers.base.ProofResult
         The run's result. On an exception its
         :attr:`~open_atp.provers.base.ProofResult.error` is set and
@@ -131,8 +132,9 @@ def run_benchmark(
         Tasks keyed by name; the name becomes the task's output subdirectory.
     provers : Mapping[str, ~open_atp.provers.base.AutomatedProver]
         Provers keyed by name; the name becomes the per-task output subdirectory.
-        A mapping (not a list) so several provers sharing a class ``name`` (every
-        agentic prover is ``"agent"``) stay distinct on disk and in the table.
+        A mapping (not a list) so the caller labels each entry -- the same prover can
+        appear under several keys (e.g. different models) and stay distinct on disk
+        and in the table.
     output_dir : pathlib.Path or str
         Output root for the sweep, laid out as ``output_dir/<task>/<prover>/``.
     only : Sequence[str], optional
@@ -148,7 +150,7 @@ def run_benchmark(
     progress : bool
         Show a :mod:`tqdm` progress bar over the ``(task, prover)`` pairs. Default
         ``True``. Each completed pair is logged (task, prover, status, duration, cost)
-        via :mod:`structlog` regardless.
+        on the ``open_atp`` logger regardless.
 
     Returns
     -------
@@ -161,6 +163,12 @@ def run_benchmark(
         if missing:
             raise ValueError(f"unknown task(s) {missing}; available: {sorted(tasks)}")
         tasks = {name: tasks[name] for name in only}
+    # Carry the benchmark key as each task's name so ``prove`` can attribute its log
+    # records to the task; a name already set on the task wins.
+    tasks = {
+        name: task if task.name else replace(task, name=name)
+        for name, task in tasks.items()
+    }
     gates = {name: threading.Semaphore(max_per_prover) for name in provers}
 
     def run_pair(
@@ -168,6 +176,9 @@ def run_benchmark(
     ) -> BenchmarkRun:
         run_dir = output_dir / task_name / prover_name
         run_dir.mkdir(parents=True, exist_ok=True)
+        # ``prove`` binds task/prover/run_id onto the context itself, so backend and
+        # verifier records stay attributed and a generation crash is already logged
+        # (with traceback) inside that binding -- here we only build the error result.
         with gates[prover_name]:
             try:
                 result = prover.prove(task, run_dir)
@@ -195,13 +206,9 @@ def run_benchmark(
         slots[index] = run
         r = run.result
         status = "✓" if r.success else ("error" if r.error else "✗")
-        log.info(
+        log.debug(
             "run complete",
-            task=run.task,
-            prover=run.prover,
-            status=status,
-            duration_s=round(r.duration_s, 1) if r.duration_s is not None else None,
-            cost_usd=r.cost_usd,
+            extra={"task": run.task, "prover": run.prover, "status": status},
         )
         bar.update(1)
 
@@ -265,11 +272,11 @@ def tasks_from_dir(
         if entry.is_file() and entry.suffix == ".lean":
             dest = Path(tempfile.mkdtemp()) / entry.stem
             project = create_project([entry], dest, skeleton=skeleton)
-            tasks[entry.stem] = ProofTask(project)
+            tasks[entry.stem] = ProofTask(project, name=entry.stem)
         elif entry.is_dir():
             subdir_project = _subdir_project(entry, skeleton)
             if subdir_project is not None:
-                tasks[entry.name] = ProofTask(subdir_project)
+                tasks[entry.name] = ProofTask(subdir_project, name=entry.name)
     return tasks
 
 

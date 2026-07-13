@@ -125,6 +125,9 @@ class ProofTask:
     ----------
     project : LeanProject
         The lake project to complete.
+    name : str | None
+        Optional task identifier, used to attribute log records to this task. Set by
+        :func:`~open_atp.benchmark.tasks_from_dir`; ``None`` for a one-off task.
     targets : tuple[Path, ...]
         Optional explicit list of files (relative to ``project.root``) to focus on.
         When empty, every file containing ``sorry`` is fair game.
@@ -138,6 +141,7 @@ class ProofTask:
     """
 
     project: LeanProject
+    name: str | None = None
     targets: tuple[Path, ...] = ()
     user_prompt: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)

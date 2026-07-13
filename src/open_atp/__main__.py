@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -26,6 +27,7 @@ import yaml
 from rich.box import ROUNDED
 from rich.console import Console
 from rich.table import Table
+from structlog.typing import Processor
 from tqdm import tqdm
 
 from open_atp.backends import _BACKENDS
@@ -77,16 +79,80 @@ class _TqdmStream:
         pass
 
 
-def _configure_logging() -> None:
-    """Render structlog events as tidy console lines that respect the tqdm bar."""
-    structlog.configure(
-        processors=[
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="%H:%M:%S"),
-            structlog.dev.ConsoleRenderer(),
-        ],
-        logger_factory=structlog.PrintLoggerFactory(file=cast("TextIO", _TqdmStream())),
-    )
+#: ``--log-level`` choices mapped to their :mod:`logging` levels.
+_LOG_LEVELS = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+}
+
+
+def _configure_logging(console_level: int, log_file: Path | None = None) -> None:
+    """Render the ``open_atp`` logger's records with up to two sinks.
+
+    open-atp is a well-behaved library: every module logs to the plain stdlib
+    ``open_atp`` logger and configures nothing itself. As the application, the CLI owns
+    that logger here -- it attaches the handlers, sets the level, and turns off
+    propagation so the output stays isolated (a rude third-party library that hijacks
+    the root logger, e.g. ``aristotlelib``, can neither duplicate nor swallow our logs).
+
+    :mod:`structlog` appears only as a formatter, never as a global config: a
+    ``ProcessorFormatter`` renders each stdlib record through structlog's processors, so
+    ``extra={...}`` fields and exception tracebacks come out structured. The console
+    keeps the pretty ``ConsoleRenderer`` (via the tqdm-aware stream) at the console
+    level with compact ``HH:MM:SS`` timestamps. When ``log_file`` is given, a handler
+    writes full-detail JSONL there (one event per line) at ``DEBUG`` regardless of the
+    console level, with ISO-8601 timestamps, so a quiet terminal never costs you the
+    audit log.
+    """
+
+    def formatter(
+        render: list[Processor], timestamp_fmt: str
+    ) -> structlog.stdlib.ProcessorFormatter:
+        # Every open_atp record is a plain stdlib record ("foreign" to structlog), so
+        # the pre-chain rebuilds the event dict: merge the ``extra={...}`` fields and
+        # the level in before the shared timestamp/render tail runs.
+        return structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=[
+                structlog.contextvars.merge_contextvars,
+                structlog.stdlib.ExtraAdder(),
+                structlog.stdlib.add_log_level,
+            ],
+            processors=[
+                structlog.processors.TimeStamper(fmt=timestamp_fmt),
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                *render,
+            ],
+        )
+
+    console = logging.StreamHandler(cast("TextIO", _TqdmStream()))
+    console.setFormatter(formatter([structlog.dev.ConsoleRenderer()], "%H:%M:%S"))
+    console.setLevel(console_level)
+    handlers: list[logging.Handler] = [console]
+
+    if log_file is not None:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setFormatter(
+            formatter(
+                [
+                    structlog.processors.format_exc_info,
+                    structlog.processors.JSONRenderer(),
+                ],
+                "iso",
+            )
+        )
+        file_handler.setLevel(logging.DEBUG)
+        handlers.append(file_handler)
+
+    # Own the open_atp logger directly (not root): the handlers hang here, the logger
+    # passes everything the sinks might want (DEBUG when a file sink is present), and
+    # propagate=False keeps our records off the root logger entirely.
+    logger = logging.getLogger("open_atp")
+    logger.handlers = handlers
+    logger.setLevel(logging.DEBUG if log_file is not None else console_level)
+    logger.propagate = False
 
 
 def _load_dotenv() -> None:
@@ -474,6 +540,46 @@ def _build_modal_image(args: argparse.Namespace) -> int:
     return 0
 
 
+def _add_logging_args(parser: argparse.ArgumentParser) -> None:
+    """Attach the shared ``--log-level`` / ``-v`` / ``--log-file`` options."""
+    parser.add_argument(
+        "--log-level",
+        choices=sorted(_LOG_LEVELS),
+        default="info",
+        help="Console log verbosity (default: info).",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        "-d",
+        "--debug",
+        dest="verbose",
+        action="store_true",
+        help="Shortcut for --log-level debug.",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        dest="quiet",
+        action="store_true",
+        help="Shortcut for --log-level warning.",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        help="Also write full-detail JSONL logs to this file.",
+    )
+
+
+def _console_level(args: argparse.Namespace) -> int:
+    """The requested console level (``-v``/``-q`` win over ``--log-level``)."""
+    if args.verbose:
+        return logging.DEBUG
+    if args.quiet:
+        return logging.WARNING
+    return _LOG_LEVELS[args.log_level]
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The ``open-atp`` argument parser (also consumed by the docs CLI reference)."""
     parser = argparse.ArgumentParser(prog="open-atp")
@@ -508,6 +614,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit the result as JSON.",
     )
+    _add_logging_args(prove)
 
     benchmark = sub.add_parser(
         "benchmark",
@@ -563,6 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit the result as JSON.",
     )
+    _add_logging_args(benchmark)
 
     download = sub.add_parser(
         "download", help="Download a benchmark dataset's task directory."
@@ -622,9 +730,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
-    _configure_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
+    # prove/benchmark carry the logging flags; other commands log at info to console.
+    console_level = _console_level(args) if hasattr(args, "log_level") else logging.INFO
+    _configure_logging(
+        console_level=console_level, log_file=getattr(args, "log_file", None)
+    )
     if args.command == "prove":
         return _prove(args)
     if args.command == "download":

@@ -16,6 +16,8 @@ Everything else is a candidate generator
 are then funnelled through the shared verifier.
 """
 
+import logging
+
 from open_atp.benchmark import (
     DATASET,
     BenchmarkResult,
@@ -35,6 +37,10 @@ from open_atp.images import DEFAULT_IMAGE, Image
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
 from open_atp.verify import VerificationReport
+
+# Well-behaved library: emit to the ``open_atp`` logger, but leave all output
+# decisions to the importing application. The NullHandler keeps us silent by default.
+logging.getLogger("open_atp").addHandler(logging.NullHandler())
 
 __all__ = [
     "AutomatedProver",

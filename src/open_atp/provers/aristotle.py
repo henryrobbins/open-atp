@@ -34,7 +34,7 @@ from open_atp.provers.base import (
 if TYPE_CHECKING:
     from aristotlelib import AgentTask, Project
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("open_atp")
 
 _T = TypeVar("_T")
 

@@ -39,7 +39,7 @@ from open_atp.provers.base import (
     compose_prompt,
 )
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("open_atp")
 
 PROVER_PROMPT = """\
 The working directory is a complete Lean 4 lake project. One or more `.lean`
@@ -223,6 +223,14 @@ class AgentProver(AutomatedProver):
         #    verifier's own -- since both run before the sandbox is torn down; the
         #    backend adds its sync headroom on top.
         _, mounts = self._auth(harness)
+        log.debug(
+            "agent generation started",
+            extra={
+                "harness": harness.name,
+                "model": harness.model,
+                "effort": harness.effort,
+            },
+        )
         with self.verifier.backend.session(
             wd, mounts=mounts, timeout_s=self.timeout_s + self.verifier.timeout_s
         ) as session:
