@@ -57,9 +57,10 @@ class BenchmarkRun:
     task : str
         The task's key in the benchmark's ``tasks`` mapping.
     prover : str
-        The prover's key in the benchmark's ``provers`` mapping (which may differ
-        from :attr:`~open_atp.provers.base.ProofResult.prover`, e.g. ``"claude"``
-        vs the prover class's ``"agent"``).
+        The prover's key in the benchmark's ``provers`` mapping. Caller-chosen, so
+        it may differ from the prover's own
+        :attr:`~open_atp.provers.base.ProofResult.prover` (e.g. two entries running
+        the same prover under different labels).
     result : ~open_atp.provers.base.ProofResult
         The run's result. On an exception its
         :attr:`~open_atp.provers.base.ProofResult.error` is set and
@@ -132,8 +133,9 @@ def run_benchmark(
         Tasks keyed by name; the name becomes the task's output subdirectory.
     provers : Mapping[str, ~open_atp.provers.base.AutomatedProver]
         Provers keyed by name; the name becomes the per-task output subdirectory.
-        A mapping (not a list) so several provers sharing a class ``name`` (every
-        agentic prover is ``"agent"``) stay distinct on disk and in the table.
+        A mapping (not a list) so the caller labels each entry -- the same prover can
+        appear under several keys (e.g. different models) and stay distinct on disk
+        and in the table.
     output_dir : pathlib.Path or str
         Output root for the sweep, laid out as ``output_dir/<task>/<prover>/``.
     only : Sequence[str], optional
