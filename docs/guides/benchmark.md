@@ -187,10 +187,10 @@ open-atp benchmark datasets/fate-m runs/fate-m --config config.yaml --compute mo
 
 ### Logging
 
-The `benchmark` and `prove` CLI subcommands share a set of logging flags. `--log-level {debug,info,warning,error}` sets the console verbosity (default `info`); `-v`/`--verbose` and `-q`/`--quiet` are shortcuts for `debug` and `warning`. Passing `--log-file audit.jsonl` also writes full-detail JSONL logs (one event per line) to that file.
+The `benchmark` and `prove` CLI subcommands share a set of logging flags. `--log-level {debug,info,warning,error}` sets the console verbosity (default `info`); `-v`/`--verbose` and `-q`/`--quiet` are shortcuts for `debug` and `warning`. Both commands also write full-detail JSONL logs (one event per line) to `<output>/logs/open-atp.jsonl`.
 
 ```bash
-open-atp benchmark datasets/fate-m runs/fate-m --provers claude -q --log-file audit.jsonl
+open-atp benchmark datasets/fate-m runs/fate-m --provers claude -q
 ```
 
 Notably, `--log-level` only controls the log level of the console output; the file sink is always `DEBUG` and captures all events. Furthermore, both the console and file sinks only capture logs from OpenATP itself (i.e. the `open_atp` logger).

@@ -564,11 +564,6 @@ def _add_logging_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Shortcut for --log-level warning.",
     )
-    parser.add_argument(
-        "--log-file",
-        type=Path,
-        help="Also write full-detail JSONL logs to this file.",
-    )
 
 
 def _console_level(args: argparse.Namespace) -> int:
@@ -732,11 +727,16 @@ def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
     parser = build_parser()
     args = parser.parse_args(argv)
-    # prove/benchmark carry the logging flags; other commands log at info to console.
-    console_level = _console_level(args) if hasattr(args, "log_level") else logging.INFO
-    _configure_logging(
-        console_level=console_level, log_file=getattr(args, "log_file", None)
-    )
+
+    # Configure logging
+    if args.command in ("prove", "benchmark"):
+        console_level = _console_level(args)
+        log_file: Path | None = Path(args.output) / "logs" / "open-atp.jsonl"
+    else:
+        console_level = logging.INFO
+        log_file = None
+    _configure_logging(console_level=console_level, log_file=log_file)
+
     if args.command == "prove":
         return _prove(args)
     if args.command == "download":
