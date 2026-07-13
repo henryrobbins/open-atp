@@ -191,8 +191,6 @@ class NuminaProver(AgentProver):
     True
     """
 
-    name = "numina"
-
     def __init__(
         self,
         *,

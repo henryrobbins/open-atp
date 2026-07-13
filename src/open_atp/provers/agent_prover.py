@@ -114,6 +114,11 @@ class AgentProver(AutomatedProver):
     backend : ComputeBackend
         The sandbox the agent runs in. Generation reuses it via a live session and
         verification runs in that same hot sandbox.
+    name : str, optional
+        The prover's reported name (in log events and ``ProofResult.prover``).
+        Defaults to the harness's name; the standard catalog passes the registry
+        key so ``claude``/``leanstral`` report their user-facing name rather than
+        the harness name (``claude_code``/``vibe``).
     harness : Harness, optional
         The harness to drive and its knobs:
         :class:`~open_atp.harness.ClaudeCodeHarness` (default),
@@ -155,7 +160,7 @@ class AgentProver(AutomatedProver):
     >>> from open_atp import standard_prover
     >>> prover = standard_prover("codex", backend=DockerBackend())
     >>> prover.name, prover.harness.name
-    ('agent', 'codex')
+    ('codex', 'codex')
 
     Complete a task's ``sorry``\\s with
     :meth:`~open_atp.provers.base.AutomatedProver.prove`, here on a bundled example
@@ -169,18 +174,18 @@ class AgentProver(AutomatedProver):
     True
     """
 
-    name = "agent"
-
     def __init__(
         self,
         *,
         backend: ComputeBackend,
+        name: str | None = None,
         harness: Harness | None = None,
         skills: list[str] | None = None,
         timeout_s: int = 1800,
     ) -> None:
         super().__init__(backend=backend, timeout_s=timeout_s)
         self.harness = harness or ClaudeCodeHarness()
+        self.name = name if name is not None else self.harness.name
         self.skills = skills if skills is not None else ["lean-proof"]
 
     @property
