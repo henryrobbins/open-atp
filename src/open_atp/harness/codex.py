@@ -89,10 +89,6 @@ class CodexHarness(Harness):
                 self._codex_home = tempfile.TemporaryDirectory(prefix="codex-home-")
                 # copy2 preserves auth.json's 0600 mode, which codex requires.
                 shutil.copy2(auth, Path(self._codex_home.name) / "auth.json")
-                log.debug(
-                    "staged minimal .codex home",
-                    extra={"harness": self.name, "home": self._codex_home.name},
-                )
         return [(Path(self._codex_home.name), ".codex")]
 
     def _agent_command(self) -> str:

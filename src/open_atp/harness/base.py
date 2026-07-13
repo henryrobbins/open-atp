@@ -282,7 +282,6 @@ class Harness(ABC):
             )
             raise RuntimeError("The agent working directory must be created first.")
         (wd / SCRIPT_FILE).write_text(self._agent_command())
-        log.debug("staged launch script", extra={"harness": self.name})
 
     def write_prompt(self, wd: Path, prompt: str) -> None:
         """Write the composed prompt where this harness's launch script reads it.
@@ -299,9 +298,6 @@ class Harness(ABC):
             The composed prompt text to write to :data:`PROMPT_FILE`.
         """
         (wd / PROMPT_FILE).write_text(prompt)
-        log.debug(
-            "wrote prompt", extra={"harness": self.name, "prompt_chars": len(prompt)}
-        )
 
     def parse_result(self, lines: list[str], wd: Path) -> HarnessRunResult:
         """Parse the agent's run into a :class:`HarnessRunResult`.

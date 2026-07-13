@@ -119,14 +119,6 @@ class AxProverBaseHarness(Harness):
         # launch contract still cats it, so one is still written.
         super().stage_wd(wd)
         (wd / "axprover.yaml").write_text(self._render_config())
-        log.debug(
-            "wrote axprover.yaml",
-            extra={
-                "harness": self.name,
-                "model": self._ax_model(),
-                "max_iterations": self.max_iterations,
-            },
-        )
 
     def _ax_model(self) -> str:
         """``self.model`` as ax-prover's ``provider:model`` string."""
@@ -247,10 +239,6 @@ class AxProverBaseHarness(Harness):
             logs_dir.mkdir(parents=True, exist_ok=True)
             for path in moved:
                 shutil.move(str(path), str(logs_dir / path.name))
-            log.debug(
-                "collected ax-prover logs",
-                extra={"harness": self.name, "files": [p.name for p in moved]},
-            )
 
     def _parse_lines(self, lines: list[str]) -> HarnessRunResult:
         # ax-prover's stdout is human-readable logs, not a JSON event stream; keep the

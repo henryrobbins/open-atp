@@ -558,6 +558,13 @@ def _add_logging_args(parser: argparse.ArgumentParser) -> None:
         help="Shortcut for --log-level debug.",
     )
     parser.add_argument(
+        "-q",
+        "--quiet",
+        dest="quiet",
+        action="store_true",
+        help="Shortcut for --log-level warning.",
+    )
+    parser.add_argument(
         "--log-file",
         type=Path,
         help="Also write full-detail JSONL logs to this file.",
@@ -565,8 +572,12 @@ def _add_logging_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _console_level(args: argparse.Namespace) -> int:
-    """The requested console :mod:`logging` level (``-v`` wins over ``--log-level``)."""
-    return logging.DEBUG if args.verbose else _LOG_LEVELS[args.log_level]
+    """The requested console level (``-v``/``-q`` win over ``--log-level``)."""
+    if args.verbose:
+        return logging.DEBUG
+    if args.quiet:
+        return logging.WARNING
+    return _LOG_LEVELS[args.log_level]
 
 
 def build_parser() -> argparse.ArgumentParser:

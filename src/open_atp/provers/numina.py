@@ -384,7 +384,7 @@ class NuminaProver(AgentProver):
             if remaining < _MIN_ROUND_S:
                 end_reason = "TIMEOUT"
                 log.warning(
-                    "round loop out of budget",
+                    "numina round loop out of budget",
                     extra={"round": round_num, "remaining_s": round(remaining, 1)},
                 )
                 break
@@ -394,7 +394,7 @@ class NuminaProver(AgentProver):
             if consecutive_limits >= self.max_consecutive_limits:
                 consecutive_limits = 0
                 session_resets += 1
-                log.info("session reset", extra={"round": round_num})
+                log.debug("session reset", extra={"round": round_num})
 
             round_lines, round_stderr = self._run_agent(
                 workdir, harness, stdout_path, session=session, timeout_s=int(remaining)
@@ -449,7 +449,7 @@ class NuminaProver(AgentProver):
                         break
 
             round_history.append(record)
-            log.info(
+            log.debug(
                 "round complete",
                 extra={
                     "round": round_num,

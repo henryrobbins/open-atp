@@ -417,7 +417,7 @@ class ModalBackend(ComputeBackend):
             log.error("modal sandbox provisioning failed", exc_info=True)
             _terminate(sb)
             raise
-        log.info(
+        log.debug(
             "modal sandbox ready",
             extra={"duration_s": round(time.time() - started_at, 1)},
         )
@@ -465,7 +465,14 @@ class ModalBackend(ComputeBackend):
         )
         try:
             started_at = time.time()
-            log.debug("modal exec", extra={"timeout_s": timeout_s})
+            log.debug(
+                "modal exec",
+                extra={
+                    "command": command,
+                    "workdir": REMOTE_WD,
+                    "timeout_s": timeout_s,
+                },
+            )
             # Cap the command a headroom below the Sandbox timeout so a timed-out run
             # is killed while the Sandbox is still alive to pull the workdir back.
             proc = sb.exec(
@@ -567,7 +574,12 @@ class ModalSession(ComputeSession):
         started_at = time.time()
         log.debug(
             "modal exec (session)",
-            extra={"env_keys": sorted(env or {}), "timeout_s": timeout_s},
+            extra={
+                "command": command,
+                "workdir": REMOTE_WD,
+                "env_keys": sorted(env or {}),
+                "timeout_s": timeout_s,
+            },
         )
         proc = self.sb.exec(
             "bash",

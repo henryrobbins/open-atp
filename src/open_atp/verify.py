@@ -285,7 +285,7 @@ class Verifier:
 
         rel = [t.relative_to(project.root).as_posix() for t in project.lean_files()]
         if not rel:
-            log.debug(
+            log.warning(
                 "no lean files; trivial pass", extra={"project": str(project.root)}
             )
             return VerificationReport(compiles=True, sorry_free=True)
@@ -315,12 +315,13 @@ class Verifier:
             per_file=per_file,
         )
 
-        log.info(
+        log.debug(
             "verified" if report.verified else "verification failed",
             extra={
                 "verified": report.verified,
                 "compiles": report.compiles,
                 "sorry_free": report.sorry_free,
+                "axioms": list(report.axioms),
                 "duration_s": round(result.duration_s, 1),
             },
         )

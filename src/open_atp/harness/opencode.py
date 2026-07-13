@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +12,6 @@ from open_atp.harness.base import (
     HarnessRunResult,
     _infer_provider,
 )
-
-log = logging.getLogger("open_atp")
 
 
 class OpenCodeHarness(Harness):
@@ -80,14 +77,6 @@ class OpenCodeHarness(Harness):
         super().stage_wd(wd)
         # opencode.json configures the model provider + MCP server.
         (wd / "opencode.json").write_text(json.dumps(self._opencode_config(), indent=2))
-        log.debug(
-            "wrote opencode.json",
-            extra={
-                "harness": self.name,
-                "provider": self.provider,
-                "model": self.model,
-            },
-        )
 
     def _opencode_config(self) -> dict[str, Any]:
         options: dict[str, Any]

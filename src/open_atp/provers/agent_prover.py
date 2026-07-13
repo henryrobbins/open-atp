@@ -223,7 +223,7 @@ class AgentProver(AutomatedProver):
         #    verifier's own -- since both run before the sandbox is torn down; the
         #    backend adds its sync headroom on top.
         _, mounts = self._auth(harness)
-        log.info(
+        log.debug(
             "agent generation started",
             extra={
                 "harness": harness.name,
@@ -250,7 +250,6 @@ class AgentProver(AutomatedProver):
         A tar pull for a live Modal session; a no-op for bind-mounted Docker (where the
         agent wrote ``wd`` directly).
         """
-        log.debug("downloading agent edits", extra={"wd": str(wd)})
         session.sync_out()
 
     def _download_logs(

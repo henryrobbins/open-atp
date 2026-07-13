@@ -243,7 +243,6 @@ class DockerBackend(ComputeBackend):
         container = f"afps-{uuid.uuid4().hex[:12]}"
         argv = self._build_cmd(workdir, container, env or {}, mounts or ())
         argv += ["bash", "-lc", self._wrap(command)]
-        # Log the container + which env keys were forwarded (never their values).
         log.debug(
             "docker run",
             extra={

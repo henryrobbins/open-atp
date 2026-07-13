@@ -212,13 +212,15 @@ class AutomatedProver(abc.ABC):
             If the project records a Mathlib revision that differs from the backend
             image's. Checked up front, before any generation compute is spent.
         """
-        # Bind prover + a per-run id onto the context so every downstream event --
-        # including backend/verify records that never see ``self`` -- self-attributes.
-        # Runs execute in their own thread (benchmark) or the main thread (CLI), each
-        # with an isolated contextvars context, so the binding never bleeds across runs.
-        with structlog.contextvars.bound_contextvars(
-            prover=self.name, run_id=uuid.uuid4().hex[:8]
-        ):
+        # Bind task (when named) + prover + a per-run id onto the context so every
+        # downstream event -- including backend/verify records that never see ``self``
+        # -- self-attributes. Runs execute in their own thread (benchmark) or the main
+        # thread (CLI), each with an isolated contextvars context, so the binding never
+        # bleeds across runs.
+        binding = {"prover": self.name, "run_id": uuid.uuid4().hex[:12]}
+        if task.name is not None:
+            binding["task"] = task.name
+        with structlog.contextvars.bound_contextvars(**binding):
             self.verifier.check_compatible(task.project)
 
             output_dir = Path(output_dir)
@@ -235,6 +237,7 @@ class AutomatedProver(abc.ABC):
                 extra={
                     "backend": self.verifier.backend.name,
                     "timeout_s": self.timeout_s,
+                    "output_dir": str(output_dir),
                 },
             )
             start = time.monotonic()
@@ -261,8 +264,6 @@ class AutomatedProver(abc.ABC):
                 extra={
                     "success": result.success,
                     "cost_usd": result.cost_usd,
-                    "input_tokens": result.metadata.get("input_tokens"),
-                    "output_tokens": result.metadata.get("output_tokens"),
                     "duration_s": round(result.duration_s, 1),
                 },
             )

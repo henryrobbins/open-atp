@@ -82,8 +82,8 @@ class NuminaHarness(ClaudeCodeHarness):
         missing = [k for k in self._helper_env_keys if k not in forwarded]
         if missing:
             log.debug(
-                "helper credentials absent; dependent skills will degrade",
-                extra={"harness": self.name, "missing": missing},
+                "numina helper credentials absent; dependent skills will degrade",
+                extra={"forwarded": forwarded, "missing": missing},
             )
         auth.env.update(self._extra_env)
         return auth

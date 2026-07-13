@@ -78,7 +78,6 @@ class ClaudeCodeHarness(Harness):
         # Project-scope MCP config (passed via --mcp-config) and plugins.
         shutil.copy2(_MCP_JSON, wd / ".mcp.json")
         self._copy_plugins(wd)
-        log.debug("staged MCP config and plugins", extra={"plugins": self.plugins})
 
     def _resolved_plugins(self) -> list[Path]:
         """``self.plugins`` (names or paths) resolved to plugin source dirs."""
