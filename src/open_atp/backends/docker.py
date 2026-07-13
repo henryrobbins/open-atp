@@ -13,6 +13,7 @@ Runs an arbitrary command over a workdir in a Lean+Mathlib container. Mechanics:
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
 import uuid
@@ -28,6 +29,8 @@ from open_atp.backends.base import (
     wrap_command,
 )
 from open_atp.images import DEFAULT_IMAGE, Image
+
+log = logging.getLogger("open_atp")
 
 
 @dataclass
@@ -47,6 +50,7 @@ class DockerCommandHandle(CommandHandle):
 
     def cancel(self) -> None:
         """``docker kill`` the container (bind-mounted artifacts already on host)."""
+        log.debug("docker kill", extra={"container": self.container})
         subprocess.run(
             ["docker", "kill", self.container],
             stdout=subprocess.DEVNULL,
@@ -58,12 +62,21 @@ class DockerCommandHandle(CommandHandle):
         stdout, stderr = self.popen.communicate()
         # communicate() returns "" for streams already drained via stream().
         out = stdout if stdout else "\n".join(self._stdout_lines)
-        return CommandResult(
+        result = CommandResult(
             exit_code=self.popen.returncode,
             stdout=out,
             stderr=stderr or "",
             duration_s=time.time() - self.started_at,
         )
+        log.debug(
+            "docker command exited",
+            extra={
+                "container": self.container,
+                "exit_code": result.exit_code,
+                "duration_s": round(result.duration_s, 1),
+            },
+        )
+        return result
 
 
 @dataclass
@@ -230,6 +243,14 @@ class DockerBackend(ComputeBackend):
         container = f"afps-{uuid.uuid4().hex[:12]}"
         argv = self._build_cmd(workdir, container, env or {}, mounts or ())
         argv += ["bash", "-lc", self._wrap(command)]
+        log.debug(
+            "docker run",
+            extra={
+                "container": container,
+                "image": self.image.name,
+                "env_keys": sorted({**self.env, **(env or {})}),
+            },
+        )
         popen = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE,
@@ -275,10 +296,22 @@ class DockerBackend(ComputeBackend):
         container = f"afps-{uuid.uuid4().hex[:12]}"
         argv = self._build_cmd(workdir, container, env or {}, mounts or (), detach=True)
         argv += ["sleep", "infinity"]
+        log.debug(
+            "docker session start",
+            extra={
+                "container": container,
+                "image": self.image.name,
+                "env_keys": sorted({**self.env, **(env or {})}),
+            },
+        )
         proc = subprocess.run(
             argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
         )
         if proc.returncode != 0:
+            log.error(
+                "docker session container failed to start",
+                extra={"container": container, "stderr": proc.stderr.strip()},
+            )
             raise RuntimeError(
                 f"failed to start docker session container: {proc.stderr.strip()}"
             )
@@ -324,6 +357,10 @@ class DockerSession(ComputeSession):
         for key, value in (env or {}).items():
             argv += ["-e", f"{key}={value}"]
         argv += [self.container, "bash", "-lc", self.backend._wrap(command)]
+        log.debug(
+            "docker exec",
+            extra={"container": self.container, "env_keys": sorted(env or {})},
+        )
         popen = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE,
@@ -343,6 +380,7 @@ class DockerSession(ComputeSession):
 
     def close(self) -> None:
         """``docker kill`` the keep-alive container. Idempotent."""
+        log.debug("docker session close", extra={"container": self.container})
         subprocess.run(
             ["docker", "kill", self.container],
             stdout=subprocess.DEVNULL,

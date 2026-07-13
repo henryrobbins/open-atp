@@ -45,6 +45,7 @@ So each blocking Modal call carries its own bound:
 from __future__ import annotations
 
 import io
+import logging
 import shlex
 import tarfile
 import tempfile
@@ -54,8 +55,6 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
-
-import structlog
 
 from open_atp.backends.base import (
     CommandHandle,
@@ -73,7 +72,7 @@ if TYPE_CHECKING:
     import modal
     from modal.container_process import ContainerProcess
 
-log = structlog.get_logger(__name__)
+log = logging.getLogger("open_atp")
 
 #: Working directory inside the Sandbox (same convention as Docker's bind mount).
 REMOTE_WD = "/workspace/wd"
@@ -145,7 +144,10 @@ def _sandbox_dead(sb: modal.Sandbox) -> bool:
     except Exception:
         return False
     finally:
-        log.debug("liveness poll", elapsed_s=round(time.monotonic() - started, 3))
+        log.debug(
+            "liveness poll",
+            extra={"elapsed_s": round(time.monotonic() - started, 3)},
+        )
 
 
 def _run_bounded[T](
@@ -198,31 +200,40 @@ def _run_bounded[T](
         if sb is not None and _sandbox_dead(sb):
             log.debug(
                 "modal call aborted",
-                label=label,
-                reason="sandbox_dead",
-                elapsed_s=round(time.monotonic() - started, 1),
+                extra={
+                    "label": label,
+                    "reason": "sandbox_dead",
+                    "elapsed_s": round(time.monotonic() - started, 1),
+                },
             )
             raise SandboxUnreachable("Sandbox terminated while awaiting a Modal call")
         if timeout_s is not None and waited >= timeout_s:
             log.debug(
                 "modal call aborted",
-                label=label,
-                reason="timeout",
-                elapsed_s=round(time.monotonic() - started, 1),
-                timeout_s=timeout_s,
+                extra={
+                    "label": label,
+                    "reason": "timeout",
+                    "elapsed_s": round(time.monotonic() - started, 1),
+                    "timeout_s": timeout_s,
+                },
             )
             raise ExecTimeout(f"Modal call exceeded {timeout_s:.0f}s client deadline")
     elapsed_s = round(time.monotonic() - started, 2)
     if error:
         log.debug(
             "modal call raised",
-            label=label,
-            elapsed_s=elapsed_s,
-            timeout_s=timeout_s,
-            error=type(error[0]).__name__,
+            extra={
+                "label": label,
+                "elapsed_s": elapsed_s,
+                "timeout_s": timeout_s,
+                "error": type(error[0]).__name__,
+            },
         )
         raise error[0]
-    log.debug("modal call", label=label, elapsed_s=elapsed_s, timeout_s=timeout_s)
+    log.debug(
+        "modal call",
+        extra={"label": label, "elapsed_s": elapsed_s, "timeout_s": timeout_s},
+    )
     return result[0]
 
 
@@ -241,7 +252,8 @@ def _timed[T](label: str, fn: Callable[[], T]) -> T:
         return fn()
     finally:
         log.debug(
-            "modal phase", label=label, elapsed_s=round(time.monotonic() - started, 2)
+            "modal phase",
+            extra={"label": label, "elapsed_s": round(time.monotonic() - started, 2)},
         )
 
 
@@ -445,6 +457,7 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
     copy or the untar exec indefinitely (neither the transfer nor a plain ``.wait()``
     has a client deadline of its own). A failure here aborts provisioning.
     """
+    log.debug("pushing dir into sandbox", extra={"src": str(src), "dest": dest})
 
     def do_push() -> None:
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
@@ -487,7 +500,10 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
     fixes.
     """
     if _sandbox_dead(sb):
-        log.warning("pull_wd: Sandbox already terminated; skipping pull", wd=str(wd))
+        log.warning(
+            "pull_wd: Sandbox already terminated; skipping pull",
+            extra={"wd": str(wd)},
+        )
         return
 
     def do_pull() -> None:
@@ -503,7 +519,8 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
         if exit_code != 0:
             stderr = "".join(proc.stderr).strip() or "(no stderr)"
             log.warning(
-                "pull_wd: tar exited nonzero", exit_code=exit_code, stderr=stderr
+                "pull_wd: tar exited nonzero",
+                extra={"exit_code": exit_code, "stderr": stderr},
             )
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
             _timed(
@@ -521,7 +538,9 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
             label="pull_wd",
         )
     except Exception:
-        log.warning("pull_wd: failed to pull artifacts", wd=str(wd), exc_info=True)
+        log.warning(
+            "pull_wd: failed to pull artifacts", extra={"wd": str(wd)}, exc_info=True
+        )
 
 
 def _pull_stderr(sb: modal.Sandbox) -> str:
@@ -661,6 +680,17 @@ class ModalBackend(ComputeBackend):
         # Give the Sandbox SYNC_HEADROOM_S beyond the work budget: commands are
         # coreutils-capped at the budget (see _exec_payload), so the Sandbox outlives
         # a timed-out command and the partial workdir can still be pulled back.
+        log.debug(
+            "provisioning modal sandbox",
+            extra={
+                "image": self.image.name,
+                "cpu": cpu,
+                "memory_mib": self.memory_mib,
+                "timeout_s": timeout_s,
+                "region": self.region,
+            },
+        )
+        started_at = time.time()
         sb = _run_bounded(
             lambda: modal.Sandbox.create(
                 app=app,
@@ -683,6 +713,7 @@ class ModalBackend(ComputeBackend):
 
             # Warm the Lean cache (and wire the .lake symlink) before timing real
             # work: Modal pages image layers in lazily, so the first build is slow.
+            log.debug("warming lean cache", extra={"workdir": REMOTE_WD})
             _run_bounded(
                 lambda: sb.exec(
                     "bash",
@@ -696,8 +727,13 @@ class ModalBackend(ComputeBackend):
                 label="warm_build",
             )
         except BaseException:
+            log.error("modal sandbox provisioning failed", exc_info=True)
             _terminate(sb)
             raise
+        log.debug(
+            "modal sandbox ready",
+            extra={"duration_s": round(time.time() - started_at, 1)},
+        )
         return sb
 
     def start(
@@ -742,6 +778,14 @@ class ModalBackend(ComputeBackend):
         )
         try:
             started_at = time.time()
+            log.debug(
+                "modal exec",
+                extra={
+                    "command": command,
+                    "workdir": REMOTE_WD,
+                    "timeout_s": timeout_s,
+                },
+            )
             # Cap the command a headroom below the Sandbox timeout so a timed-out run
             # is killed while the Sandbox is still alive to pull the workdir back. The
             # exec also carries a client exec_deadline as a last-resort backstop.
@@ -847,6 +891,15 @@ class ModalSession(ComputeSession):
         # this is usually an empty secret list.
         secrets = [modal.Secret.from_dict(dict(env))] if env else []
         started_at = time.time()
+        log.debug(
+            "modal exec (session)",
+            extra={
+                "command": command,
+                "workdir": REMOTE_WD,
+                "env_keys": sorted(env or {}),
+                "timeout_s": timeout_s,
+            },
+        )
         proc = self.sb.exec(
             "bash",
             "-c",

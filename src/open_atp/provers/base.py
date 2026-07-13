@@ -22,9 +22,13 @@ from __future__ import annotations
 import abc
 import enum
 import json
+import logging
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import structlog
 
 from open_atp.backends.base import ComputeBackend, ComputeError, ExecTimeout
 from open_atp.lean import (
@@ -34,6 +38,8 @@ from open_atp.lean import (
     ToolchainMismatch,
 )
 from open_atp.verify import VerificationReport, Verifier
+
+log = logging.getLogger("open_atp")
 
 #: Heading the optional per-task ``user_prompt`` is appended under.
 _ADDITIONAL_INSTRUCTIONS = "\n\n# Additional instructions\n\n{user_prompt}"
@@ -257,32 +263,63 @@ class AutomatedProver(abc.ABC):
             If the project records a Mathlib revision that differs from the backend
             image's. Checked up front, before any generation compute is spent.
         """
-        self.verifier.check_compatible(task.project)
+        # Bind task (when named) + prover + a per-run id onto the context so every
+        # downstream event -- including backend/verify records that never see ``self``
+        # -- self-attributes. Runs execute in their own thread (benchmark) or the main
+        # thread (CLI), each with an isolated contextvars context, so the binding never
+        # bleeds across runs.
+        binding = {"prover": self.name, "run_id": uuid.uuid4().hex[:12]}
+        if task.name is not None:
+            binding["task"] = task.name
+        with structlog.contextvars.bound_contextvars(**binding):
+            self.verifier.check_compatible(task.project)
 
-        output_dir = Path(output_dir)
-        wd = output_dir / "wd"
-        logs_dir = output_dir / "logs"
-        wd.mkdir(parents=True, exist_ok=True)
-        logs_dir.mkdir(parents=True, exist_ok=True)
+            output_dir = Path(output_dir)
+            wd = output_dir / "wd"
+            logs_dir = output_dir / "logs"
+            wd.mkdir(parents=True, exist_ok=True)
+            logs_dir.mkdir(parents=True, exist_ok=True)
 
-        result = ProofResult(prover=self.name, verification=None, output_dir=output_dir)
-        start = time.monotonic()
-        self._generate(task, wd, logs_dir, result)
-        result.duration_s = time.monotonic() - start
+            result = ProofResult(
+                prover=self.name, verification=None, output_dir=output_dir
+            )
+            log.info(
+                "prove",
+                extra={
+                    "backend": self.verifier.backend.name,
+                    "timeout_s": self.timeout_s,
+                    "output_dir": str(output_dir),
+                },
+            )
+            start = time.monotonic()
+            try:
+                self._generate(task, wd, logs_dir, result)
+            except Exception:
+                log.exception("generation failed")
+                raise
+            result.duration_s = time.monotonic() - start
 
-        # An agentic prover ran generation and the final check in one live session and
-        # set ``result.verification`` itself; reuse it rather than spinning a second
-        # sandbox. Only Aristotle (network generation, no session) lands here and gets
-        # the standalone check.
-        if result.verification is None:
-            result.verification = self.verifier.verify(LeanProject(wd))
+            # An agentic prover ran generation and the final check in one live session
+            # and set ``result.verification`` itself; reuse it rather than spinning a
+            # second sandbox. Only Aristotle (network generation, no session) lands here
+            # and gets the standalone check.
+            if result.verification is None:
+                result.verification = self.verifier.verify(LeanProject(wd))
 
-        result.status = (
-            ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
-        )
+            result.status = (
+                ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
+            )
 
-        # A self-describing summary so a downloaded logs dir stands on its own.
-        (logs_dir / "result.json").write_text(
-            json.dumps(result.to_dict(), indent=2, default=str)
-        )
-        return result
+            # A self-describing summary so a downloaded logs dir stands on its own.
+            (logs_dir / "result.json").write_text(
+                json.dumps(result.to_dict(), indent=2, default=str)
+            )
+            log.info(
+                "prove complete",
+                extra={
+                    "success": result.success,
+                    "cost_usd": result.cost_usd,
+                    "duration_s": round(result.duration_s, 1),
+                },
+            )
+            return result

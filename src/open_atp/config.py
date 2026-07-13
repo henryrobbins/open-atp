@@ -90,18 +90,24 @@ def build_harness(spec: Mapping[str, object] | str) -> Harness:
 
 
 def _build_prover(
-    spec: Mapping[str, object], backend: ComputeBackend
+    spec: Mapping[str, object], backend: ComputeBackend, *, name: str | None = None
 ) -> AutomatedProver:
     """Construct a prover from a ``prover`` spec against an already-built ``backend``.
 
     Dispatches ``spec["type"]`` through the package-internal ``_PROVERS`` map, builds a
     nested ``harness`` spec along the way, and wires the backend in.
+
+    ``name`` (the standard-catalog key) is injected only for provers that accept it
+    (``AgentProver``), so the reported name matches the user-facing registry key
+    rather than the harness name; ``numina``/``aristotle`` take their own name.
     """
     cls, kwargs = _split(_PROVERS, spec, "prover")
     if "harness" in kwargs:
         kwargs["harness"] = build_harness(
             cast("Mapping[str, object] | str", kwargs["harness"])
         )
+    if name is not None and "name" in inspect.signature(cls).parameters:
+        kwargs.setdefault("name", name)
     return cls(backend=backend, **kwargs)  # type: ignore[arg-type]  # validated kwargs
 
 
@@ -154,7 +160,7 @@ def standard_prover(name: str, *, backend: ComputeBackend) -> AutomatedProver:
     """
     if name not in STANDARD_PROVERS:
         raise ValueError(f"unknown prover {name!r}; choose from {standard_provers()}")
-    return _build_prover(STANDARD_PROVERS[name], backend)
+    return _build_prover(STANDARD_PROVERS[name], backend, name=name)
 
 
 def standard_provers() -> list[str]:
