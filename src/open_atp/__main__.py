@@ -115,6 +115,7 @@ def _configure_logging(console_level: int, log_file: Path | None = None) -> None
         # the level in before the shared timestamp/render tail runs.
         return structlog.stdlib.ProcessorFormatter(
             foreign_pre_chain=[
+                structlog.contextvars.merge_contextvars,
                 structlog.stdlib.ExtraAdder(),
                 structlog.stdlib.add_log_level,
             ],

@@ -38,6 +38,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+import structlog
 from tqdm import tqdm
 
 from open_atp.images import SKELETON_DIR
@@ -168,14 +169,18 @@ def run_benchmark(
     ) -> BenchmarkRun:
         run_dir = output_dir / task_name / prover_name
         run_dir.mkdir(parents=True, exist_ok=True)
-        with gates[prover_name]:
+        # task + prover ride the context so every record from this run -- backend and
+        # verifier alike -- carries them, and so a ``prove crashed`` record (logged
+        # after ``prove``'s own binding has unwound) stays attributed. ``prove`` binds
+        # prover again plus a run_id underneath.
+        with (
+            structlog.contextvars.bound_contextvars(task=task_name, prover=prover_name),
+            gates[prover_name],
+        ):
             try:
                 result = prover.prove(task, run_dir)
             except Exception as exc:
-                log.exception(
-                    "prove crashed",
-                    extra={"task": task_name, "prover": prover_name},
-                )
+                log.exception("prove crashed")
                 result = ProofResult(
                     prover=prover.name,
                     verification=None,
