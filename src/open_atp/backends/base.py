@@ -21,30 +21,15 @@ from open_atp.images import DEFAULT_IMAGE, Image
 
 
 class ComputeError(RuntimeError):
-    """A backend's *operational* failure, distinct from a prover's proof miss.
-
-    Raised when the compute substrate -- not the candidate proof -- is what went
-    wrong: a sandbox that timed out, disconnected, or could not be provisioned. The
-    benchmark layer maps these to a coarse outcome bucket; the base class exists so a
-    caller can branch on "infra vs. genuine miss" without matching every subtype.
-    """
+    """Parent Exception class for backend compute errors."""
 
 
 class ExecTimeout(ComputeError):
-    """A command (or a blocking Modal RPC) exceeded its client-side deadline.
-
-    Distinct from a genuine miss: the prover ran out of wall-clock, it did not decide
-    the proof was wrong.
-    """
+    """A command on backend compute exceeds its timeout deadline."""
 
 
 class SandboxUnreachable(ComputeError):
-    """The sandbox (or its worker) died or stopped responding mid-run.
-
-    Detected by a control-plane liveness check while blocked on a worker call, so a
-    reaped/preempted sandbox fails fast instead of hanging on a stream or RPC that
-    will never complete.
-    """
+    """The backend compute sandbox became unreachable mid-run."""
 
 
 @dataclass
