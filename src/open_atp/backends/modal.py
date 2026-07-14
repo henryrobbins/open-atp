@@ -390,11 +390,7 @@ class ModalSessionHandle(ModalCommandHandle):
 
 
 def _terminate(sb: modal.Sandbox) -> None:
-    """Tear down the Sandbox; idempotent (safe if it is already gone).
-
-    Unbounded: ``terminate`` is a near-instant control-plane call (observed p100
-    ~0.08s), unlike the worker-routed execs/transfers ``_run_bounded`` guards.
-    """
+    """Tear down the Sandbox; idempotent (safe if it is already gone)."""
     try:
         sb.terminate()
     except Exception:
