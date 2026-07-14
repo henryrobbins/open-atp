@@ -117,6 +117,17 @@ def _require_modal() -> None:
         ) from exc
 
 
+def _is_dead(sb: modal.Sandbox) -> bool:
+    """Whether Modal's control plane has reaped ``sb`` (``sb.poll()`` returns non-None).
+
+    A named wrapper for the ``sb.poll() is not None`` liveness check used at every
+    gate below. Raises whatever ``sb.poll()`` raises rather than swallowing it --
+    callers that must never raise (:func:`_pull_wd`, :func:`_pull_stderr`) catch it
+    themselves.
+    """
+    return sb.poll() is not None
+
+
 def _run_bounded[T](
     fn: Callable[[], T],
     *,
@@ -169,7 +180,7 @@ def _run_bounded[T](
         if not worker.is_alive():
             break
         waited += LIVENESS_POLL_INTERVAL_S
-        if sb.poll() is not None:
+        if _is_dead(sb):
             log.warning(
                 "modal call aborted",
                 extra={
@@ -209,7 +220,7 @@ def _raise_stream_error(exc: Exception, sb: modal.Sandbox) -> NoReturn:
         raise ExecTimeout(
             "exec exceeded its client deadline while streaming stdout"
         ) from exc
-    if sb.poll() is not None:
+    if _is_dead(sb):
         raise SandboxUnreachable(
             "stdout stream terminated; Sandbox unreachable"
         ) from exc
@@ -395,15 +406,20 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
 
     Bounded by liveness + a wall-clock: an unreachable worker would otherwise hang the
     copy or the untar exec indefinitely (neither the transfer nor a plain ``.wait()``
-    has a client deadline of its own). A failure here aborts provisioning.
+    has a client deadline of its own). The transfer and the untar exec are bounded as
+    two separate calls (rather than one merged bound) so a stall is attributed to the
+    right phase and each keeps its own natural ceiling. A failure here aborts
+    provisioning.
     """
     log.debug("pushing dir into sandbox", extra={"src": str(src), "dest": dest})
 
-    def do_push() -> None:
+    def do_copy() -> None:
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
             tmp.write(_tar_dir(src))
             tmp.flush()
             sb.filesystem.copy_from_local(tmp.name, "/tmp/push.tar.gz")
+
+    def do_untar() -> None:
         sb.exec(
             "bash",
             "-c",
@@ -411,12 +427,8 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
             timeout=INFRA_EXEC_TIMEOUT_S,
         ).wait()
 
-    _run_bounded(
-        do_push,
-        timeout_s=INFRA_EXEC_TIMEOUT_S + TRANSFER_TIMEOUT_S,
-        sb=sb,
-        label="push_dir",
-    )
+    _run_bounded(do_copy, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="push_copy")
+    _run_bounded(do_untar, timeout_s=INFRA_EXEC_TIMEOUT_S, sb=sb, label="push_untar")
 
 
 def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
@@ -427,14 +439,15 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
     return -- one code path that always pulls (cheap for small projects).
 
     Best effort: a failure here must not mask the run's real outcome, so it is caught
-    and logged, never raised. It first gates on ``sb.poll()`` (a reaped Sandbox can
-    never be pulled -- fail instantly rather than stall), then bounds the tar +
-    transfer. Distinct causes (dead sandbox vs. a non-zero ``tar`` on some file the
+    and logged, never raised. It first gates on liveness (a reaped Sandbox can never
+    be pulled -- fail instantly rather than stall), then bounds the tar exec and the
+    transfer as two separate calls, each with its own natural ceiling, rather than one
+    merged bound. Distinct causes (dead sandbox vs. a non-zero ``tar`` on some file the
     agent created vs. a missing tarball) get distinct messages so they get distinct
     fixes.
     """
     try:
-        dead = sb.poll() is not None
+        dead = _is_dead(sb)
     except Exception:
         log.warning(
             "pull_wd: failed to pull artifacts", extra={"wd": str(wd)}, exc_info=True
@@ -447,7 +460,7 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
         )
         return
 
-    def do_pull() -> None:
+    def do_tar() -> None:
         proc = sb.exec(
             "bash",
             "-c",
@@ -463,18 +476,16 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
                 "pull_wd: tar exited nonzero",
                 extra={"exit_code": exit_code, "stderr": stderr},
             )
+
+    def do_copy() -> None:
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
             sb.filesystem.copy_to_local("/tmp/out.tar.gz", tmp.name)
             with tarfile.open(tmp.name, mode="r:gz") as tf:
                 tf.extractall(wd, filter="data")
 
     try:
-        _run_bounded(
-            do_pull,
-            timeout_s=INFRA_EXEC_TIMEOUT_S + TRANSFER_TIMEOUT_S,
-            sb=sb,
-            label="pull_wd",
-        )
+        _run_bounded(do_tar, timeout_s=INFRA_EXEC_TIMEOUT_S, sb=sb, label="pull_tar")
+        _run_bounded(do_copy, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_copy")
     except Exception:
         log.warning(
             "pull_wd: failed to pull artifacts", extra={"wd": str(wd)}, exc_info=True
@@ -488,9 +499,11 @@ def _pull_stderr(sb: modal.Sandbox) -> str:
     than hanging the caller on a transfer that will never complete.
     """
     try:
-        if sb.poll() is not None:
+        if _is_dead(sb):
+            log.warning("pull_stderr: Sandbox already terminated; skipping pull")
             return ""
     except Exception:
+        log.warning("pull_stderr: failed to check Sandbox liveness", exc_info=True)
         return ""
 
     def read() -> str:
