@@ -142,8 +142,7 @@ def _run_bounded[T](
     Every abort emits a ``warning`` event tagged with ``label``, the observed
     ``elapsed_s``, and the ``timeout_s`` ceiling it ran under -- so ``elapsed_s`` read
     against the ceiling shows real per-call latency and headroom (control-plane RPCs,
-    transfers, exec waits) when right-sizing the wall-clock constants above. Phases
-    *inside* a bounded call (transfer vs. untar) are timed separately by :func:`_timed`.
+    transfers, exec waits) when right-sizing the wall-clock constants above.
     """
     result: list[T] = []
     error: list[BaseException] = []
@@ -186,37 +185,8 @@ def _run_bounded[T](
             )
             raise ExecTimeout(f"Modal call exceeded {timeout_s:.0f}s client deadline")
     if error:
-        log.debug(
-            "modal call raised",
-            extra={
-                "label": label,
-                "elapsed_s": round(time.monotonic() - started, 2),
-                "timeout_s": timeout_s,
-                "error": type(error[0]).__name__,
-            },
-        )
         raise error[0]
     return result[0]
-
-
-def _timed[T](label: str, fn: Callable[[], T]) -> T:
-    """Time one *phase* inside an already-bounded call; emit a debug event.
-
-    A lighter companion to :func:`_run_bounded` (no thread, no liveness -- the enclosing
-    ``_run_bounded`` still supplies the safety bound). It splits an opaque combined
-    bound into representative per-phase latencies -- the filesystem transfer vs. the
-    untar/tar exec inside a push/pull -- so :data:`TRANSFER_TIMEOUT_S` and
-    :data:`INFRA_EXEC_TIMEOUT_S` can each be sized from real numbers on a full-size
-    workdir rather than one merged total (or only the tiny ``pull_stderr`` transfer).
-    """
-    started = time.monotonic()
-    try:
-        return fn()
-    finally:
-        log.debug(
-            "modal phase",
-            extra={"label": label, "elapsed_s": round(time.monotonic() - started, 2)},
-        )
 
 
 def _raise_stream_error(exc: Exception, sb: modal.Sandbox) -> NoReturn:
@@ -425,19 +395,13 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
             tmp.write(_tar_dir(src))
             tmp.flush()
-            _timed(
-                "push_copy",
-                lambda: sb.filesystem.copy_from_local(tmp.name, "/tmp/push.tar.gz"),
-            )
-        _timed(
-            "push_untar",
-            lambda: sb.exec(
-                "bash",
-                "-c",
-                f"mkdir -p {dest} && tar -xzf /tmp/push.tar.gz -C {dest}",
-                timeout=INFRA_EXEC_TIMEOUT_S,
-            ).wait(),
-        )
+            sb.filesystem.copy_from_local(tmp.name, "/tmp/push.tar.gz")
+        sb.exec(
+            "bash",
+            "-c",
+            f"mkdir -p {dest} && tar -xzf /tmp/push.tar.gz -C {dest}",
+            timeout=INFRA_EXEC_TIMEOUT_S,
+        ).wait()
 
     _run_bounded(
         do_push,
@@ -484,7 +448,7 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
         )
         # tar exits non-zero on e.g. a file that changed/vanished mid-archive; surface
         # it rather than letting the (possibly partial/missing) copy fail opaquely.
-        exit_code = _timed("pull_tar", proc.wait)
+        exit_code = proc.wait()
         if exit_code != 0:
             stderr = "".join(proc.stderr).strip() or "(no stderr)"
             log.warning(
@@ -492,10 +456,7 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
                 extra={"exit_code": exit_code, "stderr": stderr},
             )
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
-            _timed(
-                "pull_copy",
-                lambda: sb.filesystem.copy_to_local("/tmp/out.tar.gz", tmp.name),
-            )
+            sb.filesystem.copy_to_local("/tmp/out.tar.gz", tmp.name)
             with tarfile.open(tmp.name, mode="r:gz") as tf:
                 tf.extractall(wd, filter="data")
 
