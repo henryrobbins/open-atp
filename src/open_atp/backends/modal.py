@@ -65,15 +65,18 @@ REMOTE_WD = "/workspace/wd"
 #: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
 BAKED_LAKE = "/workspace/.lake"
 
-#: Extra Sandbox lifetime (seconds) reserved purely for the final tar pull. The
-#: caller's ``timeout_s`` already budgets the *work* (generation + the in-session
-#: verify); the Sandbox is created with ``timeout_s + SYNC_HEADROOM_S`` so that after
-#: the last command hits its coreutils ``timeout``, the Sandbox is still alive long
-#: enough to tar the partial workdir back out. Without it, the Sandbox timeout and the
-#: work budget coincide and the pull races a Sandbox Modal has already terminated --
-#: dropping every edit the agent made. Kept above the coreutils ``--kill-after=30``
-#: grace (2x it): a command that runs to budget and ignores SIGTERM isn't dead until
-#: ``budget + 30``, so anything <= 30 would leave no window to pull its partial workdir.
+#: Extra Sandbox lifetime (seconds) reserved purely for the final tar pull.
+#: ``timeout_s`` accounts for the total compute work budget (generation + the
+#: in-session verify). Unlike Docker, which is bind-mounted, Modal has to sync the
+#: agent working directory back out before the Sandbox is terminated --
+#: ``SYNC_HEADROOM_S`` allocates time for that sync, so the Sandbox is created with
+#: ``timeout_s + SYNC_HEADROOM_S`` and stays alive past the last command's coreutils
+#: ``timeout`` long enough to tar the partial workdir back out. Without it, the
+#: Sandbox timeout and the work budget coincide and the pull races a Sandbox Modal has
+#: already terminated -- dropping every edit the agent made. Set larger than the
+#: coreutils ``--kill-after=30`` grace (2x it): a command that runs to budget and
+#: ignores SIGTERM isn't dead until ``budget + 30``, so anything <= 30 would leave no
+#: window to pull its partial workdir.
 SYNC_HEADROOM_S = 60
 
 #: Seconds a command's *client* deadline sits above its in-sandbox coreutils cap. The
@@ -91,10 +94,13 @@ WARM_BUILD_TIMEOUT_S = 600
 #: Client wall-clock ceiling for opaque filesystem transfers (``copy_to_local`` /
 #: ``copy_from_local``), which expose no deadline knob of their own.
 TRANSFER_TIMEOUT_S = 60
-#: Client wall-clock ceiling for ``Sandbox.terminate`` (best effort).
-TERMINATE_TIMEOUT_S = 30
 #: Grace window for the best-effort stdout drain *after* a process has exited: enough
 #: to collect buffered output, short enough that an orphan-held pipe can't stall us.
+#: ``timeout --kill-after=30`` only reaches the command's own process group, so a
+#: child that has escaped it (backgrounded, double-forked/``setsid``) can keep the
+#: inherited stdout fd open past the parent's exit -- a pipe only sees EOF once every
+#: writer has closed. ``DRAIN_GRACE_S`` bounds that wait so an orphan holding the pipe
+#: open can't stall the caller indefinitely.
 DRAIN_GRACE_S = 15
 #: How often :func:`_run_bounded` re-checks Sandbox liveness while blocked.
 LIVENESS_POLL_INTERVAL_S = 5
@@ -115,7 +121,7 @@ def _run_bounded[T](
     fn: Callable[[], T],
     *,
     timeout_s: float | None = None,
-    sb: modal.Sandbox | None = None,
+    sb: modal.Sandbox,
     label: str,
 ) -> T:
     """Run blocking ``fn()`` in a thread, bounded by liveness and a wall-clock.
@@ -124,11 +130,11 @@ def _run_bounded[T](
     have no client deadline, so a dead/unreachable worker hangs them forever. This
     wrapper runs ``fn`` on a daemon thread and, while it is in flight:
 
-    * raises :class:`~open_atp.backends.base.SandboxUnreachable` as soon as ``sb``
-      (when given) is reaped -- via ``sb.poll()``, a control-plane
-      ``SandboxWait(timeout=0)`` that does **not** traverse the worker command-router
-      path, so it still answers when the *worker* is the thing that has gone
-      unreachable -- the fast path, seen via the control plane, not the stuck worker;
+    * raises :class:`~open_atp.backends.base.SandboxUnreachable` as soon as ``sb`` is
+      reaped -- via ``sb.poll()``, a control-plane ``SandboxWait(timeout=0)`` that does
+      **not** traverse the worker command-router path, so it still answers when the
+      *worker* is the thing that has gone unreachable -- the fast path, seen via the
+      control plane, not the stuck worker;
     * raises :class:`~open_atp.backends.base.ExecTimeout` at ``timeout_s`` (when given)
       as the backstop.
 
@@ -163,7 +169,7 @@ def _run_bounded[T](
         if not worker.is_alive():
             break
         waited += LIVENESS_POLL_INTERVAL_S
-        if sb is not None and sb.poll() is not None:
+        if sb.poll() is not None:
             log.warning(
                 "modal call aborted",
                 extra={
@@ -373,11 +379,13 @@ class ModalSessionHandle(ModalCommandHandle):
 
 
 def _terminate(sb: modal.Sandbox) -> None:
-    """Tear down the Sandbox; idempotent (safe if it is already gone)."""
+    """Tear down the Sandbox; idempotent (safe if it is already gone).
+
+    Unbounded: ``terminate`` is a near-instant control-plane call (observed p100
+    ~0.08s), unlike the worker-routed execs/transfers ``_run_bounded`` guards.
+    """
     try:
-        _run_bounded(
-            lambda: sb.terminate(), timeout_s=TERMINATE_TIMEOUT_S, label="terminate"
-        )
+        sb.terminate()
     except Exception:
         log.debug("terminate: Sandbox already gone or unreachable")
 
