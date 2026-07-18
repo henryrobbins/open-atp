@@ -160,7 +160,7 @@ def test_session_runs_many_commands_in_one_sandbox(tmp_path: Path) -> None:
     with backend.session(proj, timeout_s=600) as session:
         # A first exec (stands in for the agent run) then an in-session verify -- both
         # in one Sandbox, terminated once on close.
-        assert session.exec("true").wait().exit_code == 0
+        assert session.exec("true", timeout_s=60).wait().exit_code == 0
         report = verifier.verify(LeanProject(proj), session=session)
 
     assert report.compiles, report.compile_log

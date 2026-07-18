@@ -117,7 +117,7 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
 
         backend = DockerBackend(image=DEFAULT_IMAGE)
         with backend.session(workdir, timeout_s=1800) as session:
-            with session.exec("lake env lean Demo.lean") as handle:
+            with session.exec("lake env lean Demo.lean", timeout_s=300) as handle:
                 result = handle.wait()
             session.sync_out()   # pull the agent's edits back to the host
         # the sandbox is torn down on exit, even if exec raised
@@ -128,7 +128,7 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         command: str,
         *,
         env: Mapping[str, str] | None = None,
-        timeout_s: int | None = None,
+        timeout_s: int,
     ) -> CommandHandle:
         """Run ``command`` in the live sandbox; the handle does NOT tear it down.
 
@@ -139,9 +139,8 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
-        timeout_s : int, optional
-            Wall-clock cap for the command. ``None`` leaves it to the backend's own
-            default. Default ``None``.
+        timeout_s : int
+            Wall-clock cap for the command, in seconds.
 
         Returns
         -------

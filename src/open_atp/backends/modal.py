@@ -131,7 +131,7 @@ def _is_dead(sb: modal.Sandbox) -> bool:
 def _run_bounded[T](
     fn: Callable[[], T],
     *,
-    timeout_s: float | None = None,
+    timeout_s: float,
     sb: modal.Sandbox,
     label: str,
 ) -> T:
@@ -146,8 +146,8 @@ def _run_bounded[T](
       **not** traverse the worker command-router path, so it still answers when the
       *worker* is the thing that has gone unreachable -- the fast path, seen via the
       control plane, not the stuck worker;
-    * raises :class:`~open_atp.backends.base.ExecTimeout` at ``timeout_s`` (when given)
-      as the backstop.
+    * raises :class:`~open_atp.backends.base.ExecTimeout` at ``timeout_s`` as the
+      backstop.
 
     ``fn`` runs inside the calling thread's ``contextvars`` context (a plain
     ``threading.Thread`` does not copy it by default), so structured-logging fields
@@ -190,7 +190,7 @@ def _run_bounded[T](
                 },
             )
             raise SandboxUnreachable("Sandbox terminated while awaiting a Modal call")
-        if timeout_s is not None and waited >= timeout_s:
+        if waited >= timeout_s:
             log.warning(
                 "modal call aborted",
                 extra={
@@ -235,36 +235,29 @@ def _tar_dir(src: Path) -> bytes:
     return buf.getvalue()
 
 
-def _exec_payload(wrapped: str, timeout_s: int | None) -> str:
+def _exec_payload(wrapped: str, timeout_s: int) -> str:
     """Build the ``bash -c`` argument for a Sandbox exec: cap, stdin, stderr.
 
-    ``timeout_s`` (> 0) caps ``wrapped`` with coreutils ``timeout``, which -- run
-    without ``--foreground`` -- signals the command's whole process group, so the
-    agent *and* its children are killed when the budget expires (in time for the
-    Sandbox's :data:`SYNC_HEADROOM_S` pull window). Each command the caller runs
-    (generation, then the in-session verify) passes its own slice of the budget.
-    ``None`` leaves it uncapped, for a caller that manages its own timeout.
+    ``timeout_s`` caps ``wrapped`` with coreutils ``timeout``, which -- run without
+    ``--foreground`` -- signals the command's whole process group, so the agent *and*
+    its children are killed when the budget expires (in time for the Sandbox's
+    :data:`SYNC_HEADROOM_S` pull window). Each command the caller runs (generation,
+    then the in-session verify) passes its own slice of the budget.
 
     Stdin is ``/dev/null`` (Modal leaves it an open pipe with no EOF, hanging agent
     CLIs) and stderr is captured to a file pulled back with the workdir.
     """
-    if timeout_s is not None and timeout_s > 0:
-        body = f"timeout --kill-after=30 {timeout_s} bash -c {shlex.quote(wrapped)}"
-    else:
-        body = f"{{ {wrapped} ; }}"
+    body = f"timeout --kill-after=30 {timeout_s} bash -c {shlex.quote(wrapped)}"
     return f"{body} < /dev/null 2> {REMOTE_WD}/modal_stderr.txt"
 
 
-def _exec_deadline(timeout_s: int | None) -> int | None:
+def _exec_deadline(timeout_s: int) -> int:
     """The Modal ``exec_deadline`` (seconds) backstopping a command's client wait.
 
     Sits above the client wall-clock (which itself sits above the in-sandbox coreutils
     cap) so :func:`_run_bounded` fails with a clean typed error first; this is only the
     last resort, so an abandoned ``wait`` thread can't outlive the exec forever.
-    ``None`` (an uncapped command) leaves the exec uncapped too.
     """
-    if timeout_s is None:
-        return None
     return timeout_s + 2 * EXEC_DEADLINE_MARGIN_S
 
 
@@ -287,8 +280,8 @@ class ModalCommandHandle(CommandHandle):
     sb: modal.Sandbox
     workdir: Path
     started_at: float
-    #: Client wall-clock the process wait is bounded by (``None`` = liveness-only).
-    deadline_s: float | None = None
+    #: Client wall-clock (seconds) the process wait is bounded by.
+    deadline_s: float
     _stdout_lines: list[str] = field(default_factory=list)
     _buf: str = ""
 
@@ -354,20 +347,25 @@ class ModalCommandHandle(CommandHandle):
         )
 
     def cancel(self) -> None:
-        """Pull partial artifacts (best effort), then terminate the Sandbox."""
-        # No per-exec kill on a Sandbox, so pull partial artifacts (best effort) and
-        # then terminate -- terminating is the authoritative kill and also ensures we
-        # never leak compute. Idempotent: safe to call after wait() already tore down.
-        _pull_wd(self.sb, self.workdir)
-        _terminate(self.sb)
+        """Pull partial artifacts, then terminate the Sandbox."""
+        # No per-exec kill on a Sandbox, so pull partial artifacts and then terminate
+        # -- terminating is the authoritative kill and also ensures we never leak
+        # compute. Idempotent: safe to call after wait() already tore down. A pull
+        # failure must not skip termination, so it's its own try/finally.
+        try:
+            _pull_wd(self.sb, self.workdir)
+        finally:
+            _terminate(self.sb)
 
     def wait(self) -> CommandResult:
         """Collect the result, pull the workdir back, then terminate the Sandbox."""
         try:
             return self._collect_result()
         finally:
-            _pull_wd(self.sb, self.workdir)
-            _terminate(self.sb)
+            try:
+                _pull_wd(self.sb, self.workdir)
+            finally:
+                _terminate(self.sb)
 
 
 @dataclass
@@ -434,22 +432,14 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
     files change so this is just the stderr/log; for generation it is how edits
     return -- one code path that always pulls (cheap for small projects).
 
-    Best effort: a failure here must not mask the run's real outcome, so it is caught
-    and logged, never raised. It first gates on liveness (a reaped Sandbox can never
-    be pulled -- fail instantly rather than stall), then bounds the tar exec and the
-    transfer as two separate calls, each with its own natural ceiling, rather than one
-    merged bound. Distinct causes (dead sandbox vs. a non-zero ``tar`` on some file the
-    agent created vs. a missing tarball) get distinct messages so they get distinct
-    fixes.
+    Gates on liveness first (a reaped Sandbox can never be pulled -- return instantly
+    rather than stall), then bounds the tar exec and the transfer as two separate
+    calls, each with its own natural ceiling, rather than one merged bound. Raises on
+    failure rather than swallowing it -- a sync failure must be visible to the caller,
+    not indistinguishable from a clean run -- so callers terminate the Sandbox in a
+    ``finally`` regardless of whether this raises.
     """
-    try:
-        dead = _is_dead(sb)
-    except Exception:
-        log.warning(
-            "pull_wd: failed to pull artifacts", extra={"wd": str(wd)}, exc_info=True
-        )
-        return
-    if dead:
+    if _is_dead(sb):
         log.warning(
             "pull_wd: Sandbox already terminated; skipping pull",
             extra={"wd": str(wd)},
@@ -479,27 +469,19 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
             with tarfile.open(tmp.name, mode="r:gz") as tf:
                 tf.extractall(wd, filter="data")
 
-    try:
-        _run_bounded(do_tar, timeout_s=INFRA_EXEC_TIMEOUT_S, sb=sb, label="pull_tar")
-        _run_bounded(do_copy, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_copy")
-    except Exception:
-        log.warning(
-            "pull_wd: failed to pull artifacts", extra={"wd": str(wd)}, exc_info=True
-        )
+    _run_bounded(do_tar, timeout_s=INFRA_EXEC_TIMEOUT_S, sb=sb, label="pull_tar")
+    _run_bounded(do_copy, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_copy")
 
 
 def _pull_stderr(sb: modal.Sandbox) -> str:
     """Read back the captured ``modal_stderr.txt`` (empty if unavailable).
 
-    Best effort and liveness-gated: a dead or unreachable Sandbox yields ``""`` rather
-    than hanging the caller on a transfer that will never complete.
+    Liveness-gated: a dead or unreachable Sandbox yields ``""`` rather than hanging on
+    a transfer that will never complete. Otherwise raises on failure rather than
+    swallowing it -- see :func:`_pull_wd`.
     """
-    try:
-        if _is_dead(sb):
-            log.warning("pull_stderr: Sandbox already terminated; skipping pull")
-            return ""
-    except Exception:
-        log.warning("pull_stderr: failed to check Sandbox liveness", exc_info=True)
+    if _is_dead(sb):
+        log.warning("pull_stderr: Sandbox already terminated; skipping pull")
         return ""
 
     def read() -> str:
@@ -507,12 +489,7 @@ def _pull_stderr(sb: modal.Sandbox) -> str:
             sb.filesystem.copy_to_local(f"{REMOTE_WD}/modal_stderr.txt", tmp.name)
             return Path(tmp.name).read_text(errors="replace")
 
-    try:
-        return _run_bounded(
-            read, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_stderr"
-        )
-    except Exception:
-        return ""
+    return _run_bounded(read, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_stderr")
 
 
 class ModalBackend(ComputeBackend):
@@ -807,7 +784,7 @@ class ModalSession(ComputeSession):
         command: str,
         *,
         env: Mapping[str, str] | None = None,
-        timeout_s: int | None = None,
+        timeout_s: int,
     ) -> CommandHandle:
         """Exec ``command`` in the live Sandbox; close() owns teardown.
 
@@ -818,8 +795,8 @@ class ModalSession(ComputeSession):
         env : Mapping[str, str], optional
             Per-command environment variables, forwarded as a one-off Modal secret
             (usually empty -- credentials pin at session creation). Default empty.
-        timeout_s : int, optional
-            Wall-clock cap for this command, uncapped by default.
+        timeout_s : int
+            Wall-clock cap for this command, in seconds.
 
         Returns
         -------
@@ -855,9 +832,7 @@ class ModalSession(ComputeSession):
             sb=self.sb,
             workdir=self.workdir,
             started_at=started_at,
-            deadline_s=(
-                None if timeout_s is None else timeout_s + EXEC_DEADLINE_MARGIN_S
-            ),
+            deadline_s=timeout_s + EXEC_DEADLINE_MARGIN_S,
         )
 
     def sync_out(self) -> None:
@@ -870,5 +845,8 @@ class ModalSession(ComputeSession):
 
     def close(self) -> None:
         """Pull final artifacts, then terminate the Sandbox. Idempotent."""
-        _pull_wd(self.sb, self.workdir)
-        _terminate(self.sb)
+        # A pull failure must not skip termination, so it's its own try/finally.
+        try:
+            _pull_wd(self.sb, self.workdir)
+        finally:
+            _terminate(self.sb)

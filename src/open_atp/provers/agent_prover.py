@@ -315,7 +315,7 @@ class AgentProver(AutomatedProver):
         stdout_path: Path,
         session: ComputeSession,
         *,
-        timeout_s: int | None = None,
+        timeout_s: int,
     ) -> tuple[list[str], str]:
         """Resolve auth, launch the agent in the live ``session``, and tee its stdout.
 
