@@ -10,21 +10,28 @@ as on Docker. The tar round-trip test needs no Sandbox and always runs.
 
 from __future__ import annotations
 
+import contextvars
 import os
 import shutil
 import tarfile
 import tempfile
+import threading
 from pathlib import Path
 
 import pytest
 
+import open_atp.backends.modal as modal_mod
+from open_atp.backends.base import ExecTimeout, SandboxUnreachable
 from open_atp.backends.modal import (
     EXEC_DEADLINE_MARGIN_S,
     INFRA_EXEC_TIMEOUT_S,
     SYNC_HEADROOM_S,
     WARM_BUILD_TIMEOUT_S,
     ModalBackend,
+    ModalCommandHandle,
+    ModalSessionHandle,
     _modal_image_name,
+    _run_bounded,
     _tar_dir,
 )
 from open_atp.lean import LeanProject, ToolchainMismatch
@@ -97,6 +104,180 @@ def test_wallclock_overhead_sums_provision_and_sync_phases() -> None:
         + EXEC_DEADLINE_MARGIN_S
         + INFRA_EXEC_TIMEOUT_S
     )
+
+
+# --- offline unit tests with a fake Sandbox ---------------------------------
+#
+# The push/pull/exec plumbing is pure control flow given a stand-in Sandbox and
+# process, so most of it is exercised here without Modal creds or a live Sandbox.
+# `_is_dead` is driven off `poll()`, so a "dead" fake short-circuits every
+# liveness-gated path (the pull skips, the bound call raises SandboxUnreachable).
+
+
+class FakeProc:
+    """Stand-in for a Modal ContainerProcess: an iterable stdout + a wait()."""
+
+    def __init__(
+        self,
+        chunks: list[str] | None = None,
+        *,
+        exit_code: int = 0,
+        stderr: list[str] | None = None,
+        raise_on_stream: Exception | None = None,
+    ) -> None:
+        self._chunks = chunks or []
+        self._exit_code = exit_code
+        self.stderr = stderr or []
+        self._raise_on_stream = raise_on_stream
+
+    @property
+    def stdout(self):
+        if self._raise_on_stream is not None:
+            raise self._raise_on_stream
+        yield from self._chunks
+
+    def wait(self) -> int:
+        return self._exit_code
+
+
+class FakeSandbox:
+    """Stand-in for a Modal Sandbox: liveness via poll(), a recorded terminate()."""
+
+    def __init__(self, *, dead: bool = False) -> None:
+        self._dead = dead
+        self.terminated = False
+
+    def poll(self):
+        return 1 if self._dead else None
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+
+def _handle(sb: FakeSandbox, proc: FakeProc, wd: Path) -> ModalCommandHandle:
+    return ModalCommandHandle(
+        proc=proc, sb=sb, workdir=wd, started_at=0.0, deadline_s=60.0
+    )
+
+
+# _run_bounded ---------------------------------------------------------------
+
+
+def test_run_bounded_returns_value_and_propagates_context() -> None:
+    var: contextvars.ContextVar[str] = contextvars.ContextVar("marker")
+    var.set("bound")
+    sb = FakeSandbox()
+    result = _run_bounded(
+        lambda: var.get(),
+        timeout_s=5,
+        sb=sb,
+        label="t",
+    )
+    assert result == "bound"
+
+
+def test_run_bounded_reraises_fn_exception() -> None:
+    def boom() -> None:
+        raise ValueError("nope")
+
+    with pytest.raises(ValueError, match="nope"):
+        _run_bounded(boom, timeout_s=5, sb=FakeSandbox(), label="t")
+
+
+def test_run_bounded_dead_sandbox_raises_unreachable(monkeypatch) -> None:
+    monkeypatch.setattr(modal_mod, "LIVENESS_POLL_INTERVAL_S", 0.02)
+    blocked = threading.Event()
+    with pytest.raises(SandboxUnreachable):
+        _run_bounded(
+            blocked.wait,
+            timeout_s=10,
+            sb=FakeSandbox(dead=True),
+            label="t",
+        )
+
+
+def test_run_bounded_timeout_raises_exec_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(modal_mod, "LIVENESS_POLL_INTERVAL_S", 0.02)
+    blocked = threading.Event()
+    with pytest.raises(ExecTimeout):
+        _run_bounded(
+            blocked.wait,
+            timeout_s=0.05,
+            sb=FakeSandbox(dead=False),
+            label="t",
+        )
+
+
+# stream / drain / collect ---------------------------------------------------
+
+
+def test_stream_rebuffers_chunks_into_lines(tmp_path: Path) -> None:
+    # Modal yields arbitrary chunks: one holds two lines, the next splits a line.
+    proc = FakeProc(chunks=['{"a":1}\n{"b":2}\n{"c', '":3}\n'])
+    handle = _handle(FakeSandbox(), proc, tmp_path)
+    assert list(handle.stream()) == ['{"a":1}', '{"b":2}', '{"c":3}']
+
+
+def test_stream_maps_errors_via_raise_stream_error(tmp_path: Path) -> None:
+    proc = FakeProc(raise_on_stream=RuntimeError("dropped"))
+    handle = _handle(FakeSandbox(dead=True), proc, tmp_path)
+    with pytest.raises(SandboxUnreachable):
+        list(handle.stream())
+
+
+def test_collect_result_drains_and_reads_stderr(tmp_path: Path) -> None:
+    # Dead sandbox => _pull_stderr short-circuits to "", so this stays fully offline.
+    proc = FakeProc(chunks=["line1\n", "trailing-no-newline"], exit_code=7)
+    handle = _handle(FakeSandbox(dead=True), proc, tmp_path)
+    result = handle._collect_result()
+    assert result.exit_code == 7
+    assert result.stdout == "line1\ntrailing-no-newline"
+    assert result.stderr == ""
+
+
+# handle teardown semantics --------------------------------------------------
+
+
+def test_command_handle_wait_pulls_and_terminates(tmp_path: Path) -> None:
+    sb = FakeSandbox(dead=True)  # dead => pull short-circuits, terminate still runs
+    handle = _handle(sb, FakeProc(chunks=["ok\n"]), tmp_path)
+    result = handle.wait()
+    assert result.stdout == "ok"
+    assert sb.terminated
+
+
+def test_command_handle_cancel_terminates(tmp_path: Path) -> None:
+    sb = FakeSandbox(dead=True)
+    _handle(sb, FakeProc(), tmp_path).cancel()
+    assert sb.terminated
+
+
+def test_session_handle_wait_leaves_sandbox_up(tmp_path: Path) -> None:
+    sb = FakeSandbox(dead=True)
+    handle = ModalSessionHandle(
+        proc=FakeProc(chunks=["ok\n"]),
+        sb=sb,
+        workdir=tmp_path,
+        started_at=0.0,
+        deadline_s=60.0,
+    )
+    assert handle.wait().stdout == "ok"
+    assert not sb.terminated  # session owns teardown, not the handle
+    handle.cancel()
+    assert not sb.terminated  # cancel is a no-op on a session handle
+
+
+# backend + session (offline surface) ----------------------------------------
+
+
+def test_session_close_and_sync_out_pull_then_terminate(tmp_path: Path) -> None:
+    from open_atp.backends.modal import ModalSession
+
+    sb = FakeSandbox(dead=True)  # dead => pulls short-circuit, close still terminates
+    session = ModalSession(backend=ModalBackend(), sb=sb, workdir=tmp_path)
+    session.sync_out()  # pull skipped on a dead Sandbox; must not raise
+    session.close()
+    assert sb.terminated
 
 
 # --- live Sandbox parity suite ----------------------------------------------
