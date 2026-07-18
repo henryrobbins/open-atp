@@ -125,6 +125,10 @@ def _prove_bounded(
     worker.start()
     worker.join(ceiling_s)
     if worker.is_alive():
+        log.error(
+            "task exceeded wall-clock ceiling",
+            extra={"prover": prover.name, "task": task.name, "ceiling_s": ceiling_s},
+        )
         raise ExecTimeout(f"task exceeded {ceiling_s:.0f}s wall-clock ceiling")
     if error:
         raise error[0]
