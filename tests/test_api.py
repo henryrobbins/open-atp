@@ -181,8 +181,8 @@ def test_max_duration_sums_generation_verify_and_backend_overhead() -> None:
         + prover.verifier.timeout_s
         + prover.verifier.backend.wallclock_overhead_s
     )
-    # Concretely for the defaults over a Docker backend (1800 + 600 + 60).
-    assert prover.max_duration_s == 2460
+    # Concretely for the defaults over a Docker backend (1800 + 600 + 30).
+    assert prover.max_duration_s == 2430
 
 
 # --- prove: lifecycle ------------------------------------------------------

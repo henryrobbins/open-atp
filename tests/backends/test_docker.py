@@ -11,4 +11,4 @@ from open_atp.backends.docker import DockerBackend
 
 def test_wallclock_overhead_is_small_bind_mount_slack() -> None:
     # Bind-mounted: no push/pull, no warm-cache paging -- just container start/kill.
-    assert DockerBackend().wallclock_overhead_s == 60
+    assert DockerBackend().wallclock_overhead_s == 30
