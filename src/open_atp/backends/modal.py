@@ -390,9 +390,12 @@ class ModalSessionHandle(ModalCommandHandle):
 def _terminate(sb: modal.Sandbox) -> None:
     """Tear down the Sandbox; idempotent (safe if it is already gone)."""
     try:
+        # terminate() is a documented no-op when the Sandbox has already finished,
+        # so the only failure reaching here is an unreachable control plane (the
+        # terminate RPC itself erroring) -- swallow it; teardown is best-effort.
         sb.terminate()
     except Exception:
-        log.debug("terminate: Sandbox already gone or unreachable")
+        log.debug("terminate: control plane unreachable")
 
 
 def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
@@ -783,8 +786,8 @@ class ModalSession(ComputeSession):
         self,
         command: str,
         *,
-        env: Mapping[str, str] | None = None,
         timeout_s: int,
+        env: Mapping[str, str] | None = None,
     ) -> CommandHandle:
         """Exec ``command`` in the live Sandbox; close() owns teardown.
 
@@ -792,11 +795,11 @@ class ModalSession(ComputeSession):
         ----------
         command : str
             The shell command to run in the live Sandbox.
+        timeout_s : int
+            Wall-clock cap for this command, in seconds.
         env : Mapping[str, str], optional
             Per-command environment variables, forwarded as a one-off Modal secret
             (usually empty -- credentials pin at session creation). Default empty.
-        timeout_s : int
-            Wall-clock cap for this command, in seconds.
 
         Returns
         -------

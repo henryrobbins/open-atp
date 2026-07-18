@@ -127,8 +127,8 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         self,
         command: str,
         *,
-        env: Mapping[str, str] | None = None,
         timeout_s: int,
+        env: Mapping[str, str] | None = None,
     ) -> CommandHandle:
         """Run ``command`` in the live sandbox; the handle does NOT tear it down.
 
@@ -136,11 +136,11 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         ----------
         command : str
             The shell command to run in the live sandbox.
+        timeout_s : int
+            Wall-clock cap for the command, in seconds.
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
-        timeout_s : int
-            Wall-clock cap for the command, in seconds.
 
         Returns
         -------

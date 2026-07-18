@@ -333,8 +333,8 @@ class DockerSession(ComputeSession):
         self,
         command: str,
         *,
-        env: Mapping[str, str] | None = None,
         timeout_s: int,
+        env: Mapping[str, str] | None = None,
     ) -> CommandHandle:
         """``docker exec`` ``command`` into the container; close() owns teardown.
 
@@ -342,10 +342,10 @@ class DockerSession(ComputeSession):
         ----------
         command : str
             The shell command to run in the live container.
-        env : Mapping[str, str], optional
-            Per-command environment variables (``docker exec -e``). Default empty.
         timeout_s : int
             Unused by Docker (the container has no built-in cap).
+        env : Mapping[str, str], optional
+            Per-command environment variables (``docker exec -e``). Default empty.
 
         Returns
         -------
