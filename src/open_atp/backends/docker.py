@@ -157,13 +157,8 @@ class DockerBackend(ComputeBackend):
 
     @property
     def wallclock_overhead_s(self) -> int:
-        """Overhead beyond a command's budget: only container start + kill teardown.
-
-        The workdir is bind-mounted, so there is no push/pull and no warm-cache paging
-        -- a few seconds of ``docker run``/``docker kill`` around the command, covered
-        by a small slack.
-        """
-        return 60
+        """Docker container start/teardown have near-zero overhead; use small buffer."""
+        return 30
 
     def _wrap(self, command: str) -> str:
         """cd into the mount and wire up the warm Mathlib cache before ``command``."""
