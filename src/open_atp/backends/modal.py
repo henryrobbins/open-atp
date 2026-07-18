@@ -565,6 +565,25 @@ class ModalBackend(ComputeBackend):
         """Short identifier for the backend: ``"modal"``."""
         return "modal"
 
+    @property
+    def wallclock_overhead_s(self) -> int:
+        """Overhead beyond a command's budget: provision + sync-back, worst-case.
+
+        Unlike bind-mounted Docker, an isolated Sandbox pays for its own lifecycle
+        outside the command budget: the warm ``lake build`` before real work
+        (:data:`WARM_BUILD_TIMEOUT_S`), the :data:`SYNC_HEADROOM_S` pull window the
+        Sandbox outlives the command by, and slack for the push/pull transfers and the
+        unbounded ``App.lookup``/``Sandbox.create`` RPCs
+        (:data:`EXEC_DEADLINE_MARGIN_S` + :data:`INFRA_EXEC_TIMEOUT_S`). Summed as a
+        backstop, so each bounded phase running long still stays under it.
+        """
+        return (
+            WARM_BUILD_TIMEOUT_S
+            + SYNC_HEADROOM_S
+            + EXEC_DEADLINE_MARGIN_S
+            + INFRA_EXEC_TIMEOUT_S
+        )
+
     def _wrap(self, command: str) -> str:
         """cd into the workdir and wire the warm Mathlib cache before ``command``."""
         return wrap_command(REMOTE_WD, BAKED_LAKE, command)

@@ -18,7 +18,15 @@ from pathlib import Path
 
 import pytest
 
-from open_atp.backends.modal import _modal_image_name, _tar_dir
+from open_atp.backends.modal import (
+    EXEC_DEADLINE_MARGIN_S,
+    INFRA_EXEC_TIMEOUT_S,
+    SYNC_HEADROOM_S,
+    WARM_BUILD_TIMEOUT_S,
+    ModalBackend,
+    _modal_image_name,
+    _tar_dir,
+)
 from open_atp.lean import LeanProject, ToolchainMismatch
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
@@ -78,6 +86,17 @@ def test_modal_image_name_strips_tag() -> None:
     assert _modal_image_name("open-atp:latest") == "open-atp"
     assert _modal_image_name("open-atp") == "open-atp"
     assert _modal_image_name("registry/org/img:v1") == "registry/org/img"
+
+
+def test_wallclock_overhead_sums_provision_and_sync_phases() -> None:
+    # Isolated filesystem: warm build + the SYNC_HEADROOM_S pull window + transfer/RPC
+    # slack, each summed as a backstop -- unlike Docker's few-second bind-mount slack.
+    assert ModalBackend().wallclock_overhead_s == (
+        WARM_BUILD_TIMEOUT_S
+        + SYNC_HEADROOM_S
+        + EXEC_DEADLINE_MARGIN_S
+        + INFRA_EXEC_TIMEOUT_S
+    )
 
 
 # --- live Sandbox parity suite ----------------------------------------------

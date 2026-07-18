@@ -172,6 +172,19 @@ def test_standard_prover_rejects_unknown_name() -> None:
     assert {"aristotle", "claude", "numina"} <= set(standard_provers())
 
 
+def test_max_duration_sums_generation_verify_and_backend_overhead() -> None:
+    prover = FakeProver("fake")
+
+    # The ceiling is the three bounded phases, no hidden padding.
+    assert prover.max_duration_s == (
+        prover.timeout_s
+        + prover.verifier.timeout_s
+        + prover.verifier.backend.wallclock_overhead_s
+    )
+    # Concretely for the defaults over a Docker backend (1800 + 600 + 60).
+    assert prover.max_duration_s == 2460
+
+
 # --- prove: lifecycle ------------------------------------------------------
 
 

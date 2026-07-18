@@ -154,6 +154,13 @@ class AutomatedProver(abc.ABC):
         final check.
     timeout_s : int
         Wall-clock budget for the generation run, in seconds. Default ``1800``.
+
+    Attributes
+    ----------
+    max_duration_s : int
+        Wall-clock ceiling beyond which a :meth:`prove` run has wedged: the generation
+        budget plus the verify budget plus the backend's provisioning/teardown
+        overhead.
     """
 
     name: str = "base"
@@ -168,6 +175,25 @@ class AutomatedProver(abc.ABC):
         # budget for the post-generation compile/axiom check.
         self.timeout_s = timeout_s
         self.verifier = Verifier(backend)
+
+    @property
+    def max_duration_s(self) -> int:
+        """Wall-clock beyond which a :meth:`prove` run has wedged, in seconds.
+
+        The sum of every bounded phase of a run: the generation budget
+        (:attr:`timeout_s`), the shared post-generation verify budget
+        (:attr:`~open_atp.verify.Verifier.timeout_s`), and the backend's
+        provisioning/teardown overhead
+        (:attr:`~open_atp.backends.base.ComputeBackend.wallclock_overhead_s`). A caller
+        can bound a run at this ceiling without knowing how the budget splits internally
+        or what padding a given backend adds: a run exceeding it has stalled rather than
+        merely run long.
+        """
+        return (
+            self.timeout_s
+            + self.verifier.timeout_s
+            + self.verifier.backend.wallclock_overhead_s
+        )
 
     @abc.abstractmethod
     def _generate(

@@ -155,6 +155,16 @@ class DockerBackend(ComputeBackend):
         """Short identifier for the backend: ``"docker"``."""
         return "docker"
 
+    @property
+    def wallclock_overhead_s(self) -> int:
+        """Overhead beyond a command's budget: only container start + kill teardown.
+
+        The workdir is bind-mounted, so there is no push/pull and no warm-cache paging
+        -- a few seconds of ``docker run``/``docker kill`` around the command, covered
+        by a small slack.
+        """
+        return 60
+
     def _wrap(self, command: str) -> str:
         """cd into the mount and wire up the warm Mathlib cache before ``command``."""
         return wrap_command(self.workdir_mount, self.baked_lake, command)

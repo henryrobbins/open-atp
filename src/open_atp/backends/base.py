@@ -209,6 +209,13 @@ class ComputeBackend(abc.ABC):
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
+
+    Attributes
+    ----------
+    name : str
+        Short identifier, e.g. ``"docker"`` or ``"modal"``.
+    wallclock_overhead_s : int
+        Wall-clock time budget required beyond a command's timeout, in seconds.
     """
 
     #: Absolute ``$HOME`` inside the sandbox; per-run credential dirs (an agent's
@@ -232,6 +239,17 @@ class ComputeBackend(abc.ABC):
     @abc.abstractmethod
     def name(self) -> str:
         """Short identifier, e.g. ``"docker"`` or ``"modal"``."""
+
+    @property
+    @abc.abstractmethod
+    def wallclock_overhead_s(self) -> int:
+        """Wall-clock time budget required beyond a command's timeout, in seconds.
+
+        The ``timeout_s`` passed to :meth:`start`/:meth:`run`/:meth:`session` is
+        the *command's* wall-clock budget. The backend may need extra time for
+        spin-up, teardown, file transfer, etc. The time allotted for this overhead
+        is captured here, so a caller can bound the *total* wall-clock for a run.
+        """
 
     @abc.abstractmethod
     def start(

@@ -45,13 +45,6 @@ from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
 
-#: Extra wall-clock added to a prover's generation + verify budgets to form a hard
-#: per-task ceiling. The backend already bounds every individual Modal call, so this is
-#: a last-resort backstop: if a task somehow still exceeds it, the sweep abandons that
-#: run (recorded as a timeout) rather than letting one wedged cell block every other
-#: result.
-TASK_WALLCLOCK_OVERHEAD_S = 600
-
 log = logging.getLogger("open_atp")
 
 
@@ -107,11 +100,6 @@ class BenchmarkResult:
                 for run in self.runs
             ],
         }
-
-
-def _task_ceiling(prover: AutomatedProver) -> float:
-    """Hard per-task wall-clock: generation + verify budgets + overhead."""
-    return prover.timeout_s + prover.verifier.timeout_s + TASK_WALLCLOCK_OVERHEAD_S
 
 
 def _prove_bounded(
@@ -223,7 +211,7 @@ def run_benchmark(
         # (with traceback) inside that binding -- here we only build the error result.
         with gates[prover_name]:
             try:
-                result = _prove_bounded(prover, task, run_dir, _task_ceiling(prover))
+                result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
                 result = ProofResult(
                     prover=prover.name,
