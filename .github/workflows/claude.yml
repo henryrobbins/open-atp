@@ -44,7 +44,9 @@ jobs:
           # prompt: 'Update the pull request description to include a summary of changes.'
 
           # Allow raw GitHub API reads so Claude can fetch inline PR review
-          # comments (batched review threads aren't in the event payload).
+          # comments (batched review threads aren't in the event payload), plus
+          # the uv/make entry points that drive verification (lint, format,
+          # typecheck, test — see AGENTS.md).
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          claude_args: '--allowed-tools "Bash(gh api:*)"'
+          claude_args: '--allowed-tools "Bash(gh api:*),Bash(uv:*),Bash(make:*)"'
 
