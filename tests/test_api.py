@@ -36,7 +36,7 @@ from open_atp.provers.agent_prover import AgentProver
 from open_atp.provers.aristotle import AristotleProver
 from open_atp.provers.base import AutomatedProver, ProofResult
 from open_atp.provers.numina import NuminaProver
-from open_atp.verify import VerificationReport, Verifier
+from open_atp.verify import VerificationReport
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mil_trivial"
 
@@ -68,12 +68,10 @@ class FakeProver(AutomatedProver):
         toolchain: str = DEFAULT_IMAGE.lean_toolchain,
         raises: Exception | None = None,
     ) -> None:
-        # Deliberately skip super().__init__: stand in a no-backend verifier whose
-        # check_compatible (a toolchain comparison against the image) needs no Docker.
-        # The ``toolchain`` knob rides on the backend image to simulate a mismatch.
+        # The ``toolchain`` knob rides on the backend image to simulate a mismatch;
+        # backend construction is offline, so no Docker daemon is contacted.
+        super().__init__(backend=DockerBackend(image=Image(lean_toolchain=toolchain)))
         self.name = name
-        self.timeout_s = 1800
-        self.verifier = Verifier(DockerBackend(image=Image(lean_toolchain=toolchain)))
         self._verified = verified
         self._cost = cost_usd
         self._raises = raises

@@ -110,14 +110,8 @@ class BenchmarkResult:
 
 
 def _task_ceiling(prover: AutomatedProver) -> float:
-    """Hard per-task wall-clock: generation + verify budgets + overhead.
-
-    Reads the budgets defensively (a scripted test prover may not set them) so the
-    ceiling is always defined.
-    """
-    gen = getattr(prover, "timeout_s", 1800)
-    verify = getattr(getattr(prover, "verifier", None), "timeout_s", 600)
-    return gen + verify + TASK_WALLCLOCK_OVERHEAD_S
+    """Hard per-task wall-clock: generation + verify budgets + overhead."""
+    return prover.timeout_s + prover.verifier.timeout_s + TASK_WALLCLOCK_OVERHEAD_S
 
 
 def _prove_bounded(
