@@ -15,6 +15,7 @@ compute.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -27,6 +28,8 @@ from open_atp.lean import LeanProject, MathlibRevMismatch, ToolchainMismatch
 # Axioms that a "clean" Mathlib proof is allowed to depend on. Anything else
 # (notably ``sorryAx``) means the proof is not actually complete.
 STANDARD_AXIOMS = frozenset({"propext", "Classical.choice", "Quot.sound"})
+
+log = logging.getLogger("open_atp")
 
 _SORRY_RE = re.compile(r"declaration uses 'sorry'|uses `sorry`")
 _AXIOMS_RE = re.compile(r"depends on axioms: \[([^\]]*)\]")
@@ -282,7 +285,15 @@ class Verifier:
 
         rel = [t.relative_to(project.root).as_posix() for t in project.lean_files()]
         if not rel:
+            log.warning(
+                "no lean files; trivial pass", extra={"project": str(project.root)}
+            )
             return VerificationReport(compiles=True, sorry_free=True)
+
+        log.debug(
+            "verifying",
+            extra={"files": len(rel), "backend": self.backend.name},
+        )
 
         # The compile/axiom check is the post-generation step: cap it with the
         # verifier's own timeout, not the prover's (larger) generation budget.
@@ -290,19 +301,37 @@ class Verifier:
         if session is None:
             result = self.backend.run(project.root, script, timeout_s=self.timeout_s)
         else:
-            with session.exec(script, timeout_s=self.timeout_s) as handle:
-                result = handle.wait()
-        log = result.stdout + ("\n" + result.stderr if result.stderr else "")
+            result = session.exec(script, timeout_s=self.timeout_s).wait()
+        compile_log = result.stdout + ("\n" + result.stderr if result.stderr else "")
 
-        per_file = self._parse_per_file(log, rel)
+        per_file = self._parse_per_file(compile_log, rel)
         compiles = result.exit_code == 0 and all(per_file.values())
-        return VerificationReport(
+        report = VerificationReport(
             compiles=compiles,
-            sorry_free=not _SORRY_RE.search(log),
-            axioms=self._parse_axioms(log),
-            compile_log=log,
+            sorry_free=not _SORRY_RE.search(compile_log),
+            axioms=self._parse_axioms(compile_log),
+            compile_log=compile_log,
             per_file=per_file,
         )
+
+        log.debug(
+            "verified" if report.verified else "verification failed",
+            extra={
+                "verified": report.verified,
+                "compiles": report.compiles,
+                "sorry_free": report.sorry_free,
+                "axioms": list(report.axioms),
+                "duration_s": round(result.duration_s, 1),
+            },
+        )
+        # A proof that compiles but leans on a foreign axiom (notably sorryAx) is not
+        # actually complete -- easy to miss in the verdict, so call it out.
+        if report.non_standard_axioms:
+            log.warning(
+                "proof depends on non-standard axioms",
+                extra={"axioms": list(report.non_standard_axioms)},
+            )
+        return report
 
     @staticmethod
     def _compile_script(rel: list[str]) -> str:

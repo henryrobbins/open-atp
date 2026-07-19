@@ -73,7 +73,7 @@ class _FakeSession(ComputeSession):
         command: str,
         *,
         env: Mapping[str, str] | None = None,
-        timeout_s: int | None = None,
+        timeout_s: int,
     ) -> CommandHandle:
         return _FakeHandle()
 

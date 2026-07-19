@@ -18,10 +18,13 @@ sorry-injection helpers) is not used here.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+
+log = logging.getLogger("open_atp")
 
 #: Tactic-block bullet tokens; a block introduced by one of these is a proof step,
 #: not a declaration, and is parsed specially.
@@ -260,8 +263,10 @@ def extract_statements_from_file(file_path: Path) -> dict[str, str]:
             if name:
                 statements[name] = statement
         return statements
-    except Exception as e:  # noqa: BLE001 - parsing is best-effort; never crash a run
-        print(f"[warn] Failed to extract statements from {file_path}: {e}")
+    except Exception:  # noqa: BLE001 - parsing is best-effort; never crash a run
+        log.warning(
+            "statement extraction failed", extra={"file": str(file_path)}, exc_info=True
+        )
         return {}
 
 
@@ -359,7 +364,7 @@ class StatementTracker:
         if changes is None:
             _, changes = self.check_initial_statements()
         if not changes:
-            print("[info] No statement changes to restore")
+            log.debug("no statement changes to restore")
             return
 
         changes_by_file: dict[Path, list[StatementChange]] = {}
@@ -373,7 +378,9 @@ class StatementTracker:
             if not initial_content:
                 continue
             if not f.exists():
-                print(f"[info] File {f} was deleted, restoring from initial content...")
+                log.warning(
+                    "agent deleted tracked file; restoring", extra={"file": str(f)}
+                )
                 f.parent.mkdir(parents=True, exist_ok=True)
                 f.write_text(initial_content, encoding="utf-8")
                 restored_files.add(f)
@@ -406,7 +413,10 @@ class StatementTracker:
                         new_content = (
                             new_content + "\n\n" + original_stmt + " := by sorry"
                         )
-                        print(f"[info] Restored removed '{change.name}' in {f}")
+                        log.info(
+                            "restored removed statement",
+                            extra={"name": change.name, "file": str(f)},
+                        )
                 elif change.change_type == "modified":
                     if (
                         change.name in initial_statements
@@ -426,11 +436,13 @@ class StatementTracker:
                             new_content = new_content.replace(
                                 current_block_text, orig_block_text
                             )
-                            print(
-                                f"[info] Restored modified statement '{change.name}'"
-                                f" in {f}"
+                            log.info(
+                                "restored modified statement",
+                                extra={"name": change.name, "file": str(f)},
                             )
 
             if new_content != current_content:
                 f.write_text(new_content, encoding="utf-8")
-                print(f"[info] Updated {f} with restored statements")
+                log.debug(
+                    "rewrote file with restored statements", extra={"file": str(f)}
+                )

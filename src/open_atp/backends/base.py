@@ -19,6 +19,24 @@ from typing import cast
 
 from open_atp.images import DEFAULT_IMAGE, Image
 
+#: Working directory inside the sandbox -- Docker bind-mounts the host workdir here,
+#: Modal pushes it here. One convention shared by both backends.
+WORKDIR_MOUNT = "/workspace/wd"
+#: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
+BAKED_LAKE = "/workspace/.lake"
+
+
+class ComputeError(RuntimeError):
+    """Parent Exception class for backend compute errors."""
+
+
+class ExecTimeout(ComputeError):
+    """A command on backend compute exceeds its timeout deadline."""
+
+
+class SandboxUnreachable(ComputeError):
+    """The backend compute sandbox became unreachable mid-run."""
+
 
 @dataclass
 class CommandResult:
@@ -43,12 +61,13 @@ class CommandResult:
 
 
 @dataclass
-class CommandHandle(AbstractContextManager["CommandHandle"]):
-    """A live, streaming command. Concrete backends subclass and fill the hooks.
+class CommandHandle:
+    """A live command running in a session's sandbox. Backends fill the hooks.
 
     Streaming matters for agents (we want incremental stdout for cost/progress
     parsing) but is equally usable for a blocking ``lake`` invocation via
-    :meth:`wait`.
+    :meth:`wait`. The handle owns no teardown: the sandbox is the session's, torn
+    down by :meth:`ComputeSession.close`.
     """
 
     def stream(self) -> Iterator[str]:
@@ -61,10 +80,6 @@ class CommandHandle(AbstractContextManager["CommandHandle"]):
         """
         raise NotImplementedError
 
-    def cancel(self) -> None:
-        """Best-effort termination (e.g. ``docker kill`` / sandbox terminate)."""
-        raise NotImplementedError
-
     def wait(self) -> CommandResult:
         """Drain to completion and return the final result.
 
@@ -75,17 +90,14 @@ class CommandHandle(AbstractContextManager["CommandHandle"]):
         """
         raise NotImplementedError
 
-    def __exit__(self, *exc: object) -> None:
-        self.cancel()
-
 
 class ComputeSession(AbstractContextManager["ComputeSession"]):
     """A persistent sandbox over a workdir, exec'd many times, torn down once.
 
-    The one-shot :meth:`ComputeBackend.start`/:meth:`ComputeBackend.run` pair creates
-    a sandbox, runs a *single* command, and tears it down. A session keeps the sandbox
-    alive so several commands can run against the same hot filesystem -- the agent's
-    generation *then* the verifier's compile -- without paying a second spin-up.
+    The one-shot :meth:`ComputeBackend.run` creates a sandbox, runs a *single*
+    command, and tears it down. A session keeps the sandbox alive so several commands
+    can run against the same hot filesystem -- the agent's generation *then* the
+    verifier's compile -- without paying a second spin-up.
 
     Lifecycle invariant: teardown lives in :meth:`close` (not in the handle's
     ``wait``), so a session MUST be used as a context manager and :meth:`close` MUST be
@@ -105,8 +117,7 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
 
         backend = DockerBackend(image=DEFAULT_IMAGE)
         with backend.session(workdir, timeout_s=1800) as session:
-            with session.exec("lake env lean Demo.lean") as handle:
-                result = handle.wait()
+            result = session.exec("lake env lean Demo.lean", timeout_s=300).wait()
             session.sync_out()   # pull the agent's edits back to the host
         # the sandbox is torn down on exit, even if exec raised
     """
@@ -115,8 +126,8 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         self,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandHandle:
         """Run ``command`` in the live sandbox; the handle does NOT tear it down.
 
@@ -124,12 +135,11 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         ----------
         command : str
             The shell command to run in the live sandbox.
+        timeout_s : int
+            Wall-clock cap for the command, in seconds.
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
-        timeout_s : int, optional
-            Wall-clock cap for the command. ``None`` leaves it to the backend's own
-            default. Default ``None``.
 
         Returns
         -------
@@ -155,21 +165,16 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         self.close()
 
 
-def wrap_command(workdir_mount: str, baked_lake: str, command: str) -> str:
+def wrap_command(command: str) -> str:
     """``cd`` into the workdir mount and wire the warm Mathlib cache before ``command``.
 
     The one image-layout convention the backends own: symlink the workdir's ``.lake``
     to the image-baked olean cache so uploaded projects reuse it. Identical for Docker
-    (bind mount) and Modal (pushed dir), so it lives here rather than in either backend.
-    ``baked_lake`` empty skips the symlink.
+    (bind mount) and Modal (pushed dir), so it lives here rather than in either backend,
+    over the shared :data:`WORKDIR_MOUNT` / :data:`BAKED_LAKE` layout.
 
     Parameters
     ----------
-    workdir_mount : str
-        Path inside the sandbox to ``cd`` into before running ``command``.
-    baked_lake : str
-        Image-baked olean cache to symlink the workdir's ``.lake`` to; empty skips the
-        symlink.
     command : str
         The command to run once the cache is wired.
 
@@ -178,9 +183,9 @@ def wrap_command(workdir_mount: str, baked_lake: str, command: str) -> str:
     str
         A single shell string: the cache prep followed by ``command``.
     """
-    prep = f"cd {workdir_mount}"
-    if baked_lake:
-        prep += f" && {{ [ -e {baked_lake} ] && ln -sfn {baked_lake} .lake || true; }}"
+    prep = f"cd {WORKDIR_MOUNT}"
+    if BAKED_LAKE:
+        prep += f" && {{ [ -e {BAKED_LAKE} ] && ln -sfn {BAKED_LAKE} .lake || true; }}"
     return f"{prep}; {command}"
 
 
@@ -198,6 +203,13 @@ class ComputeBackend(abc.ABC):
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
+
+    Attributes
+    ----------
+    name : str
+        Short identifier, e.g. ``"docker"`` or ``"modal"``.
+    wallclock_overhead_s : int
+        Wall-clock time budget required beyond a command's timeout, in seconds.
     """
 
     #: Absolute ``$HOME`` inside the sandbox; per-run credential dirs (an agent's
@@ -222,45 +234,15 @@ class ComputeBackend(abc.ABC):
     def name(self) -> str:
         """Short identifier, e.g. ``"docker"`` or ``"modal"``."""
 
+    @property
     @abc.abstractmethod
-    def start(
-        self,
-        workdir: Path,
-        command: str,
-        *,
-        timeout_s: int,
-        env: Mapping[str, str] | None = None,
-        mounts: Sequence[tuple[str, str]] | None = None,
-    ) -> CommandHandle:
-        """Launch ``command`` with ``workdir`` mounted/synced into the sandbox.
+    def wallclock_overhead_s(self) -> int:
+        """Wall-clock time budget required beyond a command's timeout, in seconds.
 
-        The workdir is synced in before launch and synced back out on completion so
-        that file mutations (completed proofs) are visible to the caller.
-
-        ``mounts`` are extra ``(host_path, container_path)`` bind mounts beyond the
-        workdir -- used to forward agent credential dirs (e.g. Codex's ``~/.codex``)
-        per run, without baking them into the backend config.
-
-        Parameters
-        ----------
-        workdir : pathlib.Path
-            Host directory mounted/synced into the sandbox; file mutations are synced
-            back out on completion.
-        command : str
-            The shell command to run inside the sandbox.
-        timeout_s : int
-            Wall-clock cap for the command, in seconds.
-        env : Mapping[str, str], optional
-            Per-call environment variables, merged over the backend's :attr:`env`.
-            Default empty.
-        mounts : Sequence[tuple[str, str]], optional
-            Extra ``(host_path, container_path)`` bind mounts beyond the workdir (e.g.
-            agent credential dirs). Default empty.
-
-        Returns
-        -------
-        CommandHandle
-            A live handle to stream or :meth:`~CommandHandle.wait` on.
+        The ``timeout_s`` passed to :meth:`run`/:meth:`session` is the *command's*
+        wall-clock budget. The backend may need extra time for
+        spin-up, teardown, file transfer, etc. The time allotted for this overhead
+        is captured here, so a caller can bound the *total* wall-clock for a run.
         """
 
     @abc.abstractmethod
@@ -274,7 +256,7 @@ class ComputeBackend(abc.ABC):
     ) -> ComputeSession:
         """Open a persistent sandbox over ``workdir`` for multiple :meth:`exec` calls.
 
-        Unlike :meth:`start` (one command, then teardown), the returned
+        Unlike :meth:`run` (one command, then teardown), the returned
         :class:`ComputeSession` stays alive until :meth:`ComputeSession.close`, so the
         same hot sandbox can run generation *and* verification back to back.
 
@@ -311,7 +293,11 @@ class ComputeBackend(abc.ABC):
         env: Mapping[str, str] | None = None,
         mounts: Sequence[tuple[str, str]] | None = None,
     ) -> CommandResult:
-        """Convenience: :meth:`start` then block via :meth:`CommandHandle.wait`.
+        """Run a single ``command`` in a fresh sandbox over ``workdir``, then tear down.
+
+        A one-shot :meth:`session`: the workdir (and any ``mounts``) is synced in,
+        the command runs to completion, and the sandbox is torn down -- pulling file
+        mutations (completed proofs) back to the host on the way out.
 
         Parameters
         ----------
@@ -333,10 +319,10 @@ class ComputeBackend(abc.ABC):
         CommandResult
             Exit code, captured stdout/stderr, and wall-clock duration.
         """
-        with self.start(
-            workdir, command, env=env, mounts=mounts, timeout_s=timeout_s
-        ) as handle:
-            return handle.wait()
+        with self.session(
+            workdir, timeout_s=timeout_s, env=env, mounts=mounts
+        ) as session:
+            return session.exec(command, timeout_s=timeout_s).wait()
 
     def test(self) -> bool:
         """Smoke-test the backend by verifying a trivial proof end to end.

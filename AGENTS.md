@@ -252,7 +252,7 @@ Practical rules:
 - **Do not** add `:exclude-members:` for attributes, params, or `name` — the hook
   already handles them. The only legitimate `:exclude-members:` is to hide an
   **overridden method** from a child page so it stays documented on the base only
-  (current uses: `start` on the backend impls, `stage` on the harness impls).
+  (current use: `stage` on the harness impls).
 - A new attribute/`@property` only shows up if you add it to the docstring `Attributes`
   section.
 - `make docs` builds with `-W` (warnings are errors) — a broken xref or duplicate
@@ -283,3 +283,9 @@ metadata). **Edit the YAML, never the tables by hand.**
 - Never modify or commit anything under `refs/` (read-only reference symlinks) or
   reformat anything under `vendor/` (upstream-tracked).
 - Keep `mypy --strict` and ruff clean; run `make check` before pushing.
+- A plain `threading.Thread` does **not** inherit the caller's `contextvars` context
+  (each new thread starts fresh), so `structlog.contextvars`-bound fields (`prover`,
+  `run_id`, `task`, set via `bound_contextvars` in `provers/base.py`) silently vanish
+  from any logging done inside the thread. When running blocking work on a worker
+  thread, capture `contextvars.copy_context()` on the calling thread and run the
+  target via `ctx.run(fn)` (see `_run_bounded` in `backends/modal.py`).

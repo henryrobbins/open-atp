@@ -13,6 +13,7 @@ Runs an arbitrary command over a workdir in a Lean+Mathlib container. Mechanics:
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
 import uuid
@@ -21,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from open_atp.backends.base import (
+    WORKDIR_MOUNT,
     CommandHandle,
     CommandResult,
     ComputeBackend,
@@ -29,9 +31,18 @@ from open_atp.backends.base import (
 )
 from open_atp.images import DEFAULT_IMAGE, Image
 
+log = logging.getLogger("open_atp")
+
 
 @dataclass
 class DockerCommandHandle(CommandHandle):
+    """A command ``docker exec``'d into a live :class:`DockerSession`.
+
+    The handle owns no teardown: the session owns the container's lifecycle
+    (``close`` -> ``docker kill``), so a finished exec leaves the container up for
+    the next command.
+    """
+
     popen: subprocess.Popen[str]
     container: str
     started_at: float
@@ -45,39 +56,26 @@ class DockerCommandHandle(CommandHandle):
             self._stdout_lines.append(line)
             yield line
 
-    def cancel(self) -> None:
-        """``docker kill`` the container (bind-mounted artifacts already on host)."""
-        subprocess.run(
-            ["docker", "kill", self.container],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
     def wait(self) -> CommandResult:
         """Block for the container to exit and collect its captured output."""
         stdout, stderr = self.popen.communicate()
         # communicate() returns "" for streams already drained via stream().
         out = stdout if stdout else "\n".join(self._stdout_lines)
-        return CommandResult(
+        result = CommandResult(
             exit_code=self.popen.returncode,
             stdout=out,
             stderr=stderr or "",
             duration_s=time.time() - self.started_at,
         )
-
-
-@dataclass
-class DockerSessionHandle(DockerCommandHandle):
-    """A command ``docker exec``'d into a live :class:`DockerSession`.
-
-    Identical streaming/wait to the one-shot handle, but :meth:`cancel` is a no-op:
-    the session owns the container's lifecycle (``close`` -> ``docker kill``), so one
-    exec finishing -- or its context-manager ``__exit__`` -- must not tear the
-    container down out from under the next command.
-    """
-
-    def cancel(self) -> None:
-        """No-op: the owning session, not the handle, kills the container."""
+        log.debug(
+            "docker command exited",
+            extra={
+                "container": self.container,
+                "exit_code": result.exit_code,
+                "duration_s": round(result.duration_s, 1),
+            },
+        )
+        return result
 
 
 class DockerBackend(ComputeBackend):
@@ -98,12 +96,6 @@ class DockerBackend(ComputeBackend):
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
-    workdir_mount : str
-        Path inside the container where the workdir is bind-mounted. Default
-        ``/workspace/wd``.
-    baked_lake : str
-        Image-baked warm cache to symlink the workdir's ``.lake`` to. Empty skips the
-        symlink. Default ``/workspace/.lake``.
     volumes : tuple[tuple[str, str], ...]
         Extra ``-v host:container`` mounts (e.g. agent credential dirs). Default empty.
 
@@ -115,8 +107,6 @@ class DockerBackend(ComputeBackend):
     >>> backend = DockerBackend(image=DEFAULT_IMAGE)
     >>> backend.name
     'docker'
-    >>> backend.workdir_mount
-    '/workspace/wd'
     """
 
     # The image runs as the non-root ``agent`` user (Lean's elan + Claude Code
@@ -128,13 +118,9 @@ class DockerBackend(ComputeBackend):
         *,
         image: Image | Mapping[str, object] = DEFAULT_IMAGE,
         env: Mapping[str, str] | None = None,
-        workdir_mount: str = "/workspace/wd",
-        baked_lake: str = "/workspace/.lake",
         volumes: tuple[tuple[str, str], ...] = (),
     ) -> None:
         super().__init__(image=image, env=env)
-        self.workdir_mount = workdir_mount
-        self.baked_lake = baked_lake
         self.volumes = tuple(tuple(v) for v in volumes)
 
     @property
@@ -142,9 +128,10 @@ class DockerBackend(ComputeBackend):
         """Short identifier for the backend: ``"docker"``."""
         return "docker"
 
-    def _wrap(self, command: str) -> str:
-        """cd into the mount and wire up the warm Mathlib cache before ``command``."""
-        return wrap_command(self.workdir_mount, self.baked_lake, command)
+    @property
+    def wallclock_overhead_s(self) -> int:
+        """Docker container start/teardown have near-zero overhead; use small buffer."""
+        return 30
 
     def _build_cmd(
         self,
@@ -152,15 +139,14 @@ class DockerBackend(ComputeBackend):
         container: str,
         env: Mapping[str, str],
         mounts: Sequence[tuple[str, str]],
-        *,
-        detach: bool = False,
     ) -> list[str]:
         """Build the ``docker run`` argv: workdir + extra mounts, env, and image.
 
         Parameters
         ----------
         workdir : pathlib.Path
-            Host directory bind-mounted at :attr:`workdir_mount`.
+            Host directory bind-mounted at
+            :data:`~open_atp.backends.base.WORKDIR_MOUNT`.
         container : str
             ``--name`` for the container, so a run can later be ``docker kill``ed.
         env : Mapping[str, str]
@@ -168,20 +154,16 @@ class DockerBackend(ComputeBackend):
         mounts : Sequence[tuple[str, str]]
             Extra ``(host_path, container_path)`` bind mounts appended after
             :attr:`volumes`.
-        detach : bool
-            Add ``-d`` for a keep-alive session container (commands then land via
-            ``docker exec``). Default ``False``.
 
         Returns
         -------
         list[str]
             The ``docker run`` argv, up to but not including the in-container command.
         """
-        cmd = ["docker", "run", "--rm"]
-        if detach:
-            cmd.append("-d")
+        # Detached keep-alive container; commands land via ``docker exec``.
+        cmd = ["docker", "run", "--rm", "-d"]
         cmd += ["--name", container]
-        cmd += ["-v", f"{workdir.resolve()}:{self.workdir_mount}"]
+        cmd += ["-v", f"{workdir.resolve()}:{WORKDIR_MOUNT}"]
         # Backend-level mounts (baked in) then per-call mounts (e.g. credential dirs).
         for host, dest in (*self.volumes, *mounts):
             cmd += ["-v", f"{host}:{dest}"]
@@ -189,57 +171,6 @@ class DockerBackend(ComputeBackend):
             cmd += ["-e", f"{key}={value}"]
         cmd += [self.image.name]
         return cmd
-
-    def start(
-        self,
-        workdir: Path,
-        command: str,
-        *,
-        timeout_s: int,
-        env: Mapping[str, str] | None = None,
-        mounts: Sequence[tuple[str, str]] | None = None,
-    ) -> CommandHandle:
-        """``docker run`` ``command`` with ``workdir`` bind-mounted, returning a handle.
-
-        Edits land on the host directly via the bind mount, so there is no copy-out
-        step; the unique container name lets :meth:`DockerCommandHandle.cancel` kill it.
-
-        Parameters
-        ----------
-        workdir : pathlib.Path
-            Host directory bind-mounted at :attr:`workdir_mount`; the command's edits
-            land here directly.
-        command : str
-            The shell command to run inside the container.
-        timeout_s : int
-            Unused by Docker (the container has no built-in cap); callers enforce
-            timeouts on the handle.
-        env : Mapping[str, str], optional
-            Per-call environment variables, merged over the backend's :attr:`env`.
-            Default empty.
-        mounts : Sequence[tuple[str, str]], optional
-            Extra ``(host_path, container_path)`` bind mounts (e.g. agent credential
-            dirs). Default empty.
-
-        Returns
-        -------
-        CommandHandle
-            A live :class:`DockerCommandHandle` to stream or :meth:`~CommandHandle.wait`
-            on.
-        """
-        container = f"afps-{uuid.uuid4().hex[:12]}"
-        argv = self._build_cmd(workdir, container, env or {}, mounts or ())
-        argv += ["bash", "-lc", self._wrap(command)]
-        popen = subprocess.Popen(
-            argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
-        )
-        return DockerCommandHandle(
-            popen=popen, container=container, started_at=time.time()
-        )
 
     def session(
         self,
@@ -257,7 +188,8 @@ class DockerBackend(ComputeBackend):
         Parameters
         ----------
         workdir : pathlib.Path
-            Host directory bind-mounted at :attr:`workdir_mount` for the session's life.
+            Host directory bind-mounted at
+            :data:`~open_atp.backends.base.WORKDIR_MOUNT` for the session's life.
         timeout_s : int
             Unused by Docker (the container has no built-in cap).
         env : Mapping[str, str], optional
@@ -273,12 +205,24 @@ class DockerBackend(ComputeBackend):
             A live :class:`DockerSession` over the workdir.
         """
         container = f"afps-{uuid.uuid4().hex[:12]}"
-        argv = self._build_cmd(workdir, container, env or {}, mounts or (), detach=True)
+        argv = self._build_cmd(workdir, container, env or {}, mounts or ())
         argv += ["sleep", "infinity"]
+        log.debug(
+            "docker session start",
+            extra={
+                "container": container,
+                "image": self.image.name,
+                "env_keys": sorted({**self.env, **(env or {})}),
+            },
+        )
         proc = subprocess.run(
             argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
         )
         if proc.returncode != 0:
+            log.error(
+                "docker session container failed to start",
+                extra={"container": container, "stderr": proc.stderr.strip()},
+            )
             raise RuntimeError(
                 f"failed to start docker session container: {proc.stderr.strip()}"
             )
@@ -300,8 +244,8 @@ class DockerSession(ComputeSession):
         self,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandHandle:
         """``docker exec`` ``command`` into the container; close() owns teardown.
 
@@ -309,21 +253,24 @@ class DockerSession(ComputeSession):
         ----------
         command : str
             The shell command to run in the live container.
+        timeout_s : int
+            Unused by Docker (the container has no built-in cap).
         env : Mapping[str, str], optional
             Per-command environment variables (``docker exec -e``). Default empty.
-        timeout_s : int, optional
-            Unused by Docker (the container has no built-in cap). Default ``None``.
 
         Returns
         -------
         CommandHandle
-            A live :class:`DockerSessionHandle` whose ``cancel`` is a no-op (the session
-            owns teardown).
+            A live :class:`DockerCommandHandle`; the session owns teardown.
         """
         argv = ["docker", "exec"]
         for key, value in (env or {}).items():
             argv += ["-e", f"{key}={value}"]
-        argv += [self.container, "bash", "-lc", self.backend._wrap(command)]
+        argv += [self.container, "bash", "-lc", wrap_command(command)]
+        log.debug(
+            "docker exec",
+            extra={"container": self.container, "env_keys": sorted(env or {})},
+        )
         popen = subprocess.Popen(
             argv,
             stdout=subprocess.PIPE,
@@ -331,7 +278,7 @@ class DockerSession(ComputeSession):
             text=True,
             start_new_session=True,
         )
-        return DockerSessionHandle(
+        return DockerCommandHandle(
             popen=popen, container=self.container, started_at=time.time()
         )
 
@@ -343,6 +290,7 @@ class DockerSession(ComputeSession):
 
     def close(self) -> None:
         """``docker kill`` the keep-alive container. Idempotent."""
+        log.debug("docker session close", extra={"container": self.container})
         subprocess.run(
             ["docker", "kill", self.container],
             stdout=subprocess.DEVNULL,
