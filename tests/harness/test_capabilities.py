@@ -226,11 +226,11 @@ def _run(harness_name: str, backend_name: str, run_dir: Path, action: str) -> Pa
     env, mounts = _auth(harness, backend)
 
     lines: list[str] = []
-    with backend.start(
-        wd, harness.command, env=env, mounts=mounts, timeout_s=600
-    ) as handle:
+    with backend.session(wd, timeout_s=600, env=env, mounts=mounts) as session:
+        handle = session.exec(harness.command, timeout_s=600)
         lines.extend(handle.stream())
         handle.wait()
+        session.sync_out()
 
     jsonl = run_dir / "agent_output.jsonl"
     jsonl.write_text("\n".join(lines))
