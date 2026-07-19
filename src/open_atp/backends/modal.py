@@ -38,6 +38,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn, cast
 
+import modal
+
 from open_atp.backends.base import (
     CommandHandle,
     CommandResult,
@@ -51,7 +53,6 @@ from open_atp.backends.base import (
 from open_atp.images import DEFAULT_IMAGE, Image
 
 if TYPE_CHECKING:
-    import modal
     from modal.container_process import ContainerProcess
 
 log = logging.getLogger("open_atp")
@@ -78,17 +79,6 @@ TERMINATE_TIMEOUT_S = 5
 DRAIN_GRACE_S = 15
 #: Poll interval for Sandbox liveness check while blocked.
 LIVENESS_POLL_INTERVAL_S = 5
-
-
-def _require_modal() -> None:
-    """Validate that ``modal`` is importable, with an actionable error if not."""
-    try:
-        import modal  # noqa: F401
-    except ModuleNotFoundError as exc:  # pragma: no cover
-        raise RuntimeError(
-            "the modal compute backend requires the `modal` package; "
-            "install it with `pip install open-atp` (modal is a core dependency)"
-        ) from exc
 
 
 def _is_dead(sb: modal.Sandbox) -> bool:
@@ -598,8 +588,6 @@ class ModalBackend(ComputeBackend):
         exists yet to poll for liveness, and no failures have been observed in
         practice.
         """
-        import modal
-
         app = modal.App.lookup(self.app, create_if_missing=True)
         image = modal.Image.from_name(_modal_image_name(self.image.name))
 
@@ -705,7 +693,6 @@ class ModalBackend(ComputeBackend):
             A live :class:`ModalCommandHandle` to stream or :meth:`~CommandHandle.wait`
             on.
         """
-        _require_modal()
         sb = self._provision(
             workdir=workdir, timeout_s=timeout_s, env=env, mounts=mounts
         )
@@ -769,7 +756,6 @@ class ModalBackend(ComputeBackend):
         ComputeSession
             A live :class:`ModalSession` over the workdir.
         """
-        _require_modal()
         sb = self._provision(
             workdir=workdir, timeout_s=timeout_s, env=env, mounts=mounts
         )
@@ -814,8 +800,6 @@ class ModalSession(ComputeSession):
             A live :class:`ModalSessionHandle` whose ``wait`` leaves the Sandbox up for
             the next command.
         """
-        import modal
-
         # Per-command env is rare (the agent's creds are pinned at session create), so
         # this is usually an empty secret list.
         secrets = [modal.Secret.from_dict(dict(env))] if env else []
