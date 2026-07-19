@@ -133,6 +133,7 @@ STANDARD_PROVERS: dict[str, dict[str, object]] = {
     "opencode": {"type": "agent", "harness": {"type": "opencode"}},
     "leanstral": {"type": "agent", "harness": {"type": "vibe"}},
     "axproverbase": {"type": "agent", "harness": {"type": "axproverbase"}},
+    "kimi": {"type": "agent", "harness": {"type": "kimi"}},
     "numina": {"type": "numina"},
     "aristotle": {"type": "aristotle"},
 }

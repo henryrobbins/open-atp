@@ -64,6 +64,7 @@ The `ID` is the standard prover name used by `standard_prover`, the CLI `prove` 
 | [OpenCode](docs/provers/opencode.md) | `opencode` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/sst/opencode) |
 | [AxProverBase](docs/provers/axproverbase.md) | `axproverbase` | — | ✗ | [Requena et al. 2026](https://openreview.net/forum?id=E30g7bO7rU) | [GitHub](https://github.com/Axiomatic-AI/ax-prover-base) |
 | [Leanstral](docs/provers/leanstral.md) | `leanstral` | [leanprover](https://github.com/leanprover/skills) | ✓ | [Leanstral (blog)](https://mistral.ai/news/leanstral) | [HuggingFace](https://huggingface.co/mistralai/Leanstral-2603) |
+| [Kimi Code](docs/provers/kimi.md) | `kimi` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/MoonshotAI/kimi-code) |
 | [Numina](docs/provers/numina.md) | `numina` | — | ✓ | [Liu et al. 2026](https://arxiv.org/abs/2601.14027) | [GitHub](https://github.com/project-numina/numina-lean-agent) |
 | [Aristotle](docs/provers/aristotle.md) | `aristotle` | — | — | [Achim et al. 2025](https://arxiv.org/abs/2510.01346) | — |
 <!-- END PROVER TABLE -->

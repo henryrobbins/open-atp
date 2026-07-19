@@ -20,6 +20,7 @@ codex
 opencode
 axproverbase
 leanstral
+kimi
 numina
 aristotle
 ```
