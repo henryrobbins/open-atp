@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from open_atp.backends.base import (
+    WORKDIR_MOUNT,
     CommandHandle,
     CommandResult,
     ComputeBackend,
@@ -111,12 +112,6 @@ class DockerBackend(ComputeBackend):
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
-    workdir_mount : str
-        Path inside the container where the workdir is bind-mounted. Default
-        ``/workspace/wd``.
-    baked_lake : str
-        Image-baked warm cache to symlink the workdir's ``.lake`` to. Empty skips the
-        symlink. Default ``/workspace/.lake``.
     volumes : tuple[tuple[str, str], ...]
         Extra ``-v host:container`` mounts (e.g. agent credential dirs). Default empty.
 
@@ -128,8 +123,6 @@ class DockerBackend(ComputeBackend):
     >>> backend = DockerBackend(image=DEFAULT_IMAGE)
     >>> backend.name
     'docker'
-    >>> backend.workdir_mount
-    '/workspace/wd'
     """
 
     # The image runs as the non-root ``agent`` user (Lean's elan + Claude Code
@@ -141,13 +134,9 @@ class DockerBackend(ComputeBackend):
         *,
         image: Image | Mapping[str, object] = DEFAULT_IMAGE,
         env: Mapping[str, str] | None = None,
-        workdir_mount: str = "/workspace/wd",
-        baked_lake: str = "/workspace/.lake",
         volumes: tuple[tuple[str, str], ...] = (),
     ) -> None:
         super().__init__(image=image, env=env)
-        self.workdir_mount = workdir_mount
-        self.baked_lake = baked_lake
         self.volumes = tuple(tuple(v) for v in volumes)
 
     @property
@@ -159,10 +148,6 @@ class DockerBackend(ComputeBackend):
     def wallclock_overhead_s(self) -> int:
         """Docker container start/teardown have near-zero overhead; use small buffer."""
         return 30
-
-    def _wrap(self, command: str) -> str:
-        """cd into the mount and wire up the warm Mathlib cache before ``command``."""
-        return wrap_command(self.workdir_mount, self.baked_lake, command)
 
     def _build_cmd(
         self,
@@ -178,7 +163,8 @@ class DockerBackend(ComputeBackend):
         Parameters
         ----------
         workdir : pathlib.Path
-            Host directory bind-mounted at :attr:`workdir_mount`.
+            Host directory bind-mounted at
+            :data:`~open_atp.backends.base.WORKDIR_MOUNT`.
         container : str
             ``--name`` for the container, so a run can later be ``docker kill``ed.
         env : Mapping[str, str]
@@ -199,7 +185,7 @@ class DockerBackend(ComputeBackend):
         if detach:
             cmd.append("-d")
         cmd += ["--name", container]
-        cmd += ["-v", f"{workdir.resolve()}:{self.workdir_mount}"]
+        cmd += ["-v", f"{workdir.resolve()}:{WORKDIR_MOUNT}"]
         # Backend-level mounts (baked in) then per-call mounts (e.g. credential dirs).
         for host, dest in (*self.volumes, *mounts):
             cmd += ["-v", f"{host}:{dest}"]
@@ -225,7 +211,8 @@ class DockerBackend(ComputeBackend):
         Parameters
         ----------
         workdir : pathlib.Path
-            Host directory bind-mounted at :attr:`workdir_mount`; the command's edits
+            Host directory bind-mounted at
+            :data:`~open_atp.backends.base.WORKDIR_MOUNT`; the command's edits
             land here directly.
         command : str
             The shell command to run inside the container.
@@ -247,7 +234,7 @@ class DockerBackend(ComputeBackend):
         """
         container = f"afps-{uuid.uuid4().hex[:12]}"
         argv = self._build_cmd(workdir, container, env or {}, mounts or ())
-        argv += ["bash", "-lc", self._wrap(command)]
+        argv += ["bash", "-lc", wrap_command(command)]
         log.debug(
             "docker run",
             extra={
@@ -283,7 +270,8 @@ class DockerBackend(ComputeBackend):
         Parameters
         ----------
         workdir : pathlib.Path
-            Host directory bind-mounted at :attr:`workdir_mount` for the session's life.
+            Host directory bind-mounted at
+            :data:`~open_atp.backends.base.WORKDIR_MOUNT` for the session's life.
         timeout_s : int
             Unused by Docker (the container has no built-in cap).
         env : Mapping[str, str], optional
@@ -361,7 +349,7 @@ class DockerSession(ComputeSession):
         argv = ["docker", "exec"]
         for key, value in (env or {}).items():
             argv += ["-e", f"{key}={value}"]
-        argv += [self.container, "bash", "-lc", self.backend._wrap(command)]
+        argv += [self.container, "bash", "-lc", wrap_command(command)]
         log.debug(
             "docker exec",
             extra={"container": self.container, "env_keys": sorted(env or {})},

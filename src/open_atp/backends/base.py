@@ -19,6 +19,12 @@ from typing import cast
 
 from open_atp.images import DEFAULT_IMAGE, Image
 
+#: Working directory inside the sandbox -- Docker bind-mounts the host workdir here,
+#: Modal pushes it here. One convention shared by both backends.
+WORKDIR_MOUNT = "/workspace/wd"
+#: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
+BAKED_LAKE = "/workspace/.lake"
+
 
 class ComputeError(RuntimeError):
     """Parent Exception class for backend compute errors."""
@@ -166,21 +172,16 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         self.close()
 
 
-def wrap_command(workdir_mount: str, baked_lake: str, command: str) -> str:
+def wrap_command(command: str) -> str:
     """``cd`` into the workdir mount and wire the warm Mathlib cache before ``command``.
 
     The one image-layout convention the backends own: symlink the workdir's ``.lake``
     to the image-baked olean cache so uploaded projects reuse it. Identical for Docker
-    (bind mount) and Modal (pushed dir), so it lives here rather than in either backend.
-    ``baked_lake`` empty skips the symlink.
+    (bind mount) and Modal (pushed dir), so it lives here rather than in either backend,
+    over the shared :data:`WORKDIR_MOUNT` / :data:`BAKED_LAKE` layout.
 
     Parameters
     ----------
-    workdir_mount : str
-        Path inside the sandbox to ``cd`` into before running ``command``.
-    baked_lake : str
-        Image-baked olean cache to symlink the workdir's ``.lake`` to; empty skips the
-        symlink.
     command : str
         The command to run once the cache is wired.
 
@@ -189,9 +190,9 @@ def wrap_command(workdir_mount: str, baked_lake: str, command: str) -> str:
     str
         A single shell string: the cache prep followed by ``command``.
     """
-    prep = f"cd {workdir_mount}"
-    if baked_lake:
-        prep += f" && {{ [ -e {baked_lake} ] && ln -sfn {baked_lake} .lake || true; }}"
+    prep = f"cd {WORKDIR_MOUNT}"
+    if BAKED_LAKE:
+        prep += f" && {{ [ -e {BAKED_LAKE} ] && ln -sfn {BAKED_LAKE} .lake || true; }}"
     return f"{prep}; {command}"
 
 

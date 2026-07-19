@@ -41,6 +41,8 @@ from typing import TYPE_CHECKING, NoReturn, cast
 import modal
 
 from open_atp.backends.base import (
+    BAKED_LAKE,
+    WORKDIR_MOUNT,
     CommandHandle,
     CommandResult,
     ComputeBackend,
@@ -56,11 +58,6 @@ if TYPE_CHECKING:
     from modal.container_process import ContainerProcess
 
 log = logging.getLogger("open_atp")
-
-#: Working directory inside the Sandbox (same convention as Docker's bind mount).
-REMOTE_WD = "/workspace/wd"
-#: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
-BAKED_LAKE = "/workspace/.lake"
 
 #: Time to wait before sending SIGKILL to coreutils ``timeout``-capped commands.
 TIMEOUT_KILL_AFTER_S = 30
@@ -266,7 +263,7 @@ def _sb_exec_args(command: str, timeout_s: int, *, capture_io: bool) -> list[str
         # Modal leaves stdin open with no EOF. If the agent CLI attempts to read
         # from stdin, it hangs forever. Redirect stdin to /dev/null to avoid this.
         # Write stderr to a file in the workdir so that it is accessible on sync.
-        payload += f" < /dev/null 2> {REMOTE_WD}/modal_stderr.txt"
+        payload += f" < /dev/null 2> {WORKDIR_MOUNT}/modal_stderr.txt"
     return ["bash", "-c", payload]
 
 
@@ -447,7 +444,7 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
         # Exclude the image-baked .lake symlink target
         proc = _sb_exec(
             sb,
-            f"tar -czf /tmp/out.tar.gz -C {REMOTE_WD} --exclude=./.lake .",
+            f"tar -czf /tmp/out.tar.gz -C {WORKDIR_MOUNT} --exclude=./.lake .",
             TAR_TIMEOUT_S,
         )
         # tar exits non-zero on e.g. a file that changed/vanished mid-archive; surface
@@ -478,7 +475,7 @@ def _pull_stderr(sb: modal.Sandbox) -> str:
 
     def read() -> str:
         with tempfile.NamedTemporaryFile(suffix=".txt") as tmp:
-            sb.filesystem.copy_to_local(f"{REMOTE_WD}/modal_stderr.txt", tmp.name)
+            sb.filesystem.copy_to_local(f"{WORKDIR_MOUNT}/modal_stderr.txt", tmp.name)
             return Path(tmp.name).read_text(errors="replace")
 
     return _safe_run(read, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_stderr")
@@ -567,10 +564,6 @@ class ModalBackend(ComputeBackend):
             + 3 * EXEC_DEADLINE_MARGIN_S  # buffer for sb.exec client deadlines
         )
 
-    def _wrap(self, command: str) -> str:
-        """cd into the workdir and wire the warm Mathlib cache before ``command``."""
-        return wrap_command(REMOTE_WD, BAKED_LAKE, command)
-
     def _provision(
         self,
         workdir: Path,
@@ -629,19 +622,19 @@ class ModalBackend(ComputeBackend):
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces
             # Docker's bind mounts (workdir + credential dirs).
-            _push_dir(sb, workdir, REMOTE_WD)
+            _push_dir(sb, workdir, WORKDIR_MOUNT)
             for host, dest in mounts or ():
                 _push_dir(sb, Path(host), dest)
 
             # Warm the Lean cache (and wire the .lake symlink) before timing real
             # work: Modal pages image layers in lazily, so the first build is slow.
-            log.debug("warming lean cache", extra={"workdir": REMOTE_WD})
+            log.debug("warming lean cache", extra={"workdir": WORKDIR_MOUNT})
             _safe_run(
                 lambda: _sb_exec(
                     sb,
-                    f"ln -sfn {BAKED_LAKE} {REMOTE_WD}/.lake && lake build",
+                    f"ln -sfn {BAKED_LAKE} {WORKDIR_MOUNT}/.lake && lake build",
                     WARM_BUILD_TIMEOUT_S,
-                    workdir=REMOTE_WD,
+                    workdir=WORKDIR_MOUNT,
                 ).wait(),
                 timeout_s=_sb_exec_deadline(WARM_BUILD_TIMEOUT_S),
                 sb=sb,
@@ -702,7 +695,7 @@ class ModalBackend(ComputeBackend):
                 "modal exec",
                 extra={
                     "command": command,
-                    "workdir": REMOTE_WD,
+                    "workdir": WORKDIR_MOUNT,
                     "timeout_s": timeout_s,
                 },
             )
@@ -710,7 +703,11 @@ class ModalBackend(ComputeBackend):
             # is killed while the Sandbox is still alive to pull the workdir back. The
             # exec also carries a client exec_deadline as a last-resort backstop.
             proc = _sb_exec(
-                sb, self._wrap(command), timeout_s, workdir=REMOTE_WD, capture_io=True
+                sb,
+                wrap_command(command),
+                timeout_s,
+                workdir=WORKDIR_MOUNT,
+                capture_io=True,
             )
         except BaseException:
             # Launch failed after provision; release the Sandbox before propagating.
@@ -808,16 +805,16 @@ class ModalSession(ComputeSession):
             "modal exec (session)",
             extra={
                 "command": command,
-                "workdir": REMOTE_WD,
+                "workdir": WORKDIR_MOUNT,
                 "env_keys": sorted(env or {}),
                 "timeout_s": timeout_s,
             },
         )
         proc = _sb_exec(
             self.sb,
-            self.backend._wrap(command),
+            wrap_command(command),
             timeout_s,
-            workdir=REMOTE_WD,
+            workdir=WORKDIR_MOUNT,
             secrets=secrets,
             capture_io=True,
         )
@@ -835,7 +832,7 @@ class ModalSession(ComputeSession):
 
     def sync_in(self) -> None:
         """Tar the host ``workdir`` up into the Sandbox."""
-        _push_dir(self.sb, self.workdir, REMOTE_WD)
+        _push_dir(self.sb, self.workdir, WORKDIR_MOUNT)
 
     def close(self) -> None:
         """Pull final artifacts, then terminate the Sandbox. Idempotent."""
