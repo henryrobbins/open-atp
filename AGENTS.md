@@ -278,3 +278,9 @@ metadata). **Edit the YAML, never the tables by hand.**
 - Never modify or commit anything under `refs/` (read-only reference symlinks) or
   reformat anything under `vendor/` (upstream-tracked).
 - Keep `mypy --strict` and ruff clean; run `make check` before pushing.
+- A plain `threading.Thread` does **not** inherit the caller's `contextvars` context
+  (each new thread starts fresh), so `structlog.contextvars`-bound fields (`prover`,
+  `run_id`, `task`, set via `bound_contextvars` in `provers/base.py`) silently vanish
+  from any logging done inside the thread. When running blocking work on a worker
+  thread, capture `contextvars.copy_context()` on the calling thread and run the
+  target via `ctx.run(fn)` (see `_run_bounded` in `backends/modal.py`).

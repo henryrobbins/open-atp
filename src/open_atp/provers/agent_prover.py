@@ -315,7 +315,7 @@ class AgentProver(AutomatedProver):
         stdout_path: Path,
         session: ComputeSession,
         *,
-        timeout_s: int | None = None,
+        timeout_s: int,
     ) -> tuple[list[str], str]:
         """Resolve auth, launch the agent in the live ``session``, and tee its stdout.
 
@@ -348,7 +348,7 @@ class AgentProver(AutomatedProver):
                 lines.append(line)
 
         with stdout_path.open("a", encoding="utf-8") as sink:
-            handle = session.exec(harness.command, env=env, timeout_s=timeout_s)
+            handle = session.exec(harness.command, timeout_s=timeout_s, env=env)
             drain(handle, sink)
             result = handle.wait()
             self._log_agent_result(harness, result, lines)

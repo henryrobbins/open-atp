@@ -20,6 +20,18 @@ from typing import cast
 from open_atp.images import DEFAULT_IMAGE, Image
 
 
+class ComputeError(RuntimeError):
+    """Parent Exception class for backend compute errors."""
+
+
+class ExecTimeout(ComputeError):
+    """A command on backend compute exceeds its timeout deadline."""
+
+
+class SandboxUnreachable(ComputeError):
+    """The backend compute sandbox became unreachable mid-run."""
+
+
 @dataclass
 class CommandResult:
     """Outcome of a finished command run inside a backend.
@@ -105,7 +117,7 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
 
         backend = DockerBackend(image=DEFAULT_IMAGE)
         with backend.session(workdir, timeout_s=1800) as session:
-            with session.exec("lake env lean Demo.lean") as handle:
+            with session.exec("lake env lean Demo.lean", timeout_s=300) as handle:
                 result = handle.wait()
             session.sync_out()   # pull the agent's edits back to the host
         # the sandbox is torn down on exit, even if exec raised
@@ -115,8 +127,8 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         self,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandHandle:
         """Run ``command`` in the live sandbox; the handle does NOT tear it down.
 
@@ -124,12 +136,11 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         ----------
         command : str
             The shell command to run in the live sandbox.
+        timeout_s : int
+            Wall-clock cap for the command, in seconds.
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
-        timeout_s : int, optional
-            Wall-clock cap for the command. ``None`` leaves it to the backend's own
-            default. Default ``None``.
 
         Returns
         -------
@@ -198,6 +209,13 @@ class ComputeBackend(abc.ABC):
     env : Mapping[str, str], optional
         Environment variables baked into every command run in the sandbox. Default
         empty.
+
+    Attributes
+    ----------
+    name : str
+        Short identifier, e.g. ``"docker"`` or ``"modal"``.
+    wallclock_overhead_s : int
+        Wall-clock time budget required beyond a command's timeout, in seconds.
     """
 
     #: Absolute ``$HOME`` inside the sandbox; per-run credential dirs (an agent's
@@ -221,6 +239,17 @@ class ComputeBackend(abc.ABC):
     @abc.abstractmethod
     def name(self) -> str:
         """Short identifier, e.g. ``"docker"`` or ``"modal"``."""
+
+    @property
+    @abc.abstractmethod
+    def wallclock_overhead_s(self) -> int:
+        """Wall-clock time budget required beyond a command's timeout, in seconds.
+
+        The ``timeout_s`` passed to :meth:`start`/:meth:`run`/:meth:`session` is
+        the *command's* wall-clock budget. The backend may need extra time for
+        spin-up, teardown, file transfer, etc. The time allotted for this overhead
+        is captured here, so a caller can bound the *total* wall-clock for a run.
+        """
 
     @abc.abstractmethod
     def start(

@@ -72,8 +72,8 @@ def test_session_persists_state_across_execs(tmp_path: Path) -> None:
     proj = _stage(tmp_path)
     backend = DockerBackend(image=DEFAULT_IMAGE)
     with backend.session(proj, timeout_s=600) as session:
-        session.exec("echo hello > marker.txt").wait()
-        result = session.exec("cat marker.txt").wait()
+        session.exec("echo hello > marker.txt", timeout_s=60).wait()
+        result = session.exec("cat marker.txt", timeout_s=60).wait()
 
     assert result.exit_code == 0, result.stdout + result.stderr
     assert "hello" in result.stdout

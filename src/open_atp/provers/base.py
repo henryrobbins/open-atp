@@ -154,6 +154,11 @@ class AutomatedProver(abc.ABC):
         final check.
     timeout_s : int
         Wall-clock budget for the generation run, in seconds. Default ``1800``.
+
+    Attributes
+    ----------
+    max_duration_s : int
+        Maximum wall-clock duration of a healthy :meth:`prove` run, in seconds.
     """
 
     name: str = "base"
@@ -168,6 +173,21 @@ class AutomatedProver(abc.ABC):
         # budget for the post-generation compile/axiom check.
         self.timeout_s = timeout_s
         self.verifier = Verifier(backend)
+
+    @property
+    def max_duration_s(self) -> int:
+        """Maximum wall-clock duration of a healthy :meth:`prove` run, in seconds.
+
+        The total wall-clock time is the sum of:
+        - the proof generation budget
+        - post-generation verification
+        - and the backend's overhead
+        """
+        return (
+            self.timeout_s
+            + self.verifier.timeout_s
+            + self.verifier.backend.wallclock_overhead_s
+        )
 
     @abc.abstractmethod
     def _generate(

@@ -155,6 +155,11 @@ class DockerBackend(ComputeBackend):
         """Short identifier for the backend: ``"docker"``."""
         return "docker"
 
+    @property
+    def wallclock_overhead_s(self) -> int:
+        """Docker container start/teardown have near-zero overhead; use small buffer."""
+        return 30
+
     def _wrap(self, command: str) -> str:
         """cd into the mount and wire up the warm Mathlib cache before ``command``."""
         return wrap_command(self.workdir_mount, self.baked_lake, command)
@@ -333,8 +338,8 @@ class DockerSession(ComputeSession):
         self,
         command: str,
         *,
+        timeout_s: int,
         env: Mapping[str, str] | None = None,
-        timeout_s: int | None = None,
     ) -> CommandHandle:
         """``docker exec`` ``command`` into the container; close() owns teardown.
 
@@ -342,10 +347,10 @@ class DockerSession(ComputeSession):
         ----------
         command : str
             The shell command to run in the live container.
+        timeout_s : int
+            Unused by Docker (the container has no built-in cap).
         env : Mapping[str, str], optional
             Per-command environment variables (``docker exec -e``). Default empty.
-        timeout_s : int, optional
-            Unused by Docker (the container has no built-in cap). Default ``None``.
 
         Returns
         -------

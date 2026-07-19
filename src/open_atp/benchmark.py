@@ -40,6 +40,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from open_atp.backends.base import ExecTimeout
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
@@ -99,6 +100,39 @@ class BenchmarkResult:
                 for run in self.runs
             ],
         }
+
+
+def _prove_bounded(
+    prover: AutomatedProver, task: ProofTask, run_dir: Path, ceiling_s: float
+) -> ProofResult:
+    """Run ``prover.prove`` on a daemon thread, bounded by a hard wall-clock ceiling.
+
+    The backend already bounds each Modal call, so this rarely fires; it is the outer
+    backstop guaranteeing no single wedged run can stall the whole sweep. On timeout
+    the worker thread is abandoned (daemon, so it can't block process exit) and
+    :class:`~open_atp.backends.base.ExecTimeout` is raised for the caller to classify.
+    """
+    result: list[ProofResult] = []
+    error: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            result.append(prover.prove(task, run_dir))
+        except BaseException as exc:  # re-raised on the caller's thread
+            error.append(exc)
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    worker.join(ceiling_s)
+    if worker.is_alive():
+        log.error(
+            "task exceeded wall-clock ceiling",
+            extra={"prover": prover.name, "task": task.name, "ceiling_s": ceiling_s},
+        )
+        raise ExecTimeout(f"task exceeded {ceiling_s:.0f}s wall-clock ceiling")
+    if error:
+        raise error[0]
+    return result[0]
 
 
 def run_benchmark(
@@ -181,7 +215,7 @@ def run_benchmark(
         # (with traceback) inside that binding -- here we only build the error result.
         with gates[prover_name]:
             try:
-                result = prover.prove(task, run_dir)
+                result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
                 result = ProofResult(
                     prover=prover.name,
