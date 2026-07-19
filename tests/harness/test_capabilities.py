@@ -1,9 +1,9 @@
 """End-to-end capability probes: does each agent CLI have what it needs?
 
-Ported from milp_flare's ``test_docker.py`` harness suite. Each test drives a
-real agent (``claude_code`` / ``codex`` / ``opencode`` / ``vibe``) through a real
-compute backend (``docker`` / ``modal``) with a "make exactly one tool call then stop"
-prompt, then inspects the streamed JSON event stream to confirm the capability
+Ported from milp_flare's ``test_docker.py`` harness suite. Each test drives a real
+agent (``claude_code`` / ``codex`` / ``opencode`` / ``vibe`` / ``kimi``) through a
+real compute backend (``docker`` / ``modal``) with a "make exactly one tool call then
+stop" prompt, then inspects the streamed JSON event stream to confirm the capability
 actually works inside the sandbox -- not merely that the harness *configured* it
 (that is covered by the no-creds unit tests in ``test_agent_prover.py``).
 
@@ -34,6 +34,7 @@ Prerequisites:
     integration spend off the Anthropic bill)
   - vibe: ``MISTRAL_API_KEY`` in env, with Labs access to the builtin ``lean``
     agent (pins Leanstral 1.5)
+  - kimi: ``~/.kimi-code`` (or ``$KIMI_CODE_HOME``) from ``kimi login``
   - docker backend: docker on PATH + the ``open-atp:latest`` image
   - modal backend: ``MODAL_TOKEN_*`` env or ``~/.modal.toml`` + the published image
 """
@@ -90,7 +91,7 @@ Rules:
 - Do not summarize. Make the one call, then stop.
 """
 
-HARNESS_NAMES = ["claude_code", "codex", "opencode", "vibe"]
+HARNESS_NAMES = ["claude_code", "codex", "opencode", "vibe", "kimi"]
 
 #: Cheap models per agent to keep the (billable) integration run inexpensive.
 _MODELS = {
@@ -104,6 +105,9 @@ _MODELS = {
     # The builtin ``lean`` agent pins Leanstral 1.5 itself; recorded in metadata
     # only (vibe has no --model flag). Leanstral is $0-priced.
     "vibe": "labs-leanstral-1-5",
+    # Kimi bills a flat subscription rate (no per-token USD), so the model choice
+    # is about capability, not cost; the default coding model.
+    "kimi": "kimi-code/kimi-for-coding",
 }
 
 # Backend dimension: each value carries its own opt-out marker so a run can pick
@@ -127,6 +131,10 @@ def _agent_available(harness: str) -> bool:
         return bool(os.environ.get("DEEPSEEK_API_KEY"))
     if harness == "vibe":
         return bool(os.environ.get("MISTRAL_API_KEY"))
+    if harness == "kimi":
+        # File-stored OAuth from `kimi login`; the harness stages it into the sandbox.
+        home = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
+        return (home / "credentials").is_dir()
     return False
 
 
@@ -436,6 +444,57 @@ def _vibe_classify(
     return "missing", "no tool result for id"
 
 
+#: Kimi surfaces a failed bash call by embedding this sentinel in the tool result
+#: content (it has no structured is_error field and no error tag). A successful call
+#: carries the command's stdout instead, so the sentinel's presence is the uniform
+#: "this bash call failed" signal.
+_KIMI_BASH_ERROR = "Command failed with exit code"
+
+
+def _kimi_classify(
+    events: list[dict],
+    tool_name: str,
+    matches: Callable[[dict], bool] = lambda _: True,
+) -> tuple[str, str]:
+    """Classify kimi stream-json (assistant ``tool_calls`` + ``role:"tool"``).
+
+    Kimi's ``--output-format stream-json`` is OpenAI-shaped like vibe's -- the
+    assistant message carries ``tool_calls`` (``function.name`` + JSON-string
+    ``arguments``); the result is a separate ``role:"tool"`` message keyed by
+    ``tool_call_id`` -- but its tool *names* match Claude Code (``Bash``, ``Skill``
+    with ``{"skill": ...}``, and ``mcp__<server>__<tool>`` for MCP). Success is a
+    matching result with no bash-failure sentinel.
+    """
+    target_id: str | None = None
+    for ev in events:
+        if ev.get("role") != "assistant":
+            continue
+        for tc in ev.get("tool_calls") or []:
+            fn = tc.get("function") or {}
+            if fn.get("name") != tool_name:
+                continue
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            if not isinstance(args, dict) or not matches(args):
+                continue
+            target_id = tc.get("id")
+            break
+        if target_id is not None:
+            break
+    if target_id is None:
+        return "missing", f"no assistant tool_call for `{tool_name}`"
+    for ev in events:
+        if ev.get("role") != "tool" or ev.get("tool_call_id") != target_id:
+            continue
+        content = str(ev.get("content") or "")
+        if _KIMI_BASH_ERROR in content:
+            return "error", f"tool error: {content!r}"
+        return "success", "tool result ok"
+    return "missing", "no tool result for id"
+
+
 def _codex_skill_classify(
     events: list[dict],
     _tool: str | None,
@@ -501,6 +560,14 @@ def _bash_check(harness: str, command: str):
             "bash",
             lambda inp: command in (inp.get("command") or ""),
         )
+    if harness == "kimi":
+        # Kimi's bash tool is named `Bash` (Claude-style), OpenAI-shaped stream.
+        return (
+            f"Use the Bash tool to run exactly: `{command}`.",
+            _kimi_classify,
+            "Bash",
+            lambda inp: command in (inp.get("command") or ""),
+        )
     raise AssertionError(harness)
 
 
@@ -532,6 +599,14 @@ def _skill_check(harness: str, skill_name: str):
             _vibe_classify,
             "skill",
             lambda inp: skill_name in str(inp.get("name") or inp),
+        )
+    if harness == "kimi":
+        # Kimi's Skill tool matches Claude's: `{"skill": "<name>"}`.
+        return (
+            f"Use the Skill tool to invoke the `{skill_name}` skill.",
+            _kimi_classify,
+            "Skill",
+            lambda inp: skill_name in str(inp.get("skill") or inp.get("name") or inp),
         )
     raise AssertionError(harness)
 
@@ -568,6 +643,10 @@ def _lean_lsp_check(harness: str, file_rel: str):
             vibe_tool,
             lambda _: True,
         )
+    if harness == "kimi":
+        # Kimi qualifies MCP tools as `mcp__<server>__<tool>` (the Claude form), so
+        # the shared `mcp__lean-lsp__*` prompt and tool name apply unchanged.
+        return prompt, _kimi_classify, tool, lambda _: True
     raise AssertionError(harness)
 
 

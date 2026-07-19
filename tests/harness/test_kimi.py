@@ -145,6 +145,10 @@ def test_agent_command_renders_model_and_workdir_home() -> None:
     assert "<<MODEL>>" not in script
     assert 'export KIMI_CODE_HOME="$PWD/.kimi-home"' in script
     assert "--output-format stream-json" in script
+    # No background cron daemon / auto-updater in an ephemeral sandbox: they do
+    # unwanted network/CPU work and a lingering child destabilizes the sandbox.
+    assert "export KIMI_DISABLE_CRON=1" in script
+    assert "export KIMI_CODE_NO_AUTO_UPDATE=1" in script
 
 
 # --- stage -----------------------------------------------------------------

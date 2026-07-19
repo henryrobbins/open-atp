@@ -12,8 +12,15 @@
 # event stream goes to stdout.
 #
 # https://moonshotai.github.io/kimi-code/
+#
+# KIMI_DISABLE_CRON / KIMI_CODE_NO_AUTO_UPDATE stop kimi from spawning its
+# background cron daemon and auto-updater: in an ephemeral sandbox those do
+# unwanted network/CPU work and can self-modify the CLI mid-run, and a lingering
+# child destabilizes a short-lived Modal sandbox (it outlives the `-p` exit).
 
 export KIMI_CODE_HOME="$PWD/.kimi-home"
+export KIMI_DISABLE_CRON=1
+export KIMI_CODE_NO_AUTO_UPDATE=1
 kimi -p "$PROMPT" \
     --model '<<MODEL>>' \
     --output-format stream-json
