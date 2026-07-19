@@ -24,14 +24,14 @@ import open_atp.backends.modal as modal_mod
 from open_atp.backends.base import ExecTimeout, SandboxUnreachable
 from open_atp.backends.modal import (
     EXEC_DEADLINE_MARGIN_S,
-    INFRA_EXEC_TIMEOUT_S,
-    SYNC_HEADROOM_S,
+    TIMEOUT_KILL_AFTER_S,
+    TRANSFER_TIMEOUT_S,
     WARM_BUILD_TIMEOUT_S,
     ModalBackend,
     ModalCommandHandle,
     ModalSessionHandle,
     _modal_image_name,
-    _run_bounded,
+    _safe_run,
     _tar_dir,
 )
 from open_atp.lean import LeanProject, ToolchainMismatch
@@ -96,13 +96,15 @@ def test_modal_image_name_strips_tag() -> None:
 
 
 def test_wallclock_overhead_sums_provision_and_sync_phases() -> None:
-    # Isolated filesystem: warm build + the SYNC_HEADROOM_S pull window + transfer/RPC
-    # slack, each summed as a backstop -- unlike Docker's few-second bind-mount slack.
+    # Isolated filesystem: push + warm build + pull, plus coreutils-timeout and
+    # sb.exec client-deadline buffers, each summed as a backstop -- unlike Docker's
+    # few-second bind-mount slack.
     assert ModalBackend().wallclock_overhead_s == (
-        WARM_BUILD_TIMEOUT_S
-        + SYNC_HEADROOM_S
-        + EXEC_DEADLINE_MARGIN_S
-        + INFRA_EXEC_TIMEOUT_S
+        TRANSFER_TIMEOUT_S
+        + WARM_BUILD_TIMEOUT_S
+        + TRANSFER_TIMEOUT_S
+        + 3 * TIMEOUT_KILL_AFTER_S
+        + 3 * EXEC_DEADLINE_MARGIN_S
     )
 
 
@@ -160,14 +162,14 @@ def _handle(sb: FakeSandbox, proc: FakeProc, wd: Path) -> ModalCommandHandle:
     )
 
 
-# _run_bounded ---------------------------------------------------------------
+# _safe_run ---------------------------------------------------------------
 
 
-def test_run_bounded_returns_value_and_propagates_context() -> None:
+def test_safe_run_returns_value_and_propagates_context() -> None:
     var: contextvars.ContextVar[str] = contextvars.ContextVar("marker")
     var.set("bound")
     sb = FakeSandbox()
-    result = _run_bounded(
+    result = _safe_run(
         lambda: var.get(),
         timeout_s=5,
         sb=sb,
@@ -176,19 +178,19 @@ def test_run_bounded_returns_value_and_propagates_context() -> None:
     assert result == "bound"
 
 
-def test_run_bounded_reraises_fn_exception() -> None:
+def test_safe_run_reraises_fn_exception() -> None:
     def boom() -> None:
         raise ValueError("nope")
 
     with pytest.raises(ValueError, match="nope"):
-        _run_bounded(boom, timeout_s=5, sb=FakeSandbox(), label="t")
+        _safe_run(boom, timeout_s=5, sb=FakeSandbox(), label="t")
 
 
-def test_run_bounded_dead_sandbox_raises_unreachable(monkeypatch) -> None:
+def test_safe_run_dead_sandbox_raises_unreachable(monkeypatch) -> None:
     monkeypatch.setattr(modal_mod, "LIVENESS_POLL_INTERVAL_S", 0.02)
     blocked = threading.Event()
     with pytest.raises(SandboxUnreachable):
-        _run_bounded(
+        _safe_run(
             blocked.wait,
             timeout_s=10,
             sb=FakeSandbox(dead=True),
@@ -196,11 +198,11 @@ def test_run_bounded_dead_sandbox_raises_unreachable(monkeypatch) -> None:
         )
 
 
-def test_run_bounded_timeout_raises_exec_timeout(monkeypatch) -> None:
+def test_safe_run_timeout_raises_exec_timeout(monkeypatch) -> None:
     monkeypatch.setattr(modal_mod, "LIVENESS_POLL_INTERVAL_S", 0.02)
     blocked = threading.Event()
     with pytest.raises(ExecTimeout):
-        _run_bounded(
+        _safe_run(
             blocked.wait,
             timeout_s=0.05,
             sb=FakeSandbox(dead=False),
@@ -221,6 +223,26 @@ def test_stream_rebuffers_chunks_into_lines(tmp_path: Path) -> None:
 def test_stream_maps_errors_via_raise_stream_error(tmp_path: Path) -> None:
     proc = FakeProc(raise_on_stream=RuntimeError("dropped"))
     handle = _handle(FakeSandbox(dead=True), proc, tmp_path)
+    with pytest.raises(SandboxUnreachable):
+        list(handle.stream())
+
+
+def test_stream_reaped_sandbox_raises_unreachable(monkeypatch, tmp_path: Path) -> None:
+    # The liveness-polled stall detection in _safe_stream is a concurrency primitive:
+    # drive it through the public stream() with a stdout that never yields (an
+    # unreachable worker delivers no EOF) and a reaped Sandbox, and it must abort at the
+    # poll rather than hang. blocked is never set; the producer daemon thread is
+    # abandoned, matching _safe_run.
+    monkeypatch.setattr(modal_mod, "LIVENESS_POLL_INTERVAL_S", 0.02)
+    blocked = threading.Event()
+
+    class BlockingProc(FakeProc):
+        @property
+        def stdout(self):
+            blocked.wait()
+            yield ""
+
+    handle = _handle(FakeSandbox(dead=True), BlockingProc(), tmp_path)
     with pytest.raises(SandboxUnreachable):
         list(handle.stream())
 

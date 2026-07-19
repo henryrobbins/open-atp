@@ -20,11 +20,6 @@ Everything else is a variation of that isolation. Notable details:
 * Redirect stdin to ``/dev/null`` to avoid Modal's stdin-open deadlock; capture
   stderr to a file pulled back with the workdir.
 * Pin ``LEAN_NUM_THREADS`` to the allocated CPU count so Lean doesn't oversubscribe.
-* Cap generation with coreutils ``timeout`` *below* the Sandbox's own lifetime (which
-  carries :data:`SYNC_HEADROOM_S` of slack), so a timed-out agent is killed while the
-  Sandbox is still alive to pull the partial workdir back -- rather than Modal
-  terminating the whole Sandbox mid-run and losing every edit.
-* Never leak a Sandbox: terminate on a failed start and after every run.
 """
 
 from __future__ import annotations
@@ -32,15 +27,16 @@ from __future__ import annotations
 import contextvars
 import io
 import logging
+import queue
 import shlex
 import tarfile
 import tempfile
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, NoReturn, cast
 
 from open_atp.backends.base import (
     CommandHandle,
@@ -65,44 +61,22 @@ REMOTE_WD = "/workspace/wd"
 #: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
 BAKED_LAKE = "/workspace/.lake"
 
-#: Extra Sandbox lifetime (seconds) reserved purely for the final tar pull.
-#: ``timeout_s`` accounts for the total compute work budget (generation + the
-#: in-session verify). Unlike Docker, which is bind-mounted, Modal has to sync the
-#: agent working directory back out before the Sandbox is terminated --
-#: ``SYNC_HEADROOM_S`` allocates time for that sync, so the Sandbox is created with
-#: ``timeout_s + SYNC_HEADROOM_S`` and stays alive past the last command's coreutils
-#: ``timeout`` long enough to tar the partial workdir back out. Without it, the
-#: Sandbox timeout and the work budget coincide and the pull races a Sandbox Modal has
-#: already terminated -- dropping every edit the agent made. Set larger than the
-#: coreutils ``--kill-after=30`` grace (2x it): a command that runs to budget and
-#: ignores SIGTERM isn't dead until ``budget + 30``, so anything <= 30 would leave no
-#: window to pull its partial workdir.
-SYNC_HEADROOM_S = 60
-
-#: Seconds a command's *client* deadline sits above its in-sandbox coreutils cap. The
-#: coreutils ``timeout`` (which does the clean group-kill + leaves the Sandbox alive
-#: for the partial pull) should always fire first; this margin is the backstop reached
-#: only if the worker stops talking. Covers the ``--kill-after=30`` grace + RPC slack.
-EXEC_DEADLINE_MARGIN_S = 60
-#: Client wall-clock ceiling for the quick provisioning/teardown execs -- the push
-#: untar, the pull tar -- which are size-independent shell one-liners, not the build
-#: itself. Generous -- it only bounds a genuine stall, never legitimate work.
-INFRA_EXEC_TIMEOUT_S = 60
-#: Client wall-clock ceiling for the warm ``lake build``, which -- unlike the other
-#: infra execs -- scales with project size, so it keeps a much wider margin.
-WARM_BUILD_TIMEOUT_S = 600
-#: Client wall-clock ceiling for opaque filesystem transfers (``copy_to_local`` /
-#: ``copy_from_local``), which expose no deadline knob of their own.
+#: Time to wait before sending SIGKILL to coreutils ``timeout``-capped commands.
+TIMEOUT_KILL_AFTER_S = 30
+#: Margin added to ``sb.exec`` client timeout to ensure the command is killed by
+#: coreutils ``timeout`` before the client deadline lapses.
+EXEC_DEADLINE_MARGIN_S = 30
+#: Wall-clock timeout for Modal Sandbox file transfer to complete.
 TRANSFER_TIMEOUT_S = 60
-#: Grace window for the best-effort stdout drain *after* a process has exited: enough
-#: to collect buffered output, short enough that an orphan-held pipe can't stall us.
-#: ``timeout --kill-after=30`` only reaches the command's own process group, so a
-#: child that has escaped it (backgrounded, double-forked/``setsid``) can keep the
-#: inherited stdout fd open past the parent's exit -- a pipe only sees EOF once every
-#: writer has closed. ``DRAIN_GRACE_S`` bounds that wait so an orphan holding the pipe
-#: open can't stall the caller indefinitely.
+#: Wall-clock timeout for running ``tar`` inside the Sandbox to push/pull a directory.
+TAR_TIMEOUT_S = 30
+#: Wall-clock timeout for warming the Lean cache in a Modal Sandbox (``lake build``).
+WARM_BUILD_TIMEOUT_S = 300
+#: Wall-clock timeout for Modal Sandbox termination.
+TERMINATE_TIMEOUT_S = 5
+#: Grace window to drain remaining stdout after the process has exited.
 DRAIN_GRACE_S = 15
-#: How often :func:`_run_bounded` re-checks Sandbox liveness while blocked.
+#: Poll interval for Sandbox liveness check while blocked.
 LIVENESS_POLL_INTERVAL_S = 5
 
 
@@ -118,48 +92,57 @@ def _require_modal() -> None:
 
 
 def _is_dead(sb: modal.Sandbox) -> bool:
-    """Whether Modal's control plane has reaped ``sb`` (``sb.poll()`` returns non-None).
-
-    A named wrapper for the ``sb.poll() is not None`` liveness check used at every
-    gate below. Raises whatever ``sb.poll()`` raises rather than swallowing it --
-    callers that must never raise (:func:`_pull_wd`, :func:`_pull_stderr`) catch it
-    themselves.
-    """
+    """Return if the Modal Sandbox is dead."""
     return sb.poll() is not None
 
 
-def _run_bounded[T](
+def _safe_run[T](
     fn: Callable[[], T],
     *,
     timeout_s: float,
     sb: modal.Sandbox,
     label: str,
 ) -> T:
-    """Run blocking ``fn()`` in a thread, bounded by liveness and a wall-clock.
+    """Run function with blocking Modal calls, bounded by liveness and a wall-clock.
 
-    Modal's blocking calls (stream reads, ``wait``, filesystem transfers, ``create``)
-    have no client deadline, so a dead/unreachable worker hangs them forever. This
-    wrapper runs ``fn`` on a daemon thread and, while it is in flight:
+    Modal's ``proc.wait``, ``proc.stdout``, ``filesystem.copy_*``, etc... are
+    well-behaved for a gracefully reaped Sandbox.
 
-    * raises :class:`~open_atp.backends.base.SandboxUnreachable` as soon as ``sb`` is
-      reaped -- via ``sb.poll()``, a control-plane ``SandboxWait(timeout=0)`` that does
-      **not** traverse the worker command-router path, so it still answers when the
-      *worker* is the thing that has gone unreachable -- the fast path, seen via the
-      control plane, not the stuck worker;
-    * raises :class:`~open_atp.backends.base.ExecTimeout` at ``timeout_s`` as the
-      backstop.
+    - ``proc.wait`` returns the kill-signal code (137)
+    - ``proc.stdout`` reaches EOF
+    - ``filesystem.copy_*`` raises ``NotFoundError``
 
-    ``fn`` runs inside the calling thread's ``contextvars`` context (a plain
-    ``threading.Thread`` does not copy it by default), so structured-logging fields
-    bound via ``structlog.contextvars`` (prover, run id, task) still attach to any
-    logging ``fn`` itself does. ``fn``'s own return value is returned and its own
-    exception re-raised. On abort the daemon thread is abandoned (it holds a doomed
-    Sandbox that Modal will GC); the caller is never blocked on it.
+    However, an unreachable worker (crash / network partition) can stall them
+    until the timeout is reached or indefinitely. Notably, ``filesystem.copy_*``
+    and ``terminate`` have no client-side deadline knob and can hang indefinitely
+    on a dead worker.
 
-    Every abort emits a ``warning`` event tagged with ``label``, the observed
-    ``elapsed_s``, and the ``timeout_s`` ceiling it ran under -- so ``elapsed_s`` read
-    against the ceiling shows real per-call latency and headroom (control-plane RPCs,
-    transfers, exec waits) when right-sizing the wall-clock constants above.
+    To ensure blocking calls fail quickly on a dead Sandbox and are prevented
+    from indefinitely stalling, this wrapper runs the blocking function on
+    a daemon thread with a timeout and polls the Sandbox liveness.
+
+    Parameters
+    ----------
+    fn : Callable[[], T]
+        The blocking function to run.
+    timeout_s : float
+        Wall-clock time budget for ``fn`` to complete, in seconds.
+    sb : modal.Sandbox
+        The Sandbox to check liveness on while ``fn`` is blocked.
+    label : str
+        Label for logging the call in case of a stall or timeout.
+
+    Returns
+    -------
+    T
+        The return value of ``fn`` if it completes before the deadline.
+
+    Raises
+    ------
+    SandboxUnreachable
+        If the Sandbox is reaped while ``fn`` is in flight.
+    ExecTimeout
+        If ``fn`` does not complete before ``timeout_s``.
     """
     result: list[T] = []
     error: list[BaseException] = []
@@ -206,20 +189,68 @@ def _run_bounded[T](
     return result[0]
 
 
-def _raise_stream_error(exc: Exception, sb: modal.Sandbox) -> NoReturn:
-    """Translate a stdout-stream failure into a typed :class:`ComputeError`.
+def _safe_stream(stream: Iterable[str], sb: modal.Sandbox) -> Iterator[str]:
+    """Yield stream chunks bounded by Sandbox liveness.
 
-    Modal raises ``ExecTimeoutError`` when the stream's own deadline lapses; a reaped
-    or unreachable Sandbox drops the stream with a variety of errors, so rather than
-    match each one we consult the control plane (``sb.poll()``). Map both to our
-    vocabulary so the caller can classify the run; re-raise anything else.
+    A blocking ``for chunk in stdout`` carries only the exec's own deadline. An
+    unreachable worker (crash / network partition) may never deliver EOF, stalling
+    the loop all the way to that deadline.
+
+    To quickly fail on a dead Sandbox, we run the blocking iteration on a daemon
+    thread and poll the Sandbox liveness while the stream is blocked.
+
+    Parameters
+    ----------
+    stream : Iterable[str]
+        The blocking stream to iterate.
+    sb : modal.Sandbox
+        The Sandbox to check liveness on while the stream is blocked.
+
+    Yields
+    ------
+    Iterator[str]
+        Each stream chunk as the underlying stream delivers it.
+
+    Raises
+    ------
+    SandboxUnreachable
+        If the Sandbox is reaped prior to the timeout.
+    ExecTimeout
+        If the Sandbox was reaped due to a timeout.
     """
+    relay: queue.Queue[tuple[str, object]] = queue.Queue()
+    ctx = contextvars.copy_context()
+
+    def produce() -> None:
+        try:
+            for chunk in stream:
+                relay.put(("chunk", chunk))
+            relay.put(("done", None))
+        except BaseException as exc:  # surfaced on the consumer thread
+            relay.put(("error", exc))
+
+    threading.Thread(target=lambda: ctx.run(produce), daemon=True).start()
+    while True:
+        try:
+            kind, payload = relay.get(timeout=LIVENESS_POLL_INTERVAL_S)
+        except queue.Empty:
+            if _is_dead(sb):
+                raise SandboxUnreachable("stdout stream stalled; Sandbox unreachable")
+            continue
+        if kind == "chunk":
+            yield cast(str, payload)
+        elif kind == "done":
+            return
+        else:
+            _raise_stream_error(cast(Exception, payload), sb)
+
+
+def _raise_stream_error(exc: Exception, sb: modal.Sandbox) -> NoReturn:
+    """Translate a stream failure into a typed :class:`ComputeError`."""
     from modal.exception import ExecTimeoutError
 
     if isinstance(exc, ExecTimeoutError):
-        raise ExecTimeout(
-            "exec exceeded its client deadline while streaming stdout"
-        ) from exc
+        raise ExecTimeout("exec exceeded its client deadline while streaming") from exc
     if _is_dead(sb):
         raise SandboxUnreachable(
             "stdout stream terminated; Sandbox unreachable"
@@ -235,40 +266,45 @@ def _tar_dir(src: Path) -> bytes:
     return buf.getvalue()
 
 
-def _exec_payload(wrapped: str, timeout_s: int) -> str:
-    """Build the ``bash -c`` argument for a Sandbox exec: cap, stdin, stderr.
-
-    ``timeout_s`` caps ``wrapped`` with coreutils ``timeout``, which -- run without
-    ``--foreground`` -- signals the command's whole process group, so the agent *and*
-    its children are killed when the budget expires (in time for the Sandbox's
-    :data:`SYNC_HEADROOM_S` pull window). Each command the caller runs (generation,
-    then the in-session verify) passes its own slice of the budget.
-
-    Stdin is ``/dev/null`` (Modal leaves it an open pipe with no EOF, hanging agent
-    CLIs) and stderr is captured to a file pulled back with the workdir.
-    """
-    body = f"timeout --kill-after=30 {timeout_s} bash -c {shlex.quote(wrapped)}"
-    return f"{body} < /dev/null 2> {REMOTE_WD}/modal_stderr.txt"
+def _sb_exec_args(command: str, timeout_s: int) -> list[str]:
+    """Build the args for ``sb.exec`` to run ``command`` in a Modal Sandbox."""
+    # Modal's `sb.exec` timeout does not kill the process group, so we
+    # wrap commands in coreutils `timeout` to ensure the group is killed.
+    timeout = f"timeout --kill-after={TIMEOUT_KILL_AFTER_S} {timeout_s}"
+    # Modal leaves stdin open with no EOF. If the agent CLI attempts to read
+    # from stdin, it hangs forever. Redirect stdin to /dev/null to avoid this.
+    stdin = "< /dev/null"
+    # Write stderr to a file in the workdir so that it is accessible on sync.
+    stderr = f"2> {REMOTE_WD}/modal_stderr.txt"
+    payload = f"{timeout} bash -c {shlex.quote(command)} {stdin} {stderr}"
+    return ["bash", "-c", payload]
 
 
-def _exec_deadline(timeout_s: int) -> int:
-    """The Modal ``exec_deadline`` (seconds) backstopping a command's client wait.
+def _sb_exec_deadline(timeout_s: int) -> int:
+    """The Modal ``sb.exec`` client deadline for a given ``timeout_s`` budget."""
+    return timeout_s + TIMEOUT_KILL_AFTER_S + EXEC_DEADLINE_MARGIN_S
 
-    Sits above the client wall-clock (which itself sits above the in-sandbox coreutils
-    cap) so :func:`_run_bounded` fails with a clean typed error first; this is only the
-    last resort, so an abandoned ``wait`` thread can't outlive the exec forever.
-    """
-    return timeout_s + 2 * EXEC_DEADLINE_MARGIN_S
+
+def _sb_exec(
+    sb: modal.Sandbox,
+    command: str,
+    timeout_s: int,
+    *,
+    workdir: str | None = None,
+    secrets: Sequence[modal.Secret] | None = None,
+) -> ContainerProcess[str]:
+    """Run ``command`` in ``sb`` with the standard timeout wrapping and deadline."""
+    return sb.exec(
+        *_sb_exec_args(command, timeout_s),
+        workdir=workdir,
+        secrets=secrets,
+        timeout=_sb_exec_deadline(timeout_s),
+    )
 
 
 def _modal_image_name(image: str) -> str:
-    """Map an image ref to a Modal named-image lookup.
-
-    The platform shares one ``image`` string across backends and it carries a
-    Docker-style ``:tag`` (e.g. ``open-atp:latest``). Modal published images are
-    looked up by bare name (``modal.Image.from_name`` takes no tag and Modal names
-    can't contain ``:``), so strip a trailing tag.
-    """
+    """Map an image ref to a Modal named-image lookup."""
+    # Modal published images are looked up by bare name; strip a trailing tag
     return image.rsplit(":", 1)[0]
 
 
@@ -287,28 +323,22 @@ class ModalCommandHandle(CommandHandle):
 
     def stream(self) -> Iterator[str]:
         """Yield stdout split into lines, re-buffering Modal's arbitrary chunks."""
-        # Modal's StreamReader defaults to by_line=False, so iterating proc.stdout
-        # yields arbitrary chunks (a chunk may hold several JSON objects, or split
-        # one). Re-buffer and split on newlines so we honour the line-delimited
-        # JSONL contract the harness parsers rely on (json.loads per line) -- and
-        # so a chunked `result` event is never lost (would zero cost/tokens).
-        try:
-            for chunk in self.proc.stdout:
-                self._buf += chunk
-                while "\n" in self._buf:
-                    line, self._buf = self._buf.split("\n", 1)
-                    self._stdout_lines.append(line)
-                    yield line
-        except Exception as exc:
-            _raise_stream_error(exc, self.sb)
+        for chunk in _safe_stream(self.proc.stdout, self.sb):
+            self._buf += chunk
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                self._stdout_lines.append(line)
+                yield line
 
     def _drain_remaining(self) -> None:
-        """Best-effort: collect buffered stdout after the process has exited.
+        """Drain remaining stdout after the process has exited.
 
-        Bounded by :data:`DRAIN_GRACE_S`: once the process is gone, any remaining real
-        output is already buffered and arrives fast, but an orphaned child holding the
-        stdout pipe open means EOF may never come -- so we take what's there and stop
-        rather than block (the case-1 hang).
+        ``sb.exec`` timeout kills only the direct process and child/grandchild
+        processes may survive as orphans keeping the stdout pipe open and
+        preventing EOF from ever arriving. After a short timeout, we take
+        whatever is buffered and stop rather than block indefinitely.
+
+        See https://github.com/modal-labs/modal-client/issues/3992.
         """
 
         def pull() -> None:
@@ -316,7 +346,7 @@ class ModalCommandHandle(CommandHandle):
                 self._buf += chunk
 
         try:
-            _run_bounded(pull, timeout_s=DRAIN_GRACE_S, sb=self.sb, label="drain")
+            _safe_run(pull, timeout_s=DRAIN_GRACE_S, sb=self.sb, label="drain")
         except ComputeError:
             log.warning("drain: stdout did not close after exit; using partial output")
         while "\n" in self._buf:
@@ -327,14 +357,8 @@ class ModalCommandHandle(CommandHandle):
             self._buf = ""
 
     def _collect_result(self) -> CommandResult:
-        """Wait for the process to exit (bounded), then drain stdout + stderr.
-
-        Waiting on the *process* first (not stdout EOF) is the fast-fail: ``proc.wait``
-        returns when the command exits -- independent of whether an orphaned child is
-        still holding the stdout pipe open -- so a budget-killed command returns at its
-        budget instead of blocking on an EOF that never arrives.
-        """
-        exit_code = _run_bounded(
+        """Wait for the process to exit and collect stdout/stderr to compose result."""
+        exit_code = _safe_run(
             self.proc.wait, timeout_s=self.deadline_s, sb=self.sb, label="proc_wait"
         )
         self._drain_remaining()
@@ -348,10 +372,6 @@ class ModalCommandHandle(CommandHandle):
 
     def cancel(self) -> None:
         """Pull partial artifacts, then terminate the Sandbox."""
-        # No per-exec kill on a Sandbox, so pull partial artifacts and then terminate
-        # -- terminating is the authoritative kill and also ensures we never leak
-        # compute. Idempotent: safe to call after wait() already tore down. A pull
-        # failure must not skip termination, so it's its own try/finally.
         try:
             _pull_wd(self.sb, self.workdir)
         finally:
@@ -388,60 +408,38 @@ class ModalSessionHandle(ModalCommandHandle):
 
 
 def _terminate(sb: modal.Sandbox) -> None:
-    """Tear down the Sandbox; idempotent (safe if it is already gone)."""
+    """Tear down the Sandbox"""
     try:
-        # terminate() is a documented no-op when the Sandbox has already finished,
-        # so the only failure reaching here is an unreachable control plane (the
-        # terminate RPC itself erroring) -- swallow it; teardown is best-effort.
-        sb.terminate()
+        _safe_run(sb.terminate, timeout_s=TERMINATE_TIMEOUT_S, sb=sb, label="terminate")
     except Exception:
-        log.debug("terminate: control plane unreachable")
+        log.warning("terminate: bounded teardown failed")
 
 
 def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
-    """Tar ``src`` and extract it into ``dest`` inside the Sandbox.
-
-    Bounded by liveness + a wall-clock: an unreachable worker would otherwise hang the
-    copy or the untar exec indefinitely (neither the transfer nor a plain ``.wait()``
-    has a client deadline of its own). The transfer and the untar exec are bounded as
-    two separate calls (rather than one merged bound) so a stall is attributed to the
-    right phase and each keeps its own natural ceiling. A failure here aborts
-    provisioning.
-    """
+    """Tar ``src`` and extract it into ``dest`` inside the Sandbox."""
     log.debug("pushing dir into sandbox", extra={"src": str(src), "dest": dest})
 
-    def do_copy() -> None:
+    def do_push() -> None:
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
             tmp.write(_tar_dir(src))
             tmp.flush()
             sb.filesystem.copy_from_local(tmp.name, "/tmp/push.tar.gz")
-
-    def do_untar() -> None:
-        sb.exec(
-            "bash",
-            "-c",
+        _sb_exec(
+            sb,
             f"mkdir -p {dest} && tar -xzf /tmp/push.tar.gz -C {dest}",
-            timeout=INFRA_EXEC_TIMEOUT_S,
+            TAR_TIMEOUT_S,
         ).wait()
 
-    _run_bounded(do_copy, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="push_copy")
-    _run_bounded(do_untar, timeout_s=INFRA_EXEC_TIMEOUT_S, sb=sb, label="push_untar")
+    _safe_run(
+        do_push,
+        timeout_s=_sb_exec_deadline(TRANSFER_TIMEOUT_S),
+        sb=sb,
+        label="push_dir",
+    )
 
 
 def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
-    """Tar the Sandbox workdir back out and extract it over the host ``wd``.
-
-    Excludes the huge image-baked ``.lake`` symlink target. For the verify path no
-    files change so this is just the stderr/log; for generation it is how edits
-    return -- one code path that always pulls (cheap for small projects).
-
-    Gates on liveness first (a reaped Sandbox can never be pulled -- return instantly
-    rather than stall), then bounds the tar exec and the transfer as two separate
-    calls, each with its own natural ceiling, rather than one merged bound. Raises on
-    failure rather than swallowing it -- a sync failure must be visible to the caller,
-    not indistinguishable from a clean run -- so callers terminate the Sandbox in a
-    ``finally`` regardless of whether this raises.
-    """
+    """Tar the Sandbox workdir and extract it over the host ``wd``."""
     if _is_dead(sb):
         log.warning(
             "pull_wd: Sandbox already terminated; skipping pull",
@@ -449,12 +447,12 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
         )
         return
 
-    def do_tar() -> None:
-        proc = sb.exec(
-            "bash",
-            "-c",
+    def do_pull() -> None:
+        # Exclude the image-baked .lake symlink target
+        proc = _sb_exec(
+            sb,
             f"tar -czf /tmp/out.tar.gz -C {REMOTE_WD} --exclude=./.lake .",
-            timeout=INFRA_EXEC_TIMEOUT_S,
+            TAR_TIMEOUT_S,
         )
         # tar exits non-zero on e.g. a file that changed/vanished mid-archive; surface
         # it rather than letting the (possibly partial/missing) copy fail opaquely.
@@ -466,23 +464,18 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
                 extra={"exit_code": exit_code, "stderr": stderr},
             )
 
-    def do_copy() -> None:
         with tempfile.NamedTemporaryFile(suffix=".tar.gz") as tmp:
             sb.filesystem.copy_to_local("/tmp/out.tar.gz", tmp.name)
             with tarfile.open(tmp.name, mode="r:gz") as tf:
                 tf.extractall(wd, filter="data")
 
-    _run_bounded(do_tar, timeout_s=INFRA_EXEC_TIMEOUT_S, sb=sb, label="pull_tar")
-    _run_bounded(do_copy, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_copy")
+    _safe_run(
+        do_pull, timeout_s=_sb_exec_deadline(TRANSFER_TIMEOUT_S), sb=sb, label="pull_wd"
+    )
 
 
 def _pull_stderr(sb: modal.Sandbox) -> str:
-    """Read back the captured ``modal_stderr.txt`` (empty if unavailable).
-
-    Liveness-gated: a dead or unreachable Sandbox yields ``""`` rather than hanging on
-    a transfer that will never complete. Otherwise raises on failure rather than
-    swallowing it -- see :func:`_pull_wd`.
-    """
+    """Read back the captured ``modal_stderr.txt``."""
     if _is_dead(sb):
         log.warning("pull_stderr: Sandbox already terminated; skipping pull")
         return ""
@@ -492,7 +485,7 @@ def _pull_stderr(sb: modal.Sandbox) -> str:
             sb.filesystem.copy_to_local(f"{REMOTE_WD}/modal_stderr.txt", tmp.name)
             return Path(tmp.name).read_text(errors="replace")
 
-    return _run_bounded(read, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_stderr")
+    return _safe_run(read, timeout_s=TRANSFER_TIMEOUT_S, sb=sb, label="pull_stderr")
 
 
 class ModalBackend(ComputeBackend):
@@ -567,21 +560,15 @@ class ModalBackend(ComputeBackend):
 
     @property
     def wallclock_overhead_s(self) -> int:
-        """Overhead beyond a command's budget: provision + sync-back, worst-case.
-
-        Unlike bind-mounted Docker, an isolated Sandbox pays for its own lifecycle
-        outside the command budget: the warm ``lake build`` before real work
-        (:data:`WARM_BUILD_TIMEOUT_S`), the :data:`SYNC_HEADROOM_S` pull window the
-        Sandbox outlives the command by, and slack for the push/pull transfers and the
-        unbounded ``App.lookup``/``Sandbox.create`` RPCs
-        (:data:`EXEC_DEADLINE_MARGIN_S` + :data:`INFRA_EXEC_TIMEOUT_S`). Summed as a
-        backstop, so each bounded phase running long still stays under it.
-        """
+        """Modal Sandbox lifecycle overhead: file sync + warm build + teardown."""
+        # This is a *rough* high water estimate of the wall-clock overhead to
+        # prevent a Modal Sandbox from being reaped prematurely.
         return (
-            WARM_BUILD_TIMEOUT_S
-            + SYNC_HEADROOM_S
-            + EXEC_DEADLINE_MARGIN_S
-            + INFRA_EXEC_TIMEOUT_S
+            TRANSFER_TIMEOUT_S  # push workdir (and mounts)
+            + WARM_BUILD_TIMEOUT_S  # warm the Lean cache
+            + TRANSFER_TIMEOUT_S  # pull workdir back out
+            + 3 * TIMEOUT_KILL_AFTER_S  # buffer for coreutils timeout
+            + 3 * EXEC_DEADLINE_MARGIN_S  # buffer for sb.exec client deadlines
         )
 
     def _wrap(self, command: str) -> str:
@@ -642,7 +629,7 @@ class ModalBackend(ComputeBackend):
             secrets=[secret],
             cpu=cpu,
             memory=self.memory_mib,
-            timeout=timeout_s + SYNC_HEADROOM_S,
+            timeout=timeout_s + self.wallclock_overhead_s,
             region=self.region,
         )
         try:
@@ -655,15 +642,14 @@ class ModalBackend(ComputeBackend):
             # Warm the Lean cache (and wire the .lake symlink) before timing real
             # work: Modal pages image layers in lazily, so the first build is slow.
             log.debug("warming lean cache", extra={"workdir": REMOTE_WD})
-            _run_bounded(
-                lambda: sb.exec(
-                    "bash",
-                    "-c",
+            _safe_run(
+                lambda: _sb_exec(
+                    sb,
                     f"ln -sfn {BAKED_LAKE} {REMOTE_WD}/.lake && lake build",
+                    WARM_BUILD_TIMEOUT_S,
                     workdir=REMOTE_WD,
-                    timeout=WARM_BUILD_TIMEOUT_S,
                 ).wait(),
-                timeout_s=WARM_BUILD_TIMEOUT_S + EXEC_DEADLINE_MARGIN_S,
+                timeout_s=_sb_exec_deadline(WARM_BUILD_TIMEOUT_S),
                 sb=sb,
                 label="warm_build",
             )
@@ -730,13 +716,7 @@ class ModalBackend(ComputeBackend):
             # Cap the command a headroom below the Sandbox timeout so a timed-out run
             # is killed while the Sandbox is still alive to pull the workdir back. The
             # exec also carries a client exec_deadline as a last-resort backstop.
-            proc = sb.exec(
-                "bash",
-                "-c",
-                _exec_payload(self._wrap(command), timeout_s),
-                workdir=REMOTE_WD,
-                timeout=_exec_deadline(timeout_s),
-            )
+            proc = _sb_exec(sb, self._wrap(command), timeout_s, workdir=REMOTE_WD)
         except BaseException:
             # Launch failed after provision; release the Sandbox before propagating.
             _terminate(sb)
@@ -746,7 +726,7 @@ class ModalBackend(ComputeBackend):
             sb=sb,
             workdir=workdir,
             started_at=started_at,
-            deadline_s=timeout_s + EXEC_DEADLINE_MARGIN_S,
+            deadline_s=_sb_exec_deadline(timeout_s),
         )
 
     def session(
@@ -841,20 +821,19 @@ class ModalSession(ComputeSession):
                 "timeout_s": timeout_s,
             },
         )
-        proc = self.sb.exec(
-            "bash",
-            "-c",
-            _exec_payload(self.backend._wrap(command), timeout_s),
+        proc = _sb_exec(
+            self.sb,
+            self.backend._wrap(command),
+            timeout_s,
             workdir=REMOTE_WD,
             secrets=secrets,
-            timeout=_exec_deadline(timeout_s),
         )
         return ModalSessionHandle(
             proc=proc,
             sb=self.sb,
             workdir=self.workdir,
             started_at=started_at,
-            deadline_s=timeout_s + EXEC_DEADLINE_MARGIN_S,
+            deadline_s=_sb_exec_deadline(timeout_s),
         )
 
     def sync_out(self) -> None:
