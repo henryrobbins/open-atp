@@ -266,17 +266,17 @@ def _tar_dir(src: Path) -> bytes:
     return buf.getvalue()
 
 
-def _sb_exec_args(command: str, timeout_s: int) -> list[str]:
+def _sb_exec_args(command: str, timeout_s: int, *, capture_io: bool) -> list[str]:
     """Build the args for ``sb.exec`` to run ``command`` in a Modal Sandbox."""
     # Modal's `sb.exec` timeout does not kill the process group, so we
     # wrap commands in coreutils `timeout` to ensure the group is killed.
     timeout = f"timeout --kill-after={TIMEOUT_KILL_AFTER_S} {timeout_s}"
-    # Modal leaves stdin open with no EOF. If the agent CLI attempts to read
-    # from stdin, it hangs forever. Redirect stdin to /dev/null to avoid this.
-    stdin = "< /dev/null"
-    # Write stderr to a file in the workdir so that it is accessible on sync.
-    stderr = f"2> {REMOTE_WD}/modal_stderr.txt"
-    payload = f"{timeout} bash -c {shlex.quote(command)} {stdin} {stderr}"
+    payload = f"{timeout} bash -c {shlex.quote(command)}"
+    if capture_io:
+        # Modal leaves stdin open with no EOF. If the agent CLI attempts to read
+        # from stdin, it hangs forever. Redirect stdin to /dev/null to avoid this.
+        # Write stderr to a file in the workdir so that it is accessible on sync.
+        payload += f" < /dev/null 2> {REMOTE_WD}/modal_stderr.txt"
     return ["bash", "-c", payload]
 
 
@@ -292,10 +292,16 @@ def _sb_exec(
     *,
     workdir: str | None = None,
     secrets: Sequence[modal.Secret] | None = None,
+    capture_io: bool = False,
 ) -> ContainerProcess[str]:
-    """Run ``command`` in ``sb`` with the standard timeout wrapping and deadline."""
+    """Run ``command`` in ``sb`` with the standard timeout wrapping and deadline.
+
+    `capture_io` redirects stdin to /dev/null and captures stderr to a file in
+    the workdir so that it is accessible on sync. It is true when executing
+    external commands in a provisioned Sandbox.
+    """
     return sb.exec(
-        *_sb_exec_args(command, timeout_s),
+        *_sb_exec_args(command, timeout_s, capture_io=capture_io),
         workdir=workdir,
         secrets=secrets,
         timeout=_sb_exec_deadline(timeout_s),
@@ -716,7 +722,9 @@ class ModalBackend(ComputeBackend):
             # Cap the command a headroom below the Sandbox timeout so a timed-out run
             # is killed while the Sandbox is still alive to pull the workdir back. The
             # exec also carries a client exec_deadline as a last-resort backstop.
-            proc = _sb_exec(sb, self._wrap(command), timeout_s, workdir=REMOTE_WD)
+            proc = _sb_exec(
+                sb, self._wrap(command), timeout_s, workdir=REMOTE_WD, capture_io=True
+            )
         except BaseException:
             # Launch failed after provision; release the Sandbox before propagating.
             _terminate(sb)
@@ -827,6 +835,7 @@ class ModalSession(ComputeSession):
             timeout_s,
             workdir=REMOTE_WD,
             secrets=secrets,
+            capture_io=True,
         )
         return ModalSessionHandle(
             proc=proc,
