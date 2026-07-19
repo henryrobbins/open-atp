@@ -27,7 +27,7 @@ from open_atp.benchmark import (
     tasks_from_dir,
 )
 from open_atp.lean import LeanProject, ProofTask
-from open_atp.provers.base import ProofResult
+from open_atp.provers.base import ProofResult, ProofStatus
 
 from .test_api import FIXTURE, FakeProver
 
@@ -123,10 +123,14 @@ def test_raising_prover_recorded_not_aborted(tmp_path: Path) -> None:
     assert by_prover["boom"].error == "docker down"
     assert by_prover["boom"].verification is None
     assert by_prover["boom"].success is False
+    # A bare RuntimeError is an unclassified prover failure.
+    assert by_prover["boom"].status is ProofStatus.ERROR
     assert by_prover["ok"].success is True
-    # The failed cell still wrote its results.json.
+    assert by_prover["ok"].status is ProofStatus.VERIFIED
+    # The failed cell still wrote its results.json, status included.
     payload = json.loads((tmp_path / "alpha" / "boom" / "results.json").read_text())
     assert payload["error"] == "docker down"
+    assert payload["status"] == "error"
 
 
 def test_table_has_a_row_per_pair(tmp_path: Path) -> None:

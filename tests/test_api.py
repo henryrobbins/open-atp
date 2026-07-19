@@ -34,7 +34,12 @@ from open_atp.images import DEFAULT_IMAGE, Image
 from open_atp.lean import LeanProject, ProofTask, ToolchainMismatch, create_project
 from open_atp.provers.agent_prover import AgentProver
 from open_atp.provers.aristotle import AristotleProver
-from open_atp.provers.base import AutomatedProver, ProofResult
+from open_atp.provers.base import (
+    AutomatedProver,
+    ProofResult,
+    ProofStatus,
+    status_for_exception,
+)
 from open_atp.provers.numina import NuminaProver
 from open_atp.verify import VerificationReport
 
@@ -194,6 +199,7 @@ def test_prove_populates_output_dir_and_verifies(tmp_path: Path) -> None:
 
     assert isinstance(result, ProofResult)
     assert result.prover == "agent" and result.success
+    assert result.status is ProofStatus.VERIFIED
     # output_dir/{wd,logs} laid out and populated.
     assert result.output_dir == out
     assert result.wd == out / "wd" and result.logs_dir == out / "logs"
@@ -218,6 +224,38 @@ def test_prove_rejects_toolchain_mismatch_before_generating(tmp_path: Path) -> N
         prover.prove(_task(), tmp_path / "run")
     # It failed up front -- before _generate wrote anything.
     assert not (tmp_path / "run" / "wd" / "Out.lean").exists()
+
+
+def test_prove_unverified_candidate_sets_status(tmp_path: Path) -> None:
+    result = FakeProver("agent", verified=False).prove(_task(), tmp_path / "run")
+    assert not result.success
+    assert result.status is ProofStatus.UNVERIFIED
+
+
+# --- status classification -------------------------------------------------
+
+
+def test_status_for_exception_maps_typed_failures() -> None:
+    from open_atp.backends.base import ComputeError, ExecTimeout, SandboxUnreachable
+    from open_atp.lean import MathlibRevMismatch, ToolchainMismatch
+
+    assert status_for_exception(ExecTimeout("t")) is ProofStatus.TIMEOUT
+    assert status_for_exception(SandboxUnreachable("s")) is ProofStatus.INFRA_ERROR
+    assert status_for_exception(ComputeError("c")) is ProofStatus.INFRA_ERROR
+    assert status_for_exception(ToolchainMismatch("i")) is ProofStatus.INPUT_ERROR
+    assert status_for_exception(MathlibRevMismatch("i")) is ProofStatus.INPUT_ERROR
+    assert status_for_exception(RuntimeError("boom")) is ProofStatus.ERROR
+
+
+def test_errored_captures_message_and_classifies(tmp_path: Path) -> None:
+    from open_atp.backends.base import ExecTimeout
+
+    result = ProofResult.errored("agent", tmp_path, ExecTimeout("out of time"))
+    assert result.prover == "agent"
+    assert result.verification is None and not result.success
+    assert result.error == "out of time"
+    assert result.status is ProofStatus.TIMEOUT
+    assert result.to_dict()["status"] == "timeout"
 
 
 def test_prove_runs_standalone_verify_when_generate_leaves_it_unset(

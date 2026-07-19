@@ -47,7 +47,7 @@ from open_atp.config import (
 )
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask, create_project
-from open_atp.provers.base import AutomatedProver, ProofResult
+from open_atp.provers.base import AutomatedProver, ProofResult, ProofStatus
 
 #: ax-prover baked into the Modal image (mirrors the images/Dockerfile ARG). Pinned
 #: to a commit on our fork (henryrobbins/ax-prover-base) rather than the 0.1.1 PyPI
@@ -183,12 +183,14 @@ def _check(ok: bool) -> str:
 
 def _proof_table(result: ProofResult) -> Table:
     """A two-column ``field``/``value`` table summarizing a :class:`ProofResult`."""
-    if result.success:
+    if result.status is ProofStatus.VERIFIED:
         status = "[green]✓ verified[/]"
-    elif result.error is not None:
-        status = f"[red]{result.error}[/]"
-    else:
+    elif result.status is ProofStatus.UNVERIFIED:
         status = "[red]✗ unverified[/]"
+    else:
+        status = f"[red]{result.status.value}[/]"
+        if result.error:
+            status += f": {result.error}"
 
     table = Table(box=ROUNDED, show_header=False)
     table.add_column("field", style="bold")
@@ -219,12 +221,12 @@ def _benchmark_table(result: BenchmarkResult) -> Table:
     table.add_column("time", justify="right")
     for run in result.runs:
         r = run.result
-        if r.success:
+        if r.status is ProofStatus.VERIFIED:
             status = "[green]✓[/]"
-        elif r.error is not None:
-            status = "[red]ERR[/]"
-        else:
+        elif r.status is ProofStatus.UNVERIFIED:
             status = "[red]✗[/]"
+        else:
+            status = f"[red]{r.status.value}[/]"
         cost = f"${r.cost_usd:.4f}" if r.cost_usd is not None else "—"
         time = f"{r.duration_s:.0f}s" if r.duration_s is not None else "—"
         table.add_row(run.task, run.prover, status, cost, time)
@@ -243,7 +245,10 @@ def _prove(args: argparse.Namespace) -> int:
 
     backend = build_backend({"type": args.compute})
     prover = standard_prover(args.prover, backend=backend)
-    result = prover.prove(task, Path(args.output))
+    try:
+        result = prover.prove(task, Path(args.output))
+    except Exception as exc:
+        result = ProofResult.errored(prover.name, Path(args.output), exc)
 
     if args.json:
         print(json.dumps(result.to_dict(), indent=2))

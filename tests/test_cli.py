@@ -17,7 +17,10 @@ from pathlib import Path
 import pytest
 
 from open_atp import __main__ as cli
+from open_atp.backends.base import ExecTimeout
 from open_atp.config import build_backend, standard_provers
+
+from .test_api import FIXTURE, FakeProver
 
 
 def _backend() -> object:
@@ -163,6 +166,29 @@ def test_load_dotenv_seeds_missing_without_overriding(
 
     assert os.environ["NEW_KEY"] == "from-dotenv"
     assert os.environ["EXISTING_KEY"] == "real-env"  # setdefault keeps real env
+
+
+def test_prove_classifies_a_raising_prover_instead_of_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    boom = FakeProver("agent", raises=ExecTimeout("out of time"))
+    monkeypatch.setattr(cli, "standard_prover", lambda name, backend: boom)
+
+    args = argparse.Namespace(
+        path=str(FIXTURE),
+        output=str(tmp_path),
+        compute="docker",
+        prover="agent",
+        json=True,
+    )
+    rc = cli._prove(args)
+
+    assert rc == 1  # a failed run exits nonzero, but does not raise
+    import json
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "timeout"
+    assert payload["error"] == "out of time"
 
 
 def test_download_dispatches_to_download_dataset(

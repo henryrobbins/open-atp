@@ -20,6 +20,11 @@ generate, then verify in the sandbox) so subclasses only implement `_generate`.
 .. autoclass:: open_atp.provers.base.AutomatedProver
 
 .. autoclass:: open_atp.provers.base.ProofResult
+
+.. autoclass:: open_atp.provers.base.ProofStatus
+   :members:
+
+.. autofunction:: open_atp.provers.base.status_for_exception
 ```
 
 ## Provers

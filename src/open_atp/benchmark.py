@@ -217,12 +217,7 @@ def run_benchmark(
             try:
                 result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
-                result = ProofResult(
-                    prover=prover.name,
-                    verification=None,
-                    output_dir=run_dir,
-                    error=str(exc),
-                )
+                result = ProofResult.errored(prover.name, run_dir, exc)
         (run_dir / "results.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str)
         )
@@ -239,7 +234,7 @@ def run_benchmark(
     def record(index: int, run: BenchmarkRun) -> None:
         slots[index] = run
         r = run.result
-        status = "✓" if r.success else ("error" if r.error else "✗")
+        status = "✓" if r.success else r.status.value
         log.debug(
             "run complete",
             extra={"task": run.task, "prover": run.prover, "status": status},
