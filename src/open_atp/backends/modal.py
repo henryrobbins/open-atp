@@ -313,6 +313,7 @@ class ModalCommandHandle(CommandHandle):
     deadline_s: float
     _stdout_lines: list[str] = field(default_factory=list)
     _buf: str = ""
+    _torn_down: bool = False
 
     def stream(self) -> Iterator[str]:
         """Yield stdout split into lines, re-buffering Modal's arbitrary chunks."""
@@ -363,22 +364,33 @@ class ModalCommandHandle(CommandHandle):
             duration_s=time.time() - self.started_at,
         )
 
-    def cancel(self) -> None:
-        """Pull partial artifacts, then terminate the Sandbox."""
+    def _teardown(self) -> None:
+        """Pull the workdir back, then terminate the Sandbox -- at most once.
+
+        Both :meth:`wait` (normal completion) and :meth:`cancel` (abort via the
+        context manager's ``__exit__``) tear the Sandbox down, and the ``with`` block
+        runs ``cancel`` *after* an explicit ``wait``. Guard so the second call is a
+        no-op instead of pulling from an already-terminated Sandbox -- which raises
+        ``NotFoundError`` and would mask a completed run (or the real failure).
+        """
+        if self._torn_down:
+            return
+        self._torn_down = True
         try:
             _pull_wd(self.sb, self.workdir)
         finally:
             _terminate(self.sb)
+
+    def cancel(self) -> None:
+        """Pull partial artifacts, then terminate -- a no-op once torn down."""
+        self._teardown()
 
     def wait(self) -> CommandResult:
         """Collect the result, pull the workdir back, then terminate the Sandbox."""
         try:
             return self._collect_result()
         finally:
-            try:
-                _pull_wd(self.sb, self.workdir)
-            finally:
-                _terminate(self.sb)
+            self._teardown()
 
 
 @dataclass
