@@ -68,7 +68,7 @@ class ProofStatus(enum.Enum):
     ERROR = "error"
 
 
-def status_for_exception(exc: BaseException) -> ProofStatus:
+def _status_for_exception(exc: BaseException) -> ProofStatus:
     """Classify an exception raised out of :meth:`AutomatedProver.prove`.
 
     Maps the backend's typed operational failures and the input-contract mismatches
@@ -131,10 +131,7 @@ class ProofResult:
         toolchain mismatch). :attr:`verification` is ``None`` and :attr:`success` is
         ``False``.
     status : ProofStatus
-        Coarse outcome bucket -- ``VERIFIED``/``UNVERIFIED`` from the verification, or
-        a failure bucket (``TIMEOUT``/``INFRA_ERROR``/``INPUT_ERROR``/``ERROR``) set by
-        the caller that caught the raising prover (see :func:`status_for_exception`).
-        The free-text :attr:`error` distinguishes same-bucket failures.
+        Coarse outcome bucket (see :class:`ProofStatus`).
     wd : pathlib.Path
         The completed working directory (``output_dir/wd``) -- a complete lake project
         with the completed ``.lean`` files. The proof output.
@@ -163,7 +160,7 @@ class ProofResult:
         """Build a failed result from an exception raised out of :meth:`prove`.
 
         The exception is classified onto :attr:`status` (see
-        :func:`status_for_exception`) and its message captured in :attr:`error`;
+        :func:`_status_for_exception`) and its message captured in :attr:`error`;
         :attr:`verification` stays ``None``.
         """
         return cls(
@@ -171,7 +168,7 @@ class ProofResult:
             verification=None,
             output_dir=output_dir,
             error=str(exc),
-            status=status_for_exception(exc),
+            status=_status_for_exception(exc),
         )
 
     @property

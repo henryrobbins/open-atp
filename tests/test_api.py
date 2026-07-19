@@ -38,7 +38,7 @@ from open_atp.provers.base import (
     AutomatedProver,
     ProofResult,
     ProofStatus,
-    status_for_exception,
+    _status_for_exception,
 )
 from open_atp.provers.numina import NuminaProver
 from open_atp.verify import VerificationReport
@@ -239,12 +239,12 @@ def test_status_for_exception_maps_typed_failures() -> None:
     from open_atp.backends.base import ComputeError, ExecTimeout, SandboxUnreachable
     from open_atp.lean import MathlibRevMismatch, ToolchainMismatch
 
-    assert status_for_exception(ExecTimeout("t")) is ProofStatus.TIMEOUT
-    assert status_for_exception(SandboxUnreachable("s")) is ProofStatus.INFRA_ERROR
-    assert status_for_exception(ComputeError("c")) is ProofStatus.INFRA_ERROR
-    assert status_for_exception(ToolchainMismatch("i")) is ProofStatus.INPUT_ERROR
-    assert status_for_exception(MathlibRevMismatch("i")) is ProofStatus.INPUT_ERROR
-    assert status_for_exception(RuntimeError("boom")) is ProofStatus.ERROR
+    assert _status_for_exception(ExecTimeout("t")) is ProofStatus.TIMEOUT
+    assert _status_for_exception(SandboxUnreachable("s")) is ProofStatus.INFRA_ERROR
+    assert _status_for_exception(ComputeError("c")) is ProofStatus.INFRA_ERROR
+    assert _status_for_exception(ToolchainMismatch("i")) is ProofStatus.INPUT_ERROR
+    assert _status_for_exception(MathlibRevMismatch("i")) is ProofStatus.INPUT_ERROR
+    assert _status_for_exception(RuntimeError("boom")) is ProofStatus.ERROR
 
 
 def test_errored_captures_message_and_classifies(tmp_path: Path) -> None:
