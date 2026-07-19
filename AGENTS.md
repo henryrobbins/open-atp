@@ -247,7 +247,7 @@ Practical rules:
 - **Do not** add `:exclude-members:` for attributes, params, or `name` — the hook
   already handles them. The only legitimate `:exclude-members:` is to hide an
   **overridden method** from a child page so it stays documented on the base only
-  (current uses: `start` on the backend impls, `stage` on the harness impls).
+  (current use: `stage` on the harness impls).
 - A new attribute/`@property` only shows up if you add it to the docstring `Attributes`
   section.
 - `make docs` builds with `-W` (warnings are errors) — a broken xref or duplicate

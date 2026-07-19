@@ -1,7 +1,7 @@
 """Modal Sandbox backend.
 
 Runs an arbitrary command over a workdir against the
-:meth:`ComputeBackend.start` contract.
+:meth:`ComputeBackend.session` contract.
 
 The one idea driving the design: Docker **bind-mounts** the workdir (edits land on
 the host with no copy step), but Modal Sandboxes have an **isolated filesystem**, so
@@ -303,11 +303,16 @@ def _modal_image_name(image: str) -> str:
 
 @dataclass
 class ModalCommandHandle(CommandHandle):
-    """Live handle for a command running in a Modal Sandbox."""
+    """A command exec'd into a live :class:`ModalSession`.
+
+    :meth:`wait` does NOT ``_pull_wd``/``_terminate``: the session owns teardown
+    (:meth:`ModalSession.close`), so a finished exec leaves the Sandbox up for the
+    next command (and close, guaranteed by the session context manager, is what
+    reclaims it).
+    """
 
     proc: ContainerProcess[str]
     sb: modal.Sandbox
-    workdir: Path
     started_at: float
     #: Client wall-clock (seconds) the process wait is bounded by.
     deadline_s: float
@@ -362,38 +367,6 @@ class ModalCommandHandle(CommandHandle):
             stderr=stderr,
             duration_s=time.time() - self.started_at,
         )
-
-    def cancel(self) -> None:
-        """Pull partial artifacts, then terminate the Sandbox."""
-        try:
-            _pull_wd(self.sb, self.workdir)
-        finally:
-            _terminate(self.sb)
-
-    def wait(self) -> CommandResult:
-        """Collect the result, pull the workdir back, then terminate the Sandbox."""
-        try:
-            return self._collect_result()
-        finally:
-            try:
-                _pull_wd(self.sb, self.workdir)
-            finally:
-                _terminate(self.sb)
-
-
-@dataclass
-class ModalSessionHandle(ModalCommandHandle):
-    """A command exec'd into a live :class:`ModalSession`.
-
-    Same stdout/stderr draining as the one-shot handle, but :meth:`wait` does NOT
-    ``_pull_wd``/``_terminate`` and :meth:`cancel` is a no-op: the session owns
-    teardown (:meth:`ModalSession.close`), so a finished exec must leave the Sandbox
-    up for the next command (and must not leave it leaked either -- that is close's
-    job, guaranteed by the session context manager).
-    """
-
-    def cancel(self) -> None:
-        """No-op: the owning session, not the handle, terminates the Sandbox."""
 
     def wait(self) -> CommandResult:
         """Collect the result, leaving the Sandbox up for the session."""
@@ -573,7 +546,7 @@ class ModalBackend(ComputeBackend):
     ) -> modal.Sandbox:
         """Create an idle Sandbox, push the workdir + mounts, warm the Lean cache.
 
-        Shared by :meth:`start` (one command then teardown) and :meth:`session` (kept
+        Shared by :meth:`run` (one command then teardown) and :meth:`session` (kept
         alive for many commands). On any failure the Sandbox is terminated before
         propagating so a failed provision never leaks compute. The push, warm build,
         and pull steps that follow are each bounded (liveness + wall-clock); the
@@ -650,77 +623,6 @@ class ModalBackend(ComputeBackend):
         )
         return sb
 
-    def start(
-        self,
-        workdir: Path,
-        command: str,
-        *,
-        timeout_s: int,
-        env: Mapping[str, str] | None = None,
-        mounts: Sequence[tuple[str, str]] | None = None,
-    ) -> CommandHandle:
-        """Provision a Sandbox, push ``workdir`` in, and launch ``command`` in it.
-
-        The handle pulls the workdir back out and terminates the Sandbox on
-        :meth:`ModalCommandHandle.wait`/``cancel``.
-
-        Parameters
-        ----------
-        workdir : pathlib.Path
-            Host directory pushed into the Sandbox before launch and pulled back out on
-            completion (so completed proofs land on the host).
-        command : str
-            The shell command to run inside the Sandbox.
-        timeout_s : int
-            Wall-clock cap for the command, in seconds.
-        env : Mapping[str, str], optional
-            Per-call environment variables, merged over the backend's :attr:`env`.
-            Default empty.
-        mounts : Sequence[tuple[str, str]], optional
-            Extra ``(host_path, container_path)`` dirs pushed into the Sandbox (e.g.
-            agent credential dirs). Default empty.
-
-        Returns
-        -------
-        CommandHandle
-            A live :class:`ModalCommandHandle` to stream or :meth:`~CommandHandle.wait`
-            on.
-        """
-        sb = self._provision(
-            workdir=workdir, timeout_s=timeout_s, env=env, mounts=mounts
-        )
-        try:
-            started_at = time.time()
-            log.debug(
-                "modal exec",
-                extra={
-                    "command": command,
-                    "workdir": WORKDIR_MOUNT,
-                    "timeout_s": timeout_s,
-                },
-            )
-            # Cap the command a headroom below the Sandbox timeout so a timed-out run
-            # is killed while the Sandbox is still alive to pull the workdir back. The
-            # exec also carries a client exec_deadline as a last-resort backstop.
-            proc = _sb_exec(
-                sb,
-                wrap_command(command),
-                timeout_s,
-                workdir=WORKDIR_MOUNT,
-                capture_io=True,
-            )
-        except BaseException:
-            # Launch failed after provision; release the Sandbox before propagating.
-            _terminate(sb)
-            raise
-        return ModalCommandHandle(
-            proc=proc,
-            sb=sb,
-            workdir=workdir,
-            started_at=started_at,
-            deadline_s=_sb_exec_deadline(timeout_s),
-        )
-
     def session(
         self,
         workdir: Path,
@@ -794,7 +696,7 @@ class ModalSession(ComputeSession):
         Returns
         -------
         CommandHandle
-            A live :class:`ModalSessionHandle` whose ``wait`` leaves the Sandbox up for
+            A live :class:`ModalCommandHandle` whose ``wait`` leaves the Sandbox up for
             the next command.
         """
         # Per-command env is rare (the agent's creds are pinned at session create), so
@@ -818,10 +720,9 @@ class ModalSession(ComputeSession):
             secrets=secrets,
             capture_io=True,
         )
-        return ModalSessionHandle(
+        return ModalCommandHandle(
             proc=proc,
             sb=self.sb,
-            workdir=self.workdir,
             started_at=started_at,
             deadline_s=_sb_exec_deadline(timeout_s),
         )

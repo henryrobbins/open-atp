@@ -301,8 +301,7 @@ class Verifier:
         if session is None:
             result = self.backend.run(project.root, script, timeout_s=self.timeout_s)
         else:
-            with session.exec(script, timeout_s=self.timeout_s) as handle:
-                result = handle.wait()
+            result = session.exec(script, timeout_s=self.timeout_s).wait()
         compile_log = result.stdout + ("\n" + result.stderr if result.stderr else "")
 
         per_file = self._parse_per_file(compile_log, rel)

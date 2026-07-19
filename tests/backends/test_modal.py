@@ -29,7 +29,6 @@ from open_atp.backends.modal import (
     WARM_BUILD_TIMEOUT_S,
     ModalBackend,
     ModalCommandHandle,
-    ModalSessionHandle,
     _modal_image_name,
     _safe_run,
     _tar_dir,
@@ -156,10 +155,8 @@ class FakeSandbox:
         self.terminated = True
 
 
-def _handle(sb: FakeSandbox, proc: FakeProc, wd: Path) -> ModalCommandHandle:
-    return ModalCommandHandle(
-        proc=proc, sb=sb, workdir=wd, started_at=0.0, deadline_s=60.0
-    )
+def _handle(sb: FakeSandbox, proc: FakeProc) -> ModalCommandHandle:
+    return ModalCommandHandle(proc=proc, sb=sb, started_at=0.0, deadline_s=60.0)
 
 
 # _safe_run ---------------------------------------------------------------
@@ -213,21 +210,21 @@ def test_safe_run_timeout_raises_exec_timeout(monkeypatch) -> None:
 # stream / drain / collect ---------------------------------------------------
 
 
-def test_stream_rebuffers_chunks_into_lines(tmp_path: Path) -> None:
+def test_stream_rebuffers_chunks_into_lines() -> None:
     # Modal yields arbitrary chunks: one holds two lines, the next splits a line.
     proc = FakeProc(chunks=['{"a":1}\n{"b":2}\n{"c', '":3}\n'])
-    handle = _handle(FakeSandbox(), proc, tmp_path)
+    handle = _handle(FakeSandbox(), proc)
     assert list(handle.stream()) == ['{"a":1}', '{"b":2}', '{"c":3}']
 
 
-def test_stream_maps_errors_via_raise_stream_error(tmp_path: Path) -> None:
+def test_stream_maps_errors_via_raise_stream_error() -> None:
     proc = FakeProc(raise_on_stream=RuntimeError("dropped"))
-    handle = _handle(FakeSandbox(dead=True), proc, tmp_path)
+    handle = _handle(FakeSandbox(dead=True), proc)
     with pytest.raises(SandboxUnreachable):
         list(handle.stream())
 
 
-def test_stream_reaped_sandbox_raises_unreachable(monkeypatch, tmp_path: Path) -> None:
+def test_stream_reaped_sandbox_raises_unreachable(monkeypatch) -> None:
     # The liveness-polled stall detection in _safe_stream is a concurrency primitive:
     # drive it through the public stream() with a stdout that never yields (an
     # unreachable worker delivers no EOF) and a reaped Sandbox, and it must abort at the
@@ -242,16 +239,16 @@ def test_stream_reaped_sandbox_raises_unreachable(monkeypatch, tmp_path: Path) -
             blocked.wait()
             yield ""
 
-    handle = _handle(FakeSandbox(dead=True), BlockingProc(), tmp_path)
+    handle = _handle(FakeSandbox(dead=True), BlockingProc())
     with pytest.raises(SandboxUnreachable):
         list(handle.stream())
 
 
-def test_collect_result_drains_and_reads_stderr(tmp_path: Path) -> None:
+def test_collect_result_drains_and_reads_stderr() -> None:
     # Dead sandbox => _pull_stderr short-circuits to "", so this stays fully offline.
     proc = FakeProc(chunks=["line1\n", "trailing-no-newline"], exit_code=7)
-    handle = _handle(FakeSandbox(dead=True), proc, tmp_path)
-    result = handle._collect_result()
+    handle = _handle(FakeSandbox(dead=True), proc)
+    result = handle.wait()
     assert result.exit_code == 7
     assert result.stdout == "line1\ntrailing-no-newline"
     assert result.stderr == ""
@@ -260,33 +257,13 @@ def test_collect_result_drains_and_reads_stderr(tmp_path: Path) -> None:
 # handle teardown semantics --------------------------------------------------
 
 
-def test_command_handle_wait_pulls_and_terminates(tmp_path: Path) -> None:
-    sb = FakeSandbox(dead=True)  # dead => pull short-circuits, terminate still runs
-    handle = _handle(sb, FakeProc(chunks=["ok\n"]), tmp_path)
-    result = handle.wait()
-    assert result.stdout == "ok"
-    assert sb.terminated
-
-
-def test_command_handle_cancel_terminates(tmp_path: Path) -> None:
+def test_handle_wait_leaves_sandbox_up() -> None:
+    # The session, not the handle, owns teardown: wait collects the result and leaves
+    # the Sandbox alive for the next exec.
     sb = FakeSandbox(dead=True)
-    _handle(sb, FakeProc(), tmp_path).cancel()
-    assert sb.terminated
-
-
-def test_session_handle_wait_leaves_sandbox_up(tmp_path: Path) -> None:
-    sb = FakeSandbox(dead=True)
-    handle = ModalSessionHandle(
-        proc=FakeProc(chunks=["ok\n"]),
-        sb=sb,
-        workdir=tmp_path,
-        started_at=0.0,
-        deadline_s=60.0,
-    )
+    handle = _handle(sb, FakeProc(chunks=["ok\n"]))
     assert handle.wait().stdout == "ok"
-    assert not sb.terminated  # session owns teardown, not the handle
-    handle.cancel()
-    assert not sb.terminated  # cancel is a no-op on a session handle
+    assert not sb.terminated
 
 
 # backend + session (offline surface) ----------------------------------------
