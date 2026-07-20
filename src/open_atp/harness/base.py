@@ -21,11 +21,14 @@ the prover (``AgentProver.skills``, resolved to source dirs and handed to
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar
 
@@ -33,7 +36,8 @@ log = logging.getLogger("open_atp")
 
 #: Provider name (see :func:`_infer_provider`) -> the canonical env var the agent
 #: CLI reads its key from. OpenCode/ax-prover forward the selected provider's key
-#: under this name.
+#: under this name. Pinned here for the providers our standard provers select; any
+#: other opencode provider is resolved against models.dev (:func:`_provider_env_var`).
 _PROVIDER_ENV = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
@@ -42,15 +46,43 @@ _PROVIDER_ENV = {
     "xai": "XAI_API_KEY",
 }
 
+#: The registry opencode itself reads provider `env` arrays from to auto-detect keys.
+_MODELS_DEV_URL = "https://models.dev/api.json"
+
+
+@lru_cache(maxsize=1)
+def _models_dev_env() -> dict[str, list[str]]:
+    """provider id -> its ``env`` array from the models.dev registry (cached).
+
+    Best-effort: on any network or parse failure returns an empty map so callers
+    fall back to the ``<PROVIDER>_API_KEY`` convention. Standard provers never reach
+    this (their providers are pinned in :data:`_PROVIDER_ENV`).
+    """
+    try:
+        with urllib.request.urlopen(_MODELS_DEV_URL, timeout=10) as resp:
+            data = json.load(resp)
+    except (OSError, ValueError):
+        log.warning("models.dev registry unreachable", extra={"url": _MODELS_DEV_URL})
+        return {}
+    return {
+        pid: p["env"] for pid, p in data.items() if isinstance(p, dict) and p.get("env")
+    }
+
 
 def _provider_env_var(provider: str) -> str:
     """The env var an API-key ``provider`` reads its key from.
 
-    Known providers come from :data:`_PROVIDER_ENV`; any other opencode provider
-    falls back to the ``<PROVIDER>_API_KEY`` convention so it works without a
-    per-provider entry here.
+    Providers backing a standard prover are pinned in :data:`_PROVIDER_ENV`. Any
+    other opencode provider is resolved against the models.dev registry (the same
+    source opencode uses), taking the first entry of its ``env`` array. Falls back to
+    the ``<PROVIDER>_API_KEY`` convention if models.dev is silent or unreachable.
     """
-    return _PROVIDER_ENV.get(provider, f"{provider.upper()}_API_KEY")
+    if provider in _PROVIDER_ENV:
+        return _PROVIDER_ENV[provider]
+    env = _models_dev_env().get(provider)
+    if env:
+        return env[0]
+    return f"{provider.upper()}_API_KEY"
 
 
 #: Files the harness writes into the workdir; named so they never collide with a
@@ -235,7 +267,8 @@ class Harness(ABC):
 
         ``explicit`` (a constructor override) wins; otherwise read the host env under
         the provider's canonical name (:func:`_provider_env_var`: :data:`_PROVIDER_ENV`
-        for known providers, else ``<PROVIDER>_API_KEY``). Raise if neither is set. No
+        for standard-prover providers, else resolved via models.dev). Raise if neither
+        is set. No
         format check -- OpenAI and DeepSeek keys are both ``sk-...`` and
         indistinguishable, so the key is assumed correct for the selected provider.
 

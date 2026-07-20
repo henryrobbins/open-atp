@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from open_atp.harness import OpenCodeHarness
+from open_atp.harness import OpenCodeHarness, base
 
 
 def _write_auth(home: Path, entries: dict[str, object]) -> Path:
@@ -51,10 +51,24 @@ def test_api_key_reads_host_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert harness.agent_auth().env == {"XAI_API_KEY": "sk-xai"}
 
 
-def test_api_key_unknown_provider_uses_convention(
+def test_api_key_unpinned_provider_resolved_via_models_dev(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Any provider not in the known table falls back to <PROVIDER>_API_KEY.
+    # A provider not pinned in _PROVIDER_ENV takes the first env from models.dev
+    # (whose id-derived convention would wrongly guess MOONSHOTAI_API_KEY).
+    monkeypatch.setattr(
+        base, "_models_dev_env", lambda: {"moonshotai": ["MOONSHOT_API_KEY"]}
+    )
+    monkeypatch.setenv("MOONSHOT_API_KEY", "sk-moon")
+    harness = OpenCodeHarness(model="m", provider="moonshotai", auth="api_key")
+    assert harness.agent_auth().env == {"MOONSHOT_API_KEY": "sk-moon"}
+
+
+def test_api_key_unpinned_provider_convention_when_models_dev_silent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # models.dev unreachable/silent -> last-resort <PROVIDER>_API_KEY convention.
+    monkeypatch.setattr(base, "_models_dev_env", dict)
     monkeypatch.setenv("FIREWORKS_API_KEY", "sk-fw")
     harness = OpenCodeHarness(model="m", provider="fireworks", auth="api_key")
     assert harness.agent_auth().env == {"FIREWORKS_API_KEY": "sk-fw"}
