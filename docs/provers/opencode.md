@@ -1,10 +1,13 @@
 # OpenCode
 
-```{include} _meta_opencode.md
-:parser: myst
-```
+Use [OpenCode](https://opencode.ai/) as an automated theorem prover with common skills and MCP tooling for working with Lean. OpenCode is an open-source coding-agent harness with many supported model providers. OpenATP supports OpenCode through the {class}`~open_atp.provers.agent_prover.AgentProver` and the {class}`~open_atp.harness.opencode.OpenCodeHarness`.
 
-Use [OpenCode](https://opencode.ai/) as an automated theorem prover with Lean skills and MCP tooling. This prover uses the {class}`~open_atp.provers.agent_prover.AgentProver` with the {class}`~open_atp.harness.opencode.OpenCodeHarness`. Unlike Claude Code and Codex, OpenCode is provider-agnostic: one CLI fronts Anthropic, OpenAI, Google, or DeepSeek models.
+```{toctree}
+:maxdepth: 1
+:hidden:
+
+deepseek
+```
 
 ## Authentication
 
@@ -22,54 +25,7 @@ from open_atp.harness import OpenCodeHarness
 OpenCodeHarness(model="claude-opus-4-8", provider_api_key="sk-...")
 ```
 
-The provider is inferred from the model prefix unless you pass `provider` explicitly. Either way the harness forwards the key into the sandbox under its canonical env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `DEEPSEEK_API_KEY`). See {ref}`tracking-cost-and-usage-opencode` for details.
-
-## Using the prover
-
-### Standard prover via Python API
-
-The simplest way to run the prover is through {func}`~open_atp.config.standard_prover` which uses a standard configuration pointing at a DeepSeek model. Either set `DEEPSEEK_API_KEY` in the host environment or pass it explicitly to the harness. Here, we prove the {ref}`MUL_REORDER` example theorem:
-
-```{testcode}
-from pathlib import Path
-
-from open_atp.backends.docker import DockerBackend
-from open_atp.config import standard_prover
-from open_atp.examples import EXAMPLE, example_task
-
-task = example_task(EXAMPLE.MUL_REORDER)
-prover = standard_prover("opencode", backend=DockerBackend())
-result = prover.prove(task, output_dir=Path("demo"))
-```
-
-### Standard prover via CLI
-
-The standard prover can also be run from the CLI:
-
-```bash
-open-atp prove path/to/task.lean output_dir opencode
-```
-
-### Customizing the prover
-
-To override knobs like `model` and `effort`, construct the class directly. The `provider` is inferred from the model prefix unless set explicitly:
-
-```{testcode}
-from pathlib import Path
-
-from open_atp.backends.docker import DockerBackend
-from open_atp.examples import EXAMPLE, example_task
-from open_atp.harness import OpenCodeHarness
-from open_atp.images import DEFAULT_IMAGE
-from open_atp.provers import AgentProver
-
-task = example_task(EXAMPLE.MUL_REORDER)
-prover = AgentProver(
-    harness=OpenCodeHarness(model="claude-opus-4-8", effort="medium"),
-    backend=DockerBackend(image=DEFAULT_IMAGE),
-)
-result = prover.prove(task, output_dir=Path("demo"))
-```
+The provider is inferred from the model prefix unless you pass `provider` explicitly. Either way the harness forwards the key into the sandbox under its canonical env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `DEEPSEEK_API_KEY`).
 
 :::{tip}
 If you are harness agnostic and want to use Anthropic or OpenAI models, it is recommended to use the {doc}`/provers/claude_code` or {doc}`/provers/codex`  provers. These provers are billed against subscription plans rather than API usage, which is often much cheaper.
@@ -100,7 +56,9 @@ The agent prompt (below) is written into the working directory and read into `$P
 ```
 :::
 
+See the {doc}`/api/index` for all {class}`~open_atp.harness.opencode.OpenCodeHarness` configuration options.
+
 (tracking-cost-and-usage-opencode)=
 ## Tracking cost and usage
 
-The OpenCode CLI reports a per-step cost and token breakdown for each provider call. The cost is summed to populate `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. You can also monitor consumption from your provider's usage dashboard. For example, DeepSeek's dashboard is at [DeepSeek Usage](https://platform.deepseek.com/usage).
+The OpenCode CLI reports a per-step cost and token breakdown for each provider call. The cost is summed to populate `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. You can also monitor consumption from your provider's usage dashboard — each model page links its own.

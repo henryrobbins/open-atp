@@ -102,7 +102,7 @@ tasks = tasks_from_dir("datasets/fate-m")
 backend = DockerBackend()
 provers = {
     name: standard_prover(name, backend=backend)
-    for name in ("claude", "codex", "opencode")
+    for name in ("claude", "codex", "deepseek")
 }
 
 # Run the benchmark
@@ -131,7 +131,7 @@ We can reproduce the above Python API example with the following CLI command. We
 
 ```console
 $ open-atp benchmark datasets/fate-m runs/fate-m \
-    --provers claude,codex,opencode \
+    --provers claude,codex,deepseek \
     --compute docker \
     --tasks 1,2,3 \
     --workers 10
@@ -140,13 +140,13 @@ $ open-atp benchmark datasets/fate-m runs/fate-m \
 ├──────┼──────────┼────────┼─────────┼──────┤
 │ 1    │ claude   │   ✓    │ $0.4703 │ 150s │
 │ 1    │ codex    │   ✓    │ $0.6480 │ 140s │
-│ 1    │ opencode │   ✓    │ $0.2257 │ 129s │
+│ 1    │ deepseek │   ✓    │ $0.2257 │ 129s │
 │ 2    │ claude   │   ✓    │ $0.5292 │ 141s │
 │ 2    │ codex    │   ✓    │ $0.7480 │ 139s │
-│ 2    │ opencode │   ✓    │ $0.1336 │ 135s │
+│ 2    │ deepseek │   ✓    │ $0.1336 │ 135s │
 │ 3    │ claude   │   ✓    │ $0.2901 │ 153s │
 │ 3    │ codex    │   ✓    │ $0.4865 │ 147s │
-│ 3    │ opencode │   ✓    │ $0.2048 │ 139s │
+│ 3    │ deepseek │   ✓    │ $0.2048 │ 139s │
 ╰──────┴──────────┴────────┴─────────┴──────╯
 ```
 
@@ -170,7 +170,7 @@ provers:
       type: codex
       model: gpt-5.5
       effort: medium
-  - opencode
+  - deepseek
 ```
 
 Supply the config to the benchmark with `--config`:
