@@ -121,7 +121,8 @@ def test_failing_prover_recorded_not_aborted(tmp_path: Path) -> None:
 
     by_prover = {r.prover: r.result for r in result.runs}
     # prove() caught the started run's failure and returned an ERROR record.
-    assert by_prover["boom"].error == "RuntimeError: docker down"
+    assert by_prover["boom"].error == "RuntimeError"
+    assert by_prover["boom"].error_msg == "docker down"
     assert by_prover["boom"].verification is None
     assert by_prover["boom"].success is False
     assert by_prover["boom"].status is ProofStatus.ERROR
@@ -129,7 +130,7 @@ def test_failing_prover_recorded_not_aborted(tmp_path: Path) -> None:
     assert by_prover["ok"].status is ProofStatus.VERIFIED
     # The failed cell still wrote its results.json, status included.
     payload = json.loads((tmp_path / "alpha" / "boom" / "results.json").read_text())
-    assert payload["error"] == "RuntimeError: docker down"
+    assert payload["error"] == "RuntimeError" and payload["error_msg"] == "docker down"
     assert payload["status"] == "error"
 
 
@@ -141,7 +142,7 @@ def test_input_rejection_recorded_as_errored_cell(tmp_path: Path) -> None:
 
     r = result.runs[0].result
     assert r.status is ProofStatus.ERROR
-    assert r.error is not None and "ToolchainMismatch" in r.error
+    assert r.error == "ToolchainMismatch"
     assert r.verification is None and not r.success
     payload = json.loads((tmp_path / "alpha" / "bad" / "results.json").read_text())
     assert payload["status"] == "error"

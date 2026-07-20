@@ -10,7 +10,7 @@ from pathlib import Path
 
 from open_atp.harness._catalog import resolve_plugin
 from open_atp.harness._paths import _MCP_JSON, _SCRIPTS
-from open_atp.harness.base import Harness, HarnessRunResult
+from open_atp.harness.base import Harness, HarnessRunResult, MissingCredentials
 
 log = logging.getLogger("open_atp")
 
@@ -124,7 +124,7 @@ class ClaudeCodeHarness(Harness):
                 "missing credential",
                 extra={"harness": self.name, "env": "CLAUDE_CODE_OAUTH_TOKEN"},
             )
-            raise RuntimeError(
+            raise MissingCredentials(
                 "claude_code harness requires CLAUDE_CODE_OAUTH_TOKEN"
                 " from `claude setup-token`"
             )

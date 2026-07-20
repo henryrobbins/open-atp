@@ -415,7 +415,7 @@ class StatementTracker:
                         )
                         log.info(
                             "restored removed statement",
-                            extra={"name": change.name, "file": str(f)},
+                            extra={"statement": change.name, "file": str(f)},
                         )
                 elif change.change_type == "modified":
                     if (
@@ -438,7 +438,7 @@ class StatementTracker:
                             )
                             log.info(
                                 "restored modified statement",
-                                extra={"name": change.name, "file": str(f)},
+                                extra={"statement": change.name, "file": str(f)},
                             )
 
             if new_content != current_content:

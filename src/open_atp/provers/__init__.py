@@ -2,7 +2,12 @@
 
 from open_atp.provers.agent_prover import AgentProver
 from open_atp.provers.aristotle import AristotleProver
-from open_atp.provers.base import AutomatedProver, ProofResult, ProofStatus
+from open_atp.provers.base import (
+    AutomatedProver,
+    GenerationTimeout,
+    ProofResult,
+    ProofStatus,
+)
 from open_atp.provers.numina import NuminaProver
 
 #: Prover *type* name -> the :class:`AutomatedProver` subclass. Package-internal: the
@@ -19,6 +24,7 @@ __all__ = [
     "AutomatedProver",
     "AgentProver",
     "AristotleProver",
+    "GenerationTimeout",
     "NuminaProver",
     "ProofResult",
     "ProofStatus",

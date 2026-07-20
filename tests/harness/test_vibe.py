@@ -25,6 +25,7 @@ import pytest
 from open_atp.harness import (
     _HARNESSES,
     Harness,
+    MissingCredentials,
     VibeHarness,
 )
 from open_atp.lean import LeanProject, ProofTask
@@ -128,7 +129,7 @@ def test_agent_command_omits_unset_guards() -> None:
 def test_agent_auth_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     harness = VibeHarness(model="labs-leanstral-1-5")
     monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
-    with pytest.raises(RuntimeError, match="MISTRAL_API_KEY"):
+    with pytest.raises(MissingCredentials, match="MISTRAL_API_KEY"):
         harness.agent_auth()
     monkeypatch.setenv("MISTRAL_API_KEY", "sk-host")
     assert harness.agent_auth().env == {"MISTRAL_API_KEY": "sk-host"}
@@ -221,12 +222,12 @@ def test_generate_reports_changes_and_session_cost(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
         # The real vibe run writes this; emulate it so parse_result() finds the cost.
         assert isinstance(harness, VibeHarness)
         _write_session_log(harness._session_log_dir(workdir), _session_stats())
-        return STREAM_LINES, ""
+        return STREAM_LINES, "", False
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     wd = tmp_path / "wd"

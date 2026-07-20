@@ -269,12 +269,25 @@ def test_handle_wait_leaves_sandbox_up() -> None:
 # backend + session (offline surface) ----------------------------------------
 
 
-def test_session_close_and_sync_out_pull_then_terminate(tmp_path: Path) -> None:
+def test_sync_out_raises_transfer_error_on_dead_sandbox(tmp_path: Path) -> None:
+    from open_atp.backends.base import TransferError
     from open_atp.backends.modal import ModalSession
 
-    sb = FakeSandbox(dead=True)  # dead => pulls short-circuit, close still terminates
+    # sync_out is the result-bearing pull: a dead Sandbox means the workdir can't be
+    # retrieved, so it fails loudly rather than silently returning an empty workdir.
+    sb = FakeSandbox(dead=True)
     session = ModalSession(backend=ModalBackend(), sb=sb, workdir=tmp_path)
-    session.sync_out()  # pull skipped on a dead Sandbox; must not raise
+    with pytest.raises(TransferError, match="pull_wd"):
+        session.sync_out()
+
+
+def test_session_close_swallows_pull_failure_and_terminates(tmp_path: Path) -> None:
+    from open_atp.backends.modal import ModalSession
+
+    # close()'s teardown pull is best-effort: on a dead Sandbox it must not raise
+    # (masking the real outcome), and termination still runs.
+    sb = FakeSandbox(dead=True)
+    session = ModalSession(backend=ModalBackend(), sb=sb, workdir=tmp_path)
     session.close()
     assert sb.terminated
 

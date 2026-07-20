@@ -31,6 +31,17 @@ from typing import ClassVar
 
 log = logging.getLogger("open_atp")
 
+
+class MissingCredentials(Exception):
+    """A credential a prover needs to run is absent.
+
+    A fail-fast precondition error, sibling to
+    :class:`~open_atp.lean.ToolchainMismatch`: resolved before a run starts (in the
+    prover's preflight) and raised to the caller rather than turned into a run record.
+    The message names the missing credential.
+    """
+
+
 #: Provider name (see :func:`_infer_provider`) -> the canonical env var the agent
 #: CLI reads its key from. OpenCode/ax-prover forward the selected provider's key
 #: under this name.
@@ -242,7 +253,7 @@ class Harness(ABC):
 
         Raises
         ------
-        RuntimeError
+        MissingCredentials
             If neither ``explicit`` nor the host env supplies the key.
         """
         env_name = _PROVIDER_ENV[provider]
@@ -252,7 +263,7 @@ class Harness(ABC):
                 "missing provider credential",
                 extra={"harness": self.name, "provider": provider, "env": env_name},
             )
-            raise RuntimeError(
+            raise MissingCredentials(
                 f"{self.name} harness requires {env_name} for provider {provider!r}"
             )
         return {env_name: key}

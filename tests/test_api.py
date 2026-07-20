@@ -24,7 +24,12 @@ from pathlib import Path
 
 import pytest
 
-from open_atp.backends.base import ComputeError, ExecTimeout, SandboxUnreachable
+from open_atp.backends.base import (
+    ComputeError,
+    ExecTimeout,
+    SandboxUnreachable,
+    TransferError,
+)
 from open_atp.backends.docker import DockerBackend
 from open_atp.config import standard_prover, standard_provers
 from open_atp.harness import (
@@ -38,6 +43,7 @@ from open_atp.provers.agent_prover import AgentProver
 from open_atp.provers.aristotle import AristotleProver
 from open_atp.provers.base import (
     AutomatedProver,
+    GenerationTimeout,
     ProofResult,
     ProofStatus,
 )
@@ -219,21 +225,26 @@ def test_prove_records_a_started_run_failure_as_a_result(tmp_path: Path) -> None
     result = boom.prove(_task(), tmp_path / "run")
 
     assert result.status is ProofStatus.ERROR
-    assert result.error == "RuntimeError: docker down"
+    assert result.error == "RuntimeError" and result.error_msg == "docker down"
     assert result.verification is None and not result.success
     # The run's output layout is still pointed at, and a result.json still written.
     assert result.output_dir == tmp_path / "run" and result.logs_dir.is_dir()
     payload = json.loads((result.logs_dir / "result.json").read_text())
     assert payload["status"] == "error"
-    assert payload["error"] == "RuntimeError: docker down"
+    assert payload["error"] == "RuntimeError" and payload["error_msg"] == "docker down"
 
 
 @pytest.mark.parametrize(
     ("exc", "expected"),
     [
-        (ExecTimeout("t"), ProofStatus.TIMEOUT),
-        (SandboxUnreachable("s"), ProofStatus.INFRA_ERROR),
-        (ComputeError("c"), ProofStatus.INFRA_ERROR),
+        # Only a generation-budget exhaustion is its own bucket; every other
+        # started-run failure -- infra stalls included -- is a plain ERROR, told apart
+        # by the recorded exception class name in ``error``.
+        (GenerationTimeout("out of budget"), ProofStatus.TIMEOUT),
+        (ExecTimeout("t"), ProofStatus.ERROR),
+        (SandboxUnreachable("s"), ProofStatus.ERROR),
+        (TransferError("pull_wd: gone"), ProofStatus.ERROR),
+        (ComputeError("c"), ProofStatus.ERROR),
         (RuntimeError("boom"), ProofStatus.ERROR),
     ],
 )
@@ -244,7 +255,9 @@ def test_prove_classifies_a_started_run_failure(
         _task(), tmp_path / type(exc).__name__
     )
     assert result.status is expected
-    assert result.error == f"{type(exc).__name__}: {exc}"
+    # The class name is the search key; the message is the human "why".
+    assert result.error == type(exc).__name__
+    assert result.error_msg == str(exc)
 
 
 def test_prove_rejects_toolchain_mismatch_before_generating(tmp_path: Path) -> None:
@@ -266,12 +279,19 @@ def test_prove_unverified_candidate_sets_status(tmp_path: Path) -> None:
 
 
 def test_errored_synthesizes_a_minimal_classified_result(tmp_path: Path) -> None:
-    result = ProofResult.errored("agent", tmp_path, ExecTimeout("out of time"))
+    result = ProofResult.errored("agent", tmp_path, GenerationTimeout("out of budget"))
     assert result.prover == "agent"
     assert result.verification is None and not result.success
-    assert result.error == "ExecTimeout: out of time"
+    assert result.error == "GenerationTimeout" and result.error_msg == "out of budget"
     assert result.status is ProofStatus.TIMEOUT
     assert result.to_dict()["status"] == "timeout"
+
+
+def test_errored_classifies_an_infra_failure_as_error(tmp_path: Path) -> None:
+    # A narrowed ExecTimeout (an infra stall) is a plain ERROR, greppable by kind.
+    result = ProofResult.errored("agent", tmp_path, ExecTimeout("pull_wd stalled"))
+    assert result.status is ProofStatus.ERROR
+    assert result.error == "ExecTimeout" and result.error_msg == "pull_wd stalled"
 
 
 def test_prove_runs_standalone_verify_when_generate_leaves_it_unset(
@@ -316,12 +336,13 @@ def test_to_dict_carries_error_for_a_failed_result(tmp_path: Path) -> None:
         prover="agent",
         verification=None,
         output_dir=tmp_path / "run",
-        error="RuntimeError: nope",
+        error="RuntimeError",
+        error_msg="nope",
     )
     payload = result.to_dict()
     assert payload["success"] is False
     assert payload["verification"] is None
-    assert payload["error"] == "RuntimeError: nope"
+    assert payload["error"] == "RuntimeError" and payload["error_msg"] == "nope"
 
 
 # --- staging bare files ----------------------------------------------------

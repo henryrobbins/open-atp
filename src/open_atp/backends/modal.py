@@ -50,6 +50,7 @@ from open_atp.backends.base import (
     ComputeSession,
     ExecTimeout,
     SandboxUnreachable,
+    TransferError,
     wrap_command,
 )
 from open_atp.images import DEFAULT_IMAGE, Image
@@ -405,13 +406,17 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
 
 
 def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
-    """Tar the Sandbox workdir and extract it over the host ``wd``."""
+    """Tar the Sandbox workdir and extract it over the host ``wd``.
+
+    Raises :class:`~open_atp.backends.base.TransferError` when the workdir cannot be
+    retrieved (the Sandbox is already gone, or the tar copy/extract fails), so a
+    result-bearing pull is a loud failure rather than a silent degrade into an empty
+    verify. Teardown callers that only pull best-effort must swallow it.
+    """
     if _is_dead(sb):
-        log.warning(
-            "pull_wd: Sandbox already terminated; skipping pull",
-            extra={"wd": str(wd)},
+        raise TransferError(
+            "pull_wd: Sandbox terminated before the workdir could be pulled"
         )
-        return
 
     def do_pull() -> None:
         # Exclude the image-baked .lake symlink target
@@ -435,9 +440,20 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
             with tarfile.open(tmp.name, mode="r:gz") as tf:
                 tf.extractall(wd, filter="data")
 
-    _safe_run(
-        do_pull, timeout_s=_sb_exec_deadline(TRANSFER_TIMEOUT_S), sb=sb, label="pull_wd"
-    )
+    try:
+        _safe_run(
+            do_pull,
+            timeout_s=_sb_exec_deadline(TRANSFER_TIMEOUT_S),
+            sb=sb,
+            label="pull_wd",
+        )
+    except ComputeError:
+        # A stall / mid-pull Sandbox loss is already a typed ComputeError; let it ride.
+        raise
+    except Exception as exc:
+        # The copy_to_local / tar extract failed: retitle it as a transfer failure so
+        # the run records ``TransferError`` rather than a leaked Modal/tar class.
+        raise TransferError(f"pull_wd: {exc}") from exc
 
 
 def _pull_stderr(sb: modal.Sandbox) -> str:
@@ -736,9 +752,17 @@ class ModalSession(ComputeSession):
         _push_dir(self.sb, self.workdir, WORKDIR_MOUNT)
 
     def close(self) -> None:
-        """Pull final artifacts, then terminate the Sandbox. Idempotent."""
-        # A pull failure must not skip termination, so it's its own try/finally.
+        """Pull final artifacts best-effort, then terminate the Sandbox. Idempotent.
+
+        The result-bearing pull is :meth:`sync_out` (which the provers call
+        explicitly, and which raises on failure); this teardown pull is a redundant
+        backstop and also runs after a run has already failed, so a failure here is
+        logged and swallowed rather than masking the real outcome. Termination always
+        runs.
+        """
         try:
             _pull_wd(self.sb, self.workdir)
+        except ComputeError:
+            log.warning("close: final workdir pull failed; terminating anyway")
         finally:
             _terminate(self.sb)

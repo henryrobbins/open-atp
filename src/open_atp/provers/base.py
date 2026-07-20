@@ -30,7 +30,7 @@ from pathlib import Path
 
 import structlog
 
-from open_atp.backends.base import ComputeBackend, ComputeError, ExecTimeout
+from open_atp.backends.base import ComputeBackend
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.verify import VerificationReport, Verifier
 
@@ -40,43 +40,56 @@ log = logging.getLogger("open_atp")
 _ADDITIONAL_INSTRUCTIONS = "\n\n# Additional instructions\n\n{user_prompt}"
 
 
+class GenerationTimeout(Exception):
+    """The generation phase consumed its whole wall-clock budget without finishing.
+
+    The *generation* budget -- distinct from an infra stall
+    (:class:`~open_atp.backends.base.ExecTimeout`) -- is enforced inside the sandbox
+    (the agent command is killed at its deadline) or by a prover's own round-loop
+    accounting. Raised by a prover once it observes that exhaustion and the candidate
+    did not verify; :meth:`AutomatedProver.prove` classifies it as
+    :attr:`ProofStatus.TIMEOUT`.
+    """
+
+
 class ProofStatus(enum.Enum):
     """Coarse outcome bucket for a :class:`ProofResult`.
 
     Deliberately small: each member is a *distinct caller action* (score it, retry
     it, retry with more budget, file a bug), not a distinct cause. Same-bucket runs
-    are told apart by the free-text :attr:`ProofResult.error`, so the enum stays the
-    index and the string carries the "why".
+    are told apart by :attr:`ProofResult.error` (the failing exception's class name)
+    and :attr:`ProofResult.error_msg` (its message), so the enum stays the index and
+    the strings carry the "which" and the "why".
 
     Every bucket is an outcome of a run that *started*: :meth:`AutomatedProver.prove`
-    rejects an incompatible input (toolchain / Mathlib pin mismatch) by raising, before
-    any run exists, so there is no ``input_error`` bucket.
+    rejects before any run exists -- an incompatible input (toolchain / Mathlib pin
+    mismatch) or absent credentials -- by raising, so there is no ``input_error``
+    bucket.
     """
 
     #: Verified proof: compiles, ``sorry``-free, no foreign axioms.
     VERIFIED = "verified"
     #: Ran to completion but the candidate did not verify -- a genuine miss.
     UNVERIFIED = "unverified"
-    #: Generation or verification exceeded its wall-clock budget.
+    #: Generation used its whole wall-clock budget without a verifying proof.
     TIMEOUT = "timeout"
-    #: The compute substrate failed (sandbox disconnect, worker gone, pull failed).
-    INFRA_ERROR = "infra_error"
-    #: Any other failure of a started run -- an unexpected prover bug, or a caller
-    #: surfacing an escaped exception it could not classify.
+    #: Any other failure of a started run -- an infra failure (sandbox loss, a failed
+    #: transfer or provision), an unexpected prover bug, or an escaped exception. The
+    #: specific kind rides in :attr:`ProofResult.error`.
     ERROR = "error"
 
 
 def _status_for_exception(exc: BaseException) -> ProofStatus:
     """Classify an exception from a *started* run onto a :class:`ProofStatus`.
 
-    Maps the backend's typed operational failures (timeout, sandbox loss); anything
-    else is :attr:`ProofStatus.ERROR`.
+    Only a generation-budget exhaustion is its own bucket
+    (:attr:`ProofStatus.TIMEOUT`); every other started-run failure -- infra or
+    unexpected -- is :attr:`ProofStatus.ERROR`, told apart by the recorded exception
+    class name in :attr:`ProofResult.error`.
     """
-    if isinstance(exc, ExecTimeout):
-        return ProofStatus.TIMEOUT
-    if isinstance(exc, ComputeError):
-        return ProofStatus.INFRA_ERROR
-    return ProofStatus.ERROR
+    return (
+        ProofStatus.TIMEOUT if isinstance(exc, GenerationTimeout) else ProofStatus.ERROR
+    )
 
 
 def compose_prompt(prover_prompt: str, user_prompt: str | None) -> str:
@@ -123,11 +136,14 @@ class ProofResult:
     metadata : dict[str, object]
         Harness-specific run metadata (token counts, run summaries, ...).
     error : str, optional
-        A one-line ``"<ExcType>: <message>"`` summary, set when a started run failed
-        (a timeout, an infra failure, or an unexpected error); ``None`` on a clean
-        verify. The full traceback goes to the logs -- this is the short human-facing
-        detail that rides in :meth:`to_dict`. :attr:`status` is the coarse bucket, this
-        the "why".
+        The failing exception's class name (e.g. ``"TransferError"``), set when a
+        started run failed; ``None`` on a clean verify. A small, stable vocabulary
+        (the typed backend/prover exceptions) meant to be grepped and grouped -- the
+        search key beside :attr:`status`. The full traceback goes to the logs.
+    error_msg : str, optional
+        The failing exception's message -- the human-facing "why" behind
+        :attr:`error`. Leads with the operation label where one applies (e.g.
+        ``"pull_wd: ..."``). ``None`` on a clean verify.
     status : ProofStatus
         Coarse outcome bucket (see :class:`ProofStatus`).
     wd : pathlib.Path
@@ -151,6 +167,7 @@ class ProofResult:
     duration_s: float | None = None
     metadata: dict[str, object] = field(default_factory=dict)
     error: str | None = None
+    error_msg: str | None = None
     status: ProofStatus = ProofStatus.ERROR
 
     @classmethod
@@ -159,15 +176,16 @@ class ProofResult:
 
         For the two cases a caller cannot get a run record from ``prove`` itself: an
         input rejected before the run started, and a run abandoned past a hard
-        wall-clock ceiling. The exception is classified onto :attr:`status` and
-        summarized in :attr:`error`; :attr:`verification` stays ``None`` and no run
-        artifacts are attached.
+        wall-clock ceiling. The exception is classified onto :attr:`status`, its class
+        name recorded in :attr:`error` and its message in :attr:`error_msg`;
+        :attr:`verification` stays ``None`` and no run artifacts are attached.
         """
         return cls(
             prover=prover,
             verification=None,
             output_dir=output_dir,
-            error=f"{type(exc).__name__}: {exc}",
+            error=type(exc).__name__,
+            error_msg=str(exc),
             status=_status_for_exception(exc),
         )
 
@@ -192,6 +210,7 @@ class ProofResult:
             "success": self.success,
             "status": self.status.value,
             "error": self.error,
+            "error_msg": self.error_msg,
             "verification": self.verification.to_dict() if self.verification else None,
             "completed_files": dict(self.completed_files),
             "cost_usd": self.cost_usd,
@@ -266,6 +285,15 @@ class AutomatedProver(abc.ABC):
         ``result.verification`` itself; otherwise :meth:`prove` runs the shared check.
         """
 
+    def _preflight(self, task: ProofTask) -> None:
+        """Fail-fast checks a run cannot start without. Default: none.
+
+        Runs before any artifacts are staged, alongside the toolchain compatibility
+        check, so a precondition failure (notably absent credentials) raises out of
+        :meth:`prove` to the caller rather than becoming a run record. Subclasses that
+        need credentials override this to resolve them and raise if any are missing.
+        """
+
     def prove(self, task: ProofTask, output_dir: Path | str) -> ProofResult:
         """Full lifecycle: reject-on-mismatch, generate, verify, write the result.
 
@@ -300,6 +328,10 @@ class AutomatedProver(abc.ABC):
         ~open_atp.lean.MathlibRevMismatch
             If the project records a Mathlib revision that differs from the backend
             image's. Checked up front, before any run starts.
+        ~open_atp.harness.MissingCredentials
+            If a credential the prover needs to run is absent. Resolved in
+            :meth:`_preflight`, before any run starts -- so this raises rather than
+            returning an empty result.
         """
         # Bind task (when named) + prover + a per-run id onto the context so every
         # downstream event -- including backend/verify records that never see ``self``
@@ -311,6 +343,7 @@ class AutomatedProver(abc.ABC):
             binding["task"] = task.name
         with structlog.contextvars.bound_contextvars(**binding):
             self.verifier.check_compatible(task.project)
+            self._preflight(task)
 
             output_dir = Path(output_dir)
             wd = output_dir / "wd"
@@ -347,7 +380,8 @@ class AutomatedProver(abc.ABC):
                 # traceback is logged here; ``error`` carries the one-line summary.
                 log.exception("prove failed")
                 result.status = _status_for_exception(exc)
-                result.error = f"{type(exc).__name__}: {exc}"
+                result.error = type(exc).__name__
+                result.error_msg = str(exc)
             result.duration_s = time.monotonic() - start
 
             # A self-describing summary so a downloaded logs dir stands on its own.

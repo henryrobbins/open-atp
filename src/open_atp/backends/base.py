@@ -31,11 +31,28 @@ class ComputeError(RuntimeError):
 
 
 class ExecTimeout(ComputeError):
-    """A command on backend compute exceeds its timeout deadline."""
+    """A sandbox operation stalled past its client-side wall-clock deadline.
+
+    Narrow by design: this is an *infra* signal -- a backend operation (a push/pull,
+    a warm build, a ``proc.wait``) that failed to complete before the client gave up
+    on it, typically an unresponsive worker. It is **not** the generation command
+    reaching its own budget: that is enforced inside the sandbox (a killed process
+    with a timeout exit code) and surfaces as
+    :class:`~open_atp.provers.base.GenerationTimeout`, not this.
+    """
 
 
 class SandboxUnreachable(ComputeError):
     """The backend compute sandbox became unreachable mid-run."""
+
+
+class TransferError(ComputeError):
+    """A workdir file transfer (push into, or pull out of, the sandbox) failed.
+
+    Raised for the result-bearing transfers so an incomplete or missing workdir is
+    an explicit failure rather than a silent degrade into an empty verify. The
+    message leads with the transfer's op label (``push_dir`` / ``pull_wd``).
+    """
 
 
 @dataclass

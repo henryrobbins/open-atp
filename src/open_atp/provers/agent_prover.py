@@ -35,11 +35,18 @@ from open_atp.harness._catalog import resolve_skill
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
+    GenerationTimeout,
     ProofResult,
     compose_prompt,
 )
 
 log = logging.getLogger("open_atp")
+
+#: coreutils ``timeout`` reports this when it terminated the command at its deadline.
+#: Modal wraps the agent command in ``timeout``; Docker applies no cap, so a
+#: generation timeout only ever surfaces on Modal. 137 (SIGKILL after
+#: ``--kill-after``) is deliberately excluded -- it is ambiguous with an OOM kill.
+_TIMEOUT_EXIT_CODE = 124
 
 PROVER_PROMPT = """\
 The working directory is a complete Lean 4 lake project. One or more `.lean`
@@ -193,6 +200,15 @@ class AgentProver(AutomatedProver):
         """The prover's own prompt handed to the agent, before any user prompt."""
         return PROVER_PROMPT
 
+    def _preflight(self, task: ProofTask) -> None:
+        """Resolve the harness's credentials up front so a missing key fails fast.
+
+        Raising here (via the harness's auth resolution) keeps an absent credential a
+        caller-facing error, like a toolchain mismatch, rather than a half-staged run
+        record.
+        """
+        self.harness.agent_auth()
+
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult
     ) -> None:
@@ -234,7 +250,7 @@ class AgentProver(AutomatedProver):
         with self.verifier.backend.session(
             wd, mounts=mounts, timeout_s=self.timeout_s + self.verifier.timeout_s
         ) as session:
-            lines, stderr = self._run_agent(
+            lines, stderr, timed_out = self._run_agent(
                 wd, harness, stdout_path, session, timeout_s=self.timeout_s
             )
             self._download_wd(wd, session)
@@ -243,6 +259,15 @@ class AgentProver(AutomatedProver):
             self._fill_result(result, harness, wd, original, lines)
             self._download_logs(harness, wd, logs_dir, stderr)
             result.verification = self.verifier.verify(LeanProject(wd), session=session)
+
+        # A generation killed at its deadline that still didn't verify is a timeout,
+        # not a plain miss -- but only after the partial workdir/logs/cost are on the
+        # result and the salvaged candidate had its shot at verifying.
+        if timed_out and not result.success:
+            raise GenerationTimeout(
+                f"agent generation used its full {self.timeout_s}s budget without a "
+                "verifying proof"
+            )
 
     def _download_wd(self, wd: Path, session: ComputeSession) -> None:
         """Bring the agent's edits onto the host at ``wd``.
@@ -316,14 +341,17 @@ class AgentProver(AutomatedProver):
         session: ComputeSession,
         *,
         timeout_s: int,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         """Resolve auth, launch the agent in the live ``session``, and tee its stdout.
 
         Each streamed event line is written to ``stdout_path`` (opened in append mode,
         so a multi-round caller accumulates one transcript) as it arrives -- the live
         run log -- and collected to return for token/cost parsing. Returns
-        ``(stdout_lines, stderr)``: the lines plus the run's captured stderr (e.g.
-        Modal's ``modal_stderr.txt``), which the prover writes to ``logs/stderr.txt``.
+        ``(stdout_lines, stderr, timed_out)``: the lines, the run's captured stderr
+        (e.g. Modal's ``modal_stderr.txt``, which the prover writes to
+        ``logs/stderr.txt``), and whether the agent command was killed at its deadline
+        (a coreutils-``timeout`` exit code -- only possible on a backend that caps the
+        command, i.e. Modal).
 
         The agent execs in the persistent ``session`` -- the same hot sandbox that
         stays up for the verifier afterwards. Mounts (credential dirs) were pinned when
@@ -352,7 +380,7 @@ class AgentProver(AutomatedProver):
             drain(handle, sink)
             result = handle.wait()
             self._log_agent_result(harness, result, lines)
-        return lines, result.stderr
+        return lines, result.stderr, result.exit_code == _TIMEOUT_EXIT_CODE
 
     def _log_agent_result(
         self, harness: Harness, result: CommandResult, lines: list[str]

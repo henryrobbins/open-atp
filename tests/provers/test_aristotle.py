@@ -16,7 +16,9 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.docker import DockerBackend
+from open_atp.harness import MissingCredentials
 from open_atp.images import DEFAULT_IMAGE
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.aristotle import AristotleProver
 from open_atp.provers.base import ProofResult
 
@@ -39,6 +41,20 @@ async def _noop_sleep(_seconds: float) -> None:
 def _make_prover() -> AristotleProver:
     backend = DockerBackend(image=DEFAULT_IMAGE)
     return AristotleProver(backend=backend)
+
+
+def test_missing_api_key_fails_fast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No API key raises out of prove() before any network call, like a mismatch."""
+    monkeypatch.delenv("ARISTOTLE_API_KEY", raising=False)
+    prover = AristotleProver(backend=DockerBackend(image=DEFAULT_IMAGE))
+    out = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="ARISTOTLE_API_KEY"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), out)
+
+    assert not (out / "wd").exists()
 
 
 def _fake_result(*, solved: bool) -> object:

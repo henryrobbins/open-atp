@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, TypeVar
 
 from open_atp._capture import capture_stdout
 from open_atp.backends.base import ComputeBackend
+from open_atp.harness.base import MissingCredentials
 from open_atp.lean import ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
@@ -193,6 +194,18 @@ class AristotleProver(AutomatedProver):
     def prover_prompt(self) -> str:
         """The prover's own prompt handed to Aristotle, before any user prompt."""
         return PROVER_PROMPT
+
+    def _preflight(self, task: ProofTask) -> None:
+        """Require the API key up front so a missing key fails fast to the caller.
+
+        The key is otherwise only consulted deep in the async submit path, where its
+        absence would surface as a remote 4xx recorded on the run; checking here makes
+        it a caller-facing error, like a toolchain mismatch.
+        """
+        if not (self._api_key or os.environ.get("ARISTOTLE_API_KEY")):
+            raise MissingCredentials(
+                "aristotle prover requires ARISTOTLE_API_KEY (set it or pass api_key)"
+            )
 
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult

@@ -28,6 +28,7 @@ from open_atp.harness import (
     _HARNESSES,
     AxProverBaseHarness,
     Harness,
+    MissingCredentials,
 )
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask
@@ -104,7 +105,7 @@ def test_agent_auth_requires_the_selected_provider_key(
     harness = AxProverBaseHarness(model="claude-opus-4-8")
     for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GOOGLE_API_KEY"):
         monkeypatch.delenv(key, raising=False)
-    with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
+    with pytest.raises(MissingCredentials, match="ANTHROPIC_API_KEY"):
         harness.agent_auth()
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-host")
     assert harness.agent_auth().env == {"ANTHROPIC_API_KEY": "sk-host"}
@@ -220,12 +221,12 @@ def test_generate_reports_changes_and_token_cost(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
         # The real run writes this; emulate it so parse_result() finds the tokens.
         assert isinstance(harness, AxProverBaseHarness)
         _write_usage(workdir, "MILExample_lean", 1_000_000, 100_000)
-        return STREAM_LINES, ""
+        return STREAM_LINES, "", False
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     wd = tmp_path / "wd"

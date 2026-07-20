@@ -23,6 +23,8 @@ generate, then verify in the sandbox) so subclasses only implement `_generate`.
 
 .. autoclass:: open_atp.provers.base.ProofStatus
    :members:
+
+.. autoexception:: open_atp.provers.base.GenerationTimeout
 ```
 
 ## Provers

@@ -44,7 +44,7 @@ from open_atp.harness._numina import _DEFAULT_HELPER_ENV_KEYS, NuminaHarness
 from open_atp.harness._paths import _vendor_numina_dir
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver
-from open_atp.provers.base import ProofResult, compose_prompt
+from open_atp.provers.base import GenerationTimeout, ProofResult, compose_prompt
 from open_atp.provers.numina_tracker import StatementTracker
 
 log = logging.getLogger("open_atp")
@@ -273,6 +273,15 @@ class NuminaProver(AgentProver):
             self._finalize(result, wd, logs_dir, harness, loop, original)
             result.verification = self.verifier.verify(LeanProject(wd), session=session)
 
+        # The round loop stopped because it ran out of wall-clock, not because it
+        # finished -- a timeout, not a plain miss, once the salvaged proof has been
+        # verified and the partial record is on ``result``.
+        if loop["end_reason"] == "TIMEOUT" and not result.success:
+            raise GenerationTimeout(
+                f"numina round loop used its full {self.timeout_s}s budget without a "
+                "verifying proof"
+            )
+
     def _stage_numina_assets(self, wd: Path) -> None:
         """Copy Numina's vendored scaffold into the workdir's ``.claude/`` locations.
 
@@ -396,7 +405,10 @@ class NuminaProver(AgentProver):
                 session_resets += 1
                 log.debug("session reset", extra={"round": round_num})
 
-            round_lines, round_stderr = self._run_agent(
+            # The per-round coreutils-timeout flag is ignored: the loop infers timeout
+            # from its own wall-clock budget below (backend-agnostic; Docker doesn't
+            # cap a round, so the flag never trips there).
+            round_lines, round_stderr, _ = self._run_agent(
                 workdir, harness, stdout_path, session=session, timeout_s=int(remaining)
             )
             if round_stderr:
