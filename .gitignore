@@ -10,11 +10,9 @@ runs/
 
 # Sphinx docs build
 docs/_build/
-# Generated from docs/*.yaml at build time (see docs/_ext/provers_table.py)
+# Generated from docs/provers.yaml at build time (see docs/_ext/provers_table.py)
 docs/provers/_table.md
 docs/provers/_meta_*.md
-docs/harnesses/_table.md
-docs/harnesses/_meta_*.md
 
 # Python
 __pycache__/

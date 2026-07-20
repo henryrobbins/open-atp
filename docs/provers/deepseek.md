@@ -4,7 +4,7 @@
 :parser: myst
 ```
 
-Use a [DeepSeek](https://www.deepseek.com/) model as an automated theorem prover. This prover is the {class}`~open_atp.provers.agent_prover.AgentProver` running the {doc}`/harnesses/opencode` harness pinned to DeepSeek's `deepseek-v4-pro` model. OpenCode is provider-agnostic, so any harness detail (skills, MCP tooling, the agent invocation, cost tracking) lives on the {doc}`/harnesses/opencode` page; this page covers only the model and how to run it.
+Use a [DeepSeek](https://www.deepseek.com/) model as an automated theorem prover. This prover runs on the {doc}`/provers/opencode` harness pinned to DeepSeek's `deepseek-v4-pro` model. The harness mechanics (provider-agnostic auth, skills, MCP tooling, the agent invocation, how cost is measured) live on the {doc}`/provers/opencode` page; this page covers the DeepSeek model — authentication, running the prover, and tracking usage.
 
 ## Authentication
 
@@ -69,8 +69,10 @@ prover = AgentProver(
 result = prover.prove(task, output_dir=Path("demo"))
 ```
 
-The OpenCode harness fronts more than DeepSeek: passing an Anthropic, OpenAI, or Google model switches provider automatically. See the {doc}`/harnesses/opencode` page for the full provider matrix and cost tracking.
-
 :::{tip}
-If you are harness agnostic and want to use Anthropic or OpenAI models, it is recommended to use the {doc}`/provers/claude_code` or {doc}`/provers/codex` provers. These provers are billed against subscription plans rather than API usage, which is often much cheaper.
+The OpenCode harness fronts more than DeepSeek — passing an Anthropic, OpenAI, or Google model switches provider automatically. If you are harness agnostic and want to use Anthropic or OpenAI models, it is recommended to use the {doc}`/provers/claude_code` or {doc}`/provers/codex` provers, which bill against subscription plans rather than API usage and are often much cheaper.
 :::
+
+## Tracking cost and usage
+
+Cost is captured from the OpenCode CLI's per-call breakdown and summed into `cost_usd` on {class}`~open_atp.provers.base.ProofResult` (see {ref}`tracking-cost-and-usage-opencode`). You can also monitor DeepSeek consumption from the provider dashboard at [DeepSeek Usage](https://platform.deepseek.com/usage).

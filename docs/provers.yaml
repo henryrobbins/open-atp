@@ -3,13 +3,10 @@
 # README table in place; the docs fragment is written at build time by the
 # `provers_table` Sphinx extension). `make check-provers` fails if README drifts.
 #
-# A prover names a method/model; the coding-agent harness it runs on is a separate
-# axis, described in docs/harnesses.yaml. The `harness` field is a key into that
-# file's `harnesses` list (null for a hosted prover that runs no local harness).
-# `source` here is the prover's own method/model -- the harness's own repo lives on
-# the harness row instead. `skills`/`mcp` stay here because the skills list is a
-# prover-level knob (AgentProver.skills), even though the harness decides where they
-# mount and whether MCP is wired.
+# A prover names a method/model. Most are 1:1 with a coding-agent CLI, so `source`
+# is that CLI or model repo. The exception is a provider-agnostic harness that fronts
+# many models (OpenCode): those provers (e.g. DeepSeek) point `source` at the model
+# and describe the shared harness on the OpenCode subsection page under Provers.
 #
 # Cell conventions: any field left null renders as an em dash (—). `skills` is a
 # list of keys into the `skills` map below; an empty list renders as —.
@@ -28,7 +25,6 @@ provers:
   - name: Claude Code
     page: claude_code
     id:   claude
-    harness: claude_code
     skills: [leanprover, lean4]
     mcp: true
     company: { label: Anthropic, url: https://www.anthropic.com }
@@ -39,18 +35,16 @@ provers:
   - name: Codex
     page: codex
     id:   codex
-    harness: codex
     skills: [leanprover]
     mcp: true
     company: { label: OpenAI, url: https://openai.com }
     paper: null
     cite: null
-    source: null            # model gpt-5.5; the Codex CLI repo is on the harness row
+    source: { label: GitHub, url: https://github.com/openai/codex }
 
   - name: DeepSeek
     page: deepseek
     id:   deepseek
-    harness: opencode
     skills: [leanprover]
     mcp: true
     company: { label: DeepSeek, url: https://www.deepseek.com }
@@ -61,18 +55,16 @@ provers:
   - name: AxProverBase
     page: axproverbase
     id:   axproverbase
-    harness: axproverbase
     skills: []              # ships its own Lean tooling
     mcp: false              # uses its own Lean tools, not lean-lsp-mcp
     company: { label: Axiomatic AI, url: https://axiomatic-ai.com }
     paper: { label: "Requena et al. 2026", url: "https://openreview.net/forum?id=E30g7bO7rU" }
     cite: requena2026a
-    source: null            # the method is the paper; the repo is on the harness row
+    source: { label: GitHub, url: https://github.com/Axiomatic-AI/ax-prover-base }
 
   - name: Leanstral
     page: leanstral
     id:   leanstral
-    harness: vibe
     skills: [leanprover]
     mcp: true
     company: { label: Mistral AI, url: https://mistral.ai }
@@ -83,7 +75,6 @@ provers:
   - name: Numina
     page: numina
     id:   numina
-    harness: claude_code
     skills: []              # uses Numina's own vendored scaffold
     mcp: true               # runs on the Claude Code harness
     company: { label: Project Numina, url: https://projectnumina.ai }
@@ -94,7 +85,6 @@ provers:
   - name: Aristotle
     page: aristotle
     id:   aristotle
-    harness: null           # hosted; runs no local harness
     skills: []              # hosted; no local generation sandbox
     mcp: null               # hosted; no local generation sandbox
     company: { label: Harmonic, url: https://www.harmonic.fun }
