@@ -125,14 +125,19 @@ def build_prover(config: Mapping[str, object]) -> AutomatedProver:
 #: The standard catalog: a friendly name -> the canonical ``prover`` spec for that
 #: ready-to-run default. The agentic entries (``claude``, ``codex``, ...) are all the
 #: shared :class:`~open_atp.provers.agent_prover.AgentProver` on a different harness;
-#: ``numina`` and ``aristotle`` are the standalone provers. Build one with
-#: :func:`standard_prover`.
+#: ``deepseek`` is the ``opencode`` harness on the ``deepseek`` provider. ``numina`` and
+#: ``aristotle`` are the standalone provers. Build one with :func:`standard_prover`.
 STANDARD_PROVERS: dict[str, dict[str, object]] = {
     "claude": {"type": "agent", "harness": {"type": "claude_code"}},
     "codex": {"type": "agent", "harness": {"type": "codex"}},
     "deepseek": {
         "type": "agent",
-        "harness": {"type": "opencode", "model": "deepseek-v4-pro"},
+        "harness": {
+            "type": "opencode",
+            "model": "deepseek-v4-pro",
+            "provider": "deepseek",
+            "auth": "api_key",
+        },
     },
     "leanstral": {"type": "agent", "harness": {"type": "vibe"}},
     "axproverbase": {"type": "agent", "harness": {"type": "axproverbase"}},

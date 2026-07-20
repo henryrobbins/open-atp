@@ -53,6 +53,7 @@ from open_atp.harness import (
     _HARNESSES,
     ClaudeCodeHarness,
     Harness,
+    OpenCodeHarness,
     VibeHarness,
 )
 from open_atp.images import DEFAULT_IMAGE
@@ -166,6 +167,10 @@ def _make_harness(harness: str) -> Harness:
     if harness == "claude_code":
         # No plugins -- plugin loading isn't what these probes exercise.
         return ClaudeCodeHarness(model=_MODELS[harness], effort="low", plugins=[])
+    if harness == "opencode":
+        return OpenCodeHarness(
+            model=_MODELS[harness], effort="low", provider="deepseek"
+        )
     return _HARNESSES[harness](model=_MODELS[harness], effort="low")
 
 

@@ -19,7 +19,7 @@ It is recommended to define this in a `.env` file in your project root. Alternat
 ```{testcode}
 from open_atp.harness import OpenCodeHarness
 
-OpenCodeHarness(model="deepseek-v4-pro", provider_api_key="sk-...")
+OpenCodeHarness(provider="deepseek", model="deepseek-v4-pro", api_key="sk-...")
 ```
 
 ## Using the prover
@@ -63,7 +63,7 @@ from open_atp.provers import AgentProver
 
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
-    harness=OpenCodeHarness(model="deepseek-v4-pro", effort="medium"),
+    harness=OpenCodeHarness(provider="deepseek", model="deepseek-v4-pro", effort="medium"),
     backend=DockerBackend(image=DEFAULT_IMAGE),
 )
 result = prover.prove(task, output_dir=Path("demo"))

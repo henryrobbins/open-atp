@@ -120,6 +120,8 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
 
     deepseek = build("deepseek")
     assert isinstance(deepseek.harness, OpenCodeHarness)
+    assert deepseek.harness.provider == "deepseek"
+    assert deepseek.harness.auth == "api_key"
     assert deepseek.harness.model == "deepseek-v4-pro"
 
     numina = build("numina")

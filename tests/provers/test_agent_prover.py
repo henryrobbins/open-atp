@@ -140,19 +140,19 @@ def test_skills_resolve_by_name_and_path(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "harness_name,dest",
+    "harness_name,dest,extra",
     [
-        ("claude_code", ".claude/skills"),
-        ("codex", ".agents/skills"),
-        ("opencode", ".agents/skills"),
-        ("vibe", ".vibe/skills"),
+        ("claude_code", ".claude/skills", {}),
+        ("codex", ".agents/skills", {}),
+        ("opencode", ".agents/skills", {"provider": "anthropic"}),
+        ("vibe", ".vibe/skills", {}),
     ],
 )
 def test_stage_skills_copies_into_harness_location(
-    tmp_path: Path, harness_name: str, dest: str
+    tmp_path: Path, harness_name: str, dest: str, extra: dict[str, str]
 ) -> None:
     """The prover-resolved skills list lands in each harness's skill location."""
-    harness = _HARNESSES[harness_name](model="claude-opus-4-8", effort="high")
+    harness = _HARNESSES[harness_name](model="claude-opus-4-8", effort="high", **extra)
     harness.stage_skills(tmp_path, [resolve_skill("lean-proof")])
     assert (tmp_path / dest / "lean-proof" / "SKILL.md").is_file()
     # Upstream skill `tests/` fixtures are dropped at mount time.
