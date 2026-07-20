@@ -257,11 +257,11 @@ Practical rules:
 
 Two generated tables share one generator. A **prover** names a method/model
 (`docs/provers.yaml`); a **harness** names the coding-agent CLI it runs on
-(`docs/harnesses.yaml`), and owns the skills/MCP columns because those are harness
-properties, not model ones. Each prover's `harness` field keys into the harness list
-by `id` (null for a hosted prover, e.g. `aristotle`). `source` on a prover row is its
-own method/model; a harness's own repo lives on the harness row. **Edit the YAML,
-never the tables by hand.**
+(`docs/harnesses.yaml`). Each prover's `harness` field keys into the harness list by
+`id` (null for a hosted prover, e.g. `aristotle`). `source` on a prover row is its own
+method/model; a harness's own repo lives on the harness row. `skills`/`mcp` stay on
+the prover row (the skills list is a prover-level knob), so the harness table is just
+identity + source. **Edit the YAML, never the tables by hand.**
 
 - `docs/_ext/provers_table.py` renders both tables in both `README.md` and the docs.
   As a Sphinx extension (`provers_table` in `conf.py`) its `builder-inited` hook writes

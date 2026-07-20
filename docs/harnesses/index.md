@@ -6,12 +6,7 @@ An agent prover ({class}`~open_atp.provers.agent_prover.AgentProver`) forwards t
 :parser: myst
 ```
 
-Skills and MCP are properties of the harness, not the model it runs:
-
-- **Skills.** Most harnesses use the official Lean skills {cite:p}`leanprover_skills`. Claude Code additionally uses the `lean4` skills packaged in the `lean4` Claude Code plugin {cite:p}`lean4_skills`.
-- **MCP.** The `lean-lsp-mcp` server {cite:p}`lean_lsp_mcp` exposes the Lean language server as tools to provide rich feedback while iterating on proofs.
-
-Only harnesses with a dedicated page appear in the table as a link; for the others, harness detail currently lives on the prover page.
+Each prover's skills and MCP tooling are listed on the {doc}`/provers/index` table. Only harnesses with a dedicated page appear above as a link; for the others, harness detail currently lives on the prover page.
 
 ```{toctree}
 :maxdepth: 1

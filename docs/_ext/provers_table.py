@@ -48,8 +48,8 @@ EM_DASH = "—"
 CHECK = "✓"
 CROSS = "✗"
 
-PROVER_COLUMNS = ("Prover", "ID", "Harness", "Paper", "Source")
-HARNESS_COLUMNS = ("Harness", "ID", "Skills", "MCP", "Source")
+PROVER_COLUMNS = ("Prover", "ID", "Harness", "Skills", "MCP", "Paper", "Source")
+HARNESS_COLUMNS = ("Harness", "ID", "Source")
 
 
 def _link(item: dict | None) -> str:
@@ -115,6 +115,7 @@ def _render_prover_table(
     links so the README (repo root) and the docs page (``docs/provers/``) resolve
     them. ``cite`` renders the Paper cell as an author-year ``{cite:t}`` role
     (docs) rather than a plain link (README)."""
+    skill_urls = data["skills"]
     by_id = _harness_index(harnesses["harnesses"])
     rows = []
     for p in data["provers"]:
@@ -127,6 +128,8 @@ def _render_prover_table(
                 _page_link(p["name"], p["page"], prover_prefix),
                 f"`{p['id']}`",
                 harness_cell,
+                _skills_cell(p.get("skills") or [], skill_urls),
+                _mcp_cell(p.get("mcp")),
                 _paper_cell(p, cite=cite),
                 _link(p.get("source")),
             ]
@@ -136,15 +139,12 @@ def _render_prover_table(
 
 def _render_harness_table(harnesses: dict, *, harness_prefix: str) -> str:
     """Render the harness table. ``harness_prefix`` prefixes harness-page links."""
-    skill_urls = harnesses["skills"]
     rows = []
     for h in harnesses["harnesses"]:
         rows.append(
             [
                 _page_link(h["name"], h.get("page"), harness_prefix),
                 f"`{h['id']}`",
-                _skills_cell(h.get("skills") or [], skill_urls),
-                _mcp_cell(h.get("mcp")),
                 _link(h.get("source")),
             ]
         )
