@@ -47,6 +47,16 @@ provers:
     cite: null
     source: { label: GitHub, url: https://github.com/deepseek-ai }
 
+  - name: Grok
+    page: grok
+    id:   grok
+    skills: [leanprover]
+    mcp: true
+    company: { label: xAI, url: https://x.ai }
+    paper: null
+    cite: null
+    source: { label: xAI, url: https://x.ai/api }
+
   - name: AxProverBase
     page: axproverbase
     id:   axproverbase

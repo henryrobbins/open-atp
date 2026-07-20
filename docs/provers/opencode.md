@@ -3,9 +3,9 @@
 [OpenCode](https://opencode.ai/) is a provider-agnostic coding agent: one CLI fronts
 any of its [supported providers](https://opencode.ai/docs/providers/). OpenATP drives it
 through the {class}`~open_atp.harness.opencode.OpenCodeHarness` (paired with the
-{class}`~open_atp.provers.agent_prover.AgentProver`), so a single harness backs a
-standard prover on any provider under either authentication strategy — {doc}`/provers/deepseek`
-(DeepSeek) is the ready-to-run default today.
+{class}`~open_atp.provers.agent_prover.AgentProver`), so a single harness backs several
+standard provers on different providers under either authentication strategy —
+{doc}`/provers/deepseek` (DeepSeek) and {doc}`/provers/grok` (xAI Grok) today.
 
 This page documents the harness the OpenCode-backed provers share: the two
 authentication strategies, the launch script, and cost tracking.
@@ -15,6 +15,7 @@ authentication strategies, the launch script, and cost tracking.
 :hidden:
 
 deepseek
+grok
 ```
 
 (opencode-authentication)=
@@ -59,6 +60,8 @@ OpenCode resolves a provider's credentials from two channels, selected by the ha
 
   OpenCodeHarness(provider="xai", model="grok-4.5", auth="login")
   ```
+
+  See {doc}`/provers/grok` for a worked example.
 
 The `provider` argument is required and names the OpenCode provider (`anthropic`, `xai`,
 `deepseek`, …); any OpenCode provider is accepted under either strategy.
