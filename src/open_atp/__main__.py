@@ -245,10 +245,10 @@ def _prove(args: argparse.Namespace) -> int:
 
     backend = build_backend({"type": args.compute})
     prover = standard_prover(args.prover, backend=backend)
-    try:
-        result = prover.prove(task, Path(args.output))
-    except Exception as exc:
-        result = ProofResult.errored(prover.name, Path(args.output), exc)
+    # A run that never starts (bad input, absent credentials, provisioning failure)
+    # raises; the CLI lets it surface as a nonzero exit with a traceback. A run that
+    # starts always comes back as a ProofResult, its failure recorded as a status.
+    result = prover.prove(task, Path(args.output))
 
     if args.json:
         print(json.dumps(result.to_dict(), indent=2))

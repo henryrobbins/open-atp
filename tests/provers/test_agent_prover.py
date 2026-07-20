@@ -19,8 +19,10 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.base import (
+    TIMEOUT_EXIT_CODE,
     CommandHandle,
     CommandResult,
+    CommandTimeout,
     ComputeSession,
 )
 from open_atp.backends.docker import DockerBackend
@@ -307,26 +309,35 @@ def test_generate_reports_no_changes_when_agent_does_nothing(
 
 
 class _ExitCodeHandle(CommandHandle):
-    """A finished command reporting a fixed exit code and no output."""
+    """A finished command reporting a fixed exit code and no output.
 
-    def __init__(self, exit_code: int) -> None:
+    Models the real backend handles: when the caller opts in and the command exited
+    with the coreutils-``timeout`` code, ``wait`` raises :class:`CommandTimeout`.
+    """
+
+    def __init__(self, exit_code: int, *, raise_on_timeout: bool = False) -> None:
         self._exit_code = exit_code
+        self._raise_on_timeout = raise_on_timeout
 
     def stream(self) -> Iterator[str]:
         return iter(())
 
     def wait(self) -> CommandResult:
-        return CommandResult(
+        result = CommandResult(
             exit_code=self._exit_code, stdout="", stderr="", duration_s=0.0
         )
+        if self._raise_on_timeout and self._exit_code == TIMEOUT_EXIT_CODE:
+            raise CommandTimeout("command exceeded its budget", result=result)
+        return result
 
 
 class _ExitCodeSession(ComputeSession):
     """A real session whose first exec (the agent) reports ``agent_exit``; rest 0.
 
     Models a backend that caps the agent command: the generation exec comes back with
-    a coreutils-``timeout`` exit code, then the in-session verify exec runs normally
-    (empty compile log -> the candidate does not verify).
+    a coreutils-``timeout`` exit code (raising :class:`CommandTimeout` since the agent
+    run opts in), then the in-session verify exec runs normally (empty compile log ->
+    the candidate does not verify).
     """
 
     def __init__(self, agent_exit: int) -> None:
@@ -339,9 +350,12 @@ class _ExitCodeSession(ComputeSession):
         *,
         env: Mapping[str, str] | None = None,
         timeout_s: int,
+        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         first, self._execs = self._execs == 0, self._execs + 1
-        return _ExitCodeHandle(self._agent_exit if first else 0)
+        return _ExitCodeHandle(
+            self._agent_exit if first else 0, raise_on_timeout=raise_on_timeout
+        )
 
     def sync_out(self) -> None:
         pass
@@ -410,10 +424,10 @@ def test_generation_timeout_that_still_verifies_is_not_a_timeout(
     assert result.error is None
 
 
-def test_missing_credentials_fails_fast_before_staging(
+def test_missing_credentials_raises_out_of_prove(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An absent credential raises out of prove() before any artifacts are staged."""
+    """An absent credential raises out of prove() rather than becoming a record."""
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
     prover = AgentProver(backend=DockerBackend(image=DEFAULT_IMAGE))
     out = tmp_path / "run"
@@ -421,8 +435,8 @@ def test_missing_credentials_fails_fast_before_staging(
     with pytest.raises(MissingCredentials, match="CLAUDE_CODE_OAUTH_TOKEN"):
         prover.prove(ProofTask(LeanProject(FIXTURE)), out)
 
-    # Preflight ran before the output layout was created: no run record exists.
-    assert not (out / "wd").exists()
+    # The run never completed, so no result record was written.
+    assert not (out / "logs" / "result.json").exists()
 
 
 # --- mocked agent + real Docker verify --------------------------------------

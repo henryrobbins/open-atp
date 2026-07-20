@@ -30,7 +30,8 @@ from pathlib import Path
 
 import structlog
 
-from open_atp.backends.base import ComputeBackend
+from open_atp.backends.base import ComputeBackend, ProvisionError
+from open_atp.harness.base import MissingCredentials
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.verify import VerificationReport, Verifier
 
@@ -170,25 +171,6 @@ class ProofResult:
     error_msg: str | None = None
     status: ProofStatus = ProofStatus.ERROR
 
-    @classmethod
-    def errored(cls, prover: str, output_dir: Path, exc: BaseException) -> ProofResult:
-        """Build a minimal failed result from an exception that escaped :meth:`prove`.
-
-        For the two cases a caller cannot get a run record from ``prove`` itself: an
-        input rejected before the run started, and a run abandoned past a hard
-        wall-clock ceiling. The exception is classified onto :attr:`status`, its class
-        name recorded in :attr:`error` and its message in :attr:`error_msg`;
-        :attr:`verification` stays ``None`` and no run artifacts are attached.
-        """
-        return cls(
-            prover=prover,
-            verification=None,
-            output_dir=output_dir,
-            error=type(exc).__name__,
-            error_msg=str(exc),
-            status=_status_for_exception(exc),
-        )
-
     @property
     def wd(self) -> Path:
         """The completed proof project (``output_dir/wd``)."""
@@ -285,15 +267,6 @@ class AutomatedProver(abc.ABC):
         ``result.verification`` itself; otherwise :meth:`prove` runs the shared check.
         """
 
-    def _preflight(self, task: ProofTask) -> None:
-        """Fail-fast checks a run cannot start without. Default: none.
-
-        Runs before any artifacts are staged, alongside the toolchain compatibility
-        check, so a precondition failure (notably absent credentials) raises out of
-        :meth:`prove` to the caller rather than becoming a run record. Subclasses that
-        need credentials override this to resolve them and raise if any are missing.
-        """
-
     def prove(self, task: ProofTask, output_dir: Path | str) -> ProofResult:
         """Full lifecycle: reject-on-mismatch, generate, verify, write the result.
 
@@ -329,10 +302,11 @@ class AutomatedProver(abc.ABC):
             If the project records a Mathlib revision that differs from the backend
             image's. Checked up front, before any run starts.
         ~open_atp.harness.MissingCredentials
-            If a credential the run needs is absent -- the prover's own (resolved in
-            :meth:`_preflight`) or the backend's compute credential (via
-            :meth:`~open_atp.backends.base.ComputeBackend.check_ready`). Checked before
-            any run starts, so this raises rather than returning an empty result.
+            If a credential the run needs is absent. Surfaced while the run is coming
+            up, so it raises rather than returning an empty result.
+        ~open_atp.backends.base.ProvisionError
+            If the compute sandbox fails to come up (daemon down, image missing,
+            capacity). Raised before generation, so the run never started.
         """
         # Bind task (when named) + prover + a per-run id onto the context so every
         # downstream event -- including backend/verify records that never see ``self``
@@ -344,8 +318,6 @@ class AutomatedProver(abc.ABC):
             binding["task"] = task.name
         with structlog.contextvars.bound_contextvars(**binding):
             self.verifier.check_compatible(task.project)
-            self.verifier.backend.check_ready()
-            self._preflight(task)
 
             output_dir = Path(output_dir)
             wd = output_dir / "wd"
@@ -376,6 +348,12 @@ class AutomatedProver(abc.ABC):
                 result.status = (
                     ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
                 )
+            except (MissingCredentials, ProvisionError):
+                # The run never got off the ground -- absent credentials or a sandbox
+                # that failed to come up. There is no partial record to keep, so raise
+                # to the caller instead of returning an empty result.
+                log.exception("prove could not start")
+                raise
             except Exception as exc:
                 # The run started, so its failure is a record, not a raise: the partial
                 # workdir/logs/cost stay on ``result`` for the caller to inspect. The

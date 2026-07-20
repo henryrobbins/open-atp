@@ -43,15 +43,19 @@ import modal
 
 from open_atp.backends.base import (
     BAKED_LAKE,
+    TIMEOUT_EXIT_CODE,
+    TIMEOUT_KILL_AFTER_S,
     WORKDIR_MOUNT,
     CommandHandle,
     CommandResult,
+    CommandTimeout,
     ComputeBackend,
     ComputeError,
     ComputeSession,
     ExecTimeout,
+    ImageUnavailable,
     ProvisionError,
-    SandboxUnreachable,
+    SandboxDead,
     TransferError,
     wrap_command,
 )
@@ -63,8 +67,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("open_atp")
 
-#: Time to wait before sending SIGKILL to coreutils ``timeout``-capped commands.
-TIMEOUT_KILL_AFTER_S = 30
 #: Margin added to ``sb.exec`` client timeout to ensure the command is killed by
 #: coreutils ``timeout`` before the client deadline lapses.
 EXEC_DEADLINE_MARGIN_S = 30
@@ -130,7 +132,7 @@ def _safe_run[T](
 
     Raises
     ------
-    SandboxUnreachable
+    SandboxDead
         If the Sandbox is reaped while ``fn`` is in flight.
     ExecTimeout
         If ``fn`` does not complete before ``timeout_s``.
@@ -163,7 +165,7 @@ def _safe_run[T](
                     "elapsed_s": round(time.monotonic() - started, 1),
                 },
             )
-            raise SandboxUnreachable("Sandbox terminated while awaiting a Modal call")
+            raise SandboxDead("Sandbox terminated while awaiting a Modal call")
         if waited >= timeout_s:
             log.warning(
                 "modal call aborted",
@@ -204,7 +206,7 @@ def _safe_stream(stream: Iterable[str], sb: modal.Sandbox) -> Iterator[str]:
 
     Raises
     ------
-    SandboxUnreachable
+    SandboxDead
         If the Sandbox is reaped prior to the timeout.
     ExecTimeout
         If the Sandbox was reaped due to a timeout.
@@ -226,7 +228,7 @@ def _safe_stream(stream: Iterable[str], sb: modal.Sandbox) -> Iterator[str]:
             kind, payload = relay.get(timeout=LIVENESS_POLL_INTERVAL_S)
         except queue.Empty:
             if _is_dead(sb):
-                raise SandboxUnreachable("stdout stream stalled; Sandbox unreachable")
+                raise SandboxDead("stdout stream stalled; Sandbox unreachable")
             continue
         if kind == "chunk":
             yield cast(str, payload)
@@ -243,9 +245,7 @@ def _raise_stream_error(exc: Exception, sb: modal.Sandbox) -> NoReturn:
     if isinstance(exc, ExecTimeoutError):
         raise ExecTimeout("exec exceeded its client deadline while streaming") from exc
     if _is_dead(sb):
-        raise SandboxUnreachable(
-            "stdout stream terminated; Sandbox unreachable"
-        ) from exc
+        raise SandboxDead("stdout stream terminated; Sandbox unreachable") from exc
     raise exc
 
 
@@ -331,6 +331,10 @@ class ModalCommandHandle(CommandHandle):
     started_at: float
     #: Client wall-clock (seconds) the process wait is bounded by.
     deadline_s: float
+    #: Budget the command was given, for the timeout message.
+    budget_s: int = 0
+    #: Raise CommandTimeout (rather than return exit 124) on a budget kill.
+    raise_on_timeout: bool = False
     _stdout_lines: list[str] = field(default_factory=list)
     _buf: str = ""
 
@@ -384,8 +388,20 @@ class ModalCommandHandle(CommandHandle):
         )
 
     def wait(self) -> CommandResult:
-        """Collect the result, leaving the Sandbox up for the session."""
-        return self._collect_result()
+        """Collect the result, leaving the Sandbox up for the session.
+
+        A command killed by the in-Sandbox coreutils ``timeout`` for exceeding its
+        budget exits ``124``; surfaced as
+        :class:`~open_atp.backends.base.CommandTimeout` when the caller opted in, so a
+        budget timeout is told apart from an infra stall (:class:`ExecTimeout`).
+        """
+        result = self._collect_result()
+        if self.raise_on_timeout and result.exit_code == TIMEOUT_EXIT_CODE:
+            raise CommandTimeout(
+                f"command exceeded its {self.budget_s}s budget and was killed",
+                result=result,
+            )
+        return result
 
 
 def _terminate(sb: modal.Sandbox) -> None:
@@ -422,15 +438,12 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
 def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
     """Tar the Sandbox workdir and extract it over the host ``wd``.
 
-    Raises :class:`~open_atp.backends.base.TransferError` when the workdir cannot be
-    retrieved (the Sandbox is already gone, or the tar copy/extract fails), so a
-    result-bearing pull is a loud failure rather than a silent degrade into an empty
-    verify. Teardown callers that only pull best-effort must swallow it.
+    Raises :class:`~open_atp.backends.base.SandboxDead` when the Sandbox is already
+    gone, or :class:`~open_atp.backends.base.TransferError` when the tar copy/extract
+    fails.
     """
     if _is_dead(sb):
-        raise TransferError(
-            "pull_wd: Sandbox terminated before the workdir could be pulled"
-        )
+        raise SandboxDead("pull_wd: Sandbox already dead; cannot pull the workdir")
 
     def do_pull() -> None:
         # Exclude the image-baked .lake symlink target
@@ -554,23 +567,6 @@ class ModalBackend(ComputeBackend):
         """Short identifier for the backend: ``"modal"``."""
         return "modal"
 
-    def check_ready(self) -> None:
-        """Fail fast when Modal has no credentials configured.
-
-        Checks only *presence* (env tokens or a ``~/.modal.toml`` profile) -- a cheap
-        local precondition, so a forgotten ``modal token set`` is a caller-facing
-        :class:`~open_atp.harness.MissingCredentials` rather than an opaque failure
-        deep in ``Sandbox.create``. A present-but-rejected token is only discovered on
-        contact and surfaces as a run-time
-        :class:`~open_atp.backends.base.ProvisionError`.
-        """
-        if not _modal_configured():
-            log.error("modal not configured", extra={"app": self.app})
-            raise MissingCredentials(
-                "modal backend requires credentials: set MODAL_TOKEN_ID / "
-                "MODAL_TOKEN_SECRET or run `modal token set`"
-            )
-
     @property
     def wallclock_overhead_s(self) -> int:
         """Modal Sandbox lifecycle overhead: file sync + warm build + teardown."""
@@ -601,12 +597,39 @@ class ModalBackend(ComputeBackend):
         liveness, so they are unbounded; a failure there (capacity, a rejected token)
         is wrapped as a :class:`~open_atp.backends.base.ProvisionError` -- the run never
         got off the ground -- rather than leaking a raw Modal class.
+
+        Raises
+        ------
+        ~open_atp.harness.MissingCredentials
+            If Modal has no credentials configured (no env tokens, no
+            ``~/.modal.toml``).
+        ~open_atp.backends.base.ImageUnavailable
+            If the sandbox image has not been published to Modal.
+        ~open_atp.backends.base.ProvisionError
+            If the Sandbox otherwise fails to come up (capacity, a rejected token).
         """
+        from modal.exception import NotFoundError
+
+        if not _modal_configured():
+            log.error("modal not configured", extra={"app": self.app})
+            raise MissingCredentials(
+                "modal backend requires credentials: set MODAL_TOKEN_ID / "
+                "MODAL_TOKEN_SECRET or run `modal token set`"
+            )
+
         try:
             app = modal.App.lookup(self.app, create_if_missing=True)
-            image = modal.Image.from_name(_modal_image_name(self.image.name))
         except Exception as exc:
-            raise ProvisionError(f"modal app/image lookup: {exc}") from exc
+            raise ProvisionError(f"modal app lookup: {exc}") from exc
+        try:
+            image = modal.Image.from_name(_modal_image_name(self.image.name))
+        except NotFoundError as exc:
+            raise ImageUnavailable(
+                f"modal image {self.image.name!r} not published; build it with "
+                f"`open-atp build-modal-image` ({exc})"
+            ) from exc
+        except Exception as exc:
+            raise ProvisionError(f"modal image lookup: {exc}") from exc
 
         cpu = self.cpu
         secret_dict: dict[str, str | None] = {
@@ -644,6 +667,12 @@ class ModalBackend(ComputeBackend):
                 timeout=timeout_s + self.wallclock_overhead_s,
                 region=self.region,
             )
+        except NotFoundError as exc:
+            # from_name is lazy: an unpublished image can surface only here, on create.
+            raise ImageUnavailable(
+                f"modal image {self.image.name!r} not published; build it with "
+                f"`open-atp build-modal-image` ({exc})"
+            ) from exc
         except Exception as exc:
             raise ProvisionError(f"modal sandbox create: {exc}") from exc
         try:
@@ -667,13 +696,11 @@ class ModalBackend(ComputeBackend):
                 sb=sb,
                 label="warm_build",
             )
-            # The warm build is best-effort (the real compile is the source of truth),
-            # so a nonzero exit doesn't fail provisioning -- but surface it rather than
-            # discarding it, so a broken cache/symlink isn't silently swallowed.
+            # A nonzero warm build means the cache/symlink is broken -- the Sandbox is
+            # not usable, so fail provisioning rather than limping on a cold cache.
             if warm_exit != 0:
-                log.warning(
-                    "warm_build: lake build exited nonzero; proceeding on a cold cache",
-                    extra={"exit_code": warm_exit},
+                raise ProvisionError(
+                    f"warm build (lake build) exited {warm_exit}; sandbox cache broken"
                 )
         except BaseException:
             log.error("modal sandbox provisioning failed", exc_info=True)
@@ -742,24 +769,14 @@ class ModalSession(ComputeSession):
         *,
         timeout_s: int,
         env: Mapping[str, str] | None = None,
+        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         """Exec ``command`` in the live Sandbox; close() owns teardown.
 
-        Parameters
-        ----------
-        command : str
-            The shell command to run in the live Sandbox.
-        timeout_s : int
-            Wall-clock cap for this command, in seconds.
-        env : Mapping[str, str], optional
-            Per-command environment variables, forwarded as a one-off Modal secret
-            (usually empty -- credentials pin at session creation). Default empty.
-
-        Returns
-        -------
-        CommandHandle
-            A live :class:`ModalCommandHandle` whose ``wait`` leaves the Sandbox up for
-            the next command.
+        See :meth:`~open_atp.backends.base.ComputeSession.exec` for the parameters. The
+        command is coreutils-``timeout`` capped inside the Sandbox (see
+        :func:`_sb_exec_args`); the Sandbox outlives it, so the partial workdir can
+        still be pulled back.
         """
         # Per-command env is rare (the agent's creds are pinned at session create), so
         # this is usually an empty secret list.
@@ -787,6 +804,8 @@ class ModalSession(ComputeSession):
             sb=self.sb,
             started_at=started_at,
             deadline_s=_sb_exec_deadline(timeout_s),
+            budget_s=timeout_s,
+            raise_on_timeout=raise_on_timeout,
         )
 
     def sync_out(self) -> None:
@@ -798,17 +817,9 @@ class ModalSession(ComputeSession):
         _push_dir(self.sb, self.workdir, WORKDIR_MOUNT)
 
     def close(self) -> None:
-        """Pull final artifacts best-effort, then terminate the Sandbox. Idempotent.
+        """Terminate the Sandbox. Idempotent.
 
-        The result-bearing pull is :meth:`sync_out` (which the provers call
-        explicitly, and which raises on failure); this teardown pull is a redundant
-        backstop and also runs after a run has already failed, so a failure here is
-        logged and swallowed rather than masking the real outcome. Termination always
-        runs.
+        The result-bearing pull is :meth:`sync_out`, which the provers call explicitly
+        before close, so teardown only reclaims the Sandbox.
         """
-        try:
-            _pull_wd(self.sb, self.workdir)
-        except ComputeError:
-            log.warning("close: final workdir pull failed; terminating anyway")
-        finally:
-            _terminate(self.sb)
+        _terminate(self.sb)

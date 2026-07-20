@@ -11,7 +11,6 @@ it, so no backend is exercised.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 
@@ -168,12 +167,14 @@ def test_load_dotenv_seeds_missing_without_overriding(
     assert os.environ["EXISTING_KEY"] == "real-env"  # setdefault keeps real env
 
 
-def test_prove_renders_a_pre_run_rejection_instead_of_crashing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_prove_lets_a_pre_run_rejection_raise(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A toolchain mismatch raises out of prove() before any run starts; the CLI must
-    # catch it and render a result rather than crash with a traceback. (A started run's
-    # own failures come back as a status on the result, so they never reach this catch.)
+    # A run that never starts (here a toolchain mismatch) raises out of prove(); the
+    # CLI does not swallow it into a result. (A started run's own failures come back as
+    # a status on the result, so those never raise.)
+    from open_atp.lean import ToolchainMismatch
+
     bad = FakeProver("agent", toolchain="leanprover/lean4:v9.99.0")
     monkeypatch.setattr(cli, "standard_prover", lambda name, backend: bad)
 
@@ -184,12 +185,8 @@ def test_prove_renders_a_pre_run_rejection_instead_of_crashing(
         prover="agent",
         json=True,
     )
-    rc = cli._prove(args)
-
-    assert rc == 1  # a failed run exits nonzero, but does not raise
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["status"] == "error"
-    assert "ToolchainMismatch" in payload["error"]
+    with pytest.raises(ToolchainMismatch):
+        cli._prove(args)
 
 
 def test_download_dispatches_to_download_dataset(

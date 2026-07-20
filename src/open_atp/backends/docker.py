@@ -14,6 +14,7 @@ Runs an arbitrary command over a workdir in a Lean+Mathlib container. Mechanics:
 from __future__ import annotations
 
 import logging
+import shlex
 import subprocess
 import time
 import uuid
@@ -22,17 +23,37 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from open_atp.backends.base import (
+    TIMEOUT_EXIT_CODE,
+    TIMEOUT_KILL_AFTER_S,
     WORKDIR_MOUNT,
     CommandHandle,
     CommandResult,
+    CommandTimeout,
     ComputeBackend,
     ComputeSession,
+    ImageUnavailable,
     ProvisionError,
     wrap_command,
 )
 from open_atp.images import DEFAULT_IMAGE, Image
 
 log = logging.getLogger("open_atp")
+
+#: Fragments Docker prints when a ``docker run`` fails because the image is not present
+#: locally and cannot be pulled (open-atp images are built locally, never published).
+_IMAGE_MISSING_MARKERS = (
+    "pull access denied",
+    "repository does not exist",
+    "manifest unknown",
+    "not found: manifest",
+    "no such image",
+)
+
+
+def _is_image_missing(stderr: str) -> bool:
+    """Whether a failed ``docker run``'s stderr indicates the image is absent."""
+    low = stderr.lower()
+    return any(marker in low for marker in _IMAGE_MISSING_MARKERS)
 
 
 @dataclass
@@ -47,6 +68,9 @@ class DockerCommandHandle(CommandHandle):
     popen: subprocess.Popen[str]
     container: str
     started_at: float
+    budget_s: int
+    deadline_s: float
+    raise_on_timeout: bool = False
     _stdout_lines: list[str] = field(default_factory=list)
 
     def stream(self) -> Iterator[str]:
@@ -58,8 +82,26 @@ class DockerCommandHandle(CommandHandle):
             yield line
 
     def wait(self) -> CommandResult:
-        """Block for the container to exit and collect its captured output."""
-        stdout, stderr = self.popen.communicate()
+        """Block for the container to exit and collect its captured output.
+
+        The in-container ``timeout`` wrapper caps the command; if it fails to kill in
+        time the local ``communicate`` deadline is a backstop that ``docker kill``s the
+        container. A command killed for exceeding its budget exits ``124`` -- surfaced
+        as :class:`~open_atp.backends.base.CommandTimeout` when the caller opted in.
+        """
+        try:
+            stdout, stderr = self.popen.communicate(timeout=self.deadline_s)
+        except subprocess.TimeoutExpired:
+            log.warning(
+                "docker command overran its deadline; killing container",
+                extra={"container": self.container},
+            )
+            subprocess.run(
+                ["docker", "kill", self.container],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            stdout, stderr = self.popen.communicate()
         # communicate() returns "" for streams already drained via stream().
         out = stdout if stdout else "\n".join(self._stdout_lines)
         result = CommandResult(
@@ -76,6 +118,11 @@ class DockerCommandHandle(CommandHandle):
                 "duration_s": round(result.duration_s, 1),
             },
         )
+        if self.raise_on_timeout and result.exit_code == TIMEOUT_EXIT_CODE:
+            raise CommandTimeout(
+                f"command exceeded its {self.budget_s}s budget and was killed",
+                result=result,
+            )
         return result
 
 
@@ -231,6 +278,11 @@ class DockerBackend(ComputeBackend):
                 "docker session container failed to start",
                 extra={"container": container, "stderr": stderr},
             )
+            if _is_image_missing(stderr):
+                raise ImageUnavailable(
+                    f"docker image {self.image.name!r} not found locally; build it "
+                    f"with `open-atp build-docker-image` ({stderr})"
+                )
             raise ProvisionError(f"docker run: {stderr}")
         return DockerSession(backend=self, container=container)
 
@@ -252,30 +304,30 @@ class DockerSession(ComputeSession):
         *,
         timeout_s: int,
         env: Mapping[str, str] | None = None,
+        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         """``docker exec`` ``command`` into the container; close() owns teardown.
 
-        Parameters
-        ----------
-        command : str
-            The shell command to run in the live container.
-        timeout_s : int
-            Unused by Docker (the container has no built-in cap).
-        env : Mapping[str, str], optional
-            Per-command environment variables (``docker exec -e``). Default empty.
-
-        Returns
-        -------
-        CommandHandle
-            A live :class:`DockerCommandHandle`; the session owns teardown.
+        The command is wrapped in coreutils ``timeout`` so it is killed (only the exec,
+        not the container) once ``timeout_s`` elapses, leaving the session up for the
+        next command. See :meth:`~open_atp.backends.base.ComputeSession.exec` for the
+        parameters.
         """
+        capped = (
+            f"timeout --kill-after={TIMEOUT_KILL_AFTER_S} {timeout_s} "
+            f"bash -lc {shlex.quote(wrap_command(command))}"
+        )
         argv = ["docker", "exec"]
         for key, value in (env or {}).items():
             argv += ["-e", f"{key}={value}"]
-        argv += [self.container, "bash", "-lc", wrap_command(command)]
+        argv += [self.container, "bash", "-lc", capped]
         log.debug(
             "docker exec",
-            extra={"container": self.container, "env_keys": sorted(env or {})},
+            extra={
+                "container": self.container,
+                "env_keys": sorted(env or {}),
+                "timeout_s": timeout_s,
+            },
         )
         popen = subprocess.Popen(
             argv,
@@ -285,7 +337,12 @@ class DockerSession(ComputeSession):
             start_new_session=True,
         )
         return DockerCommandHandle(
-            popen=popen, container=self.container, started_at=time.time()
+            popen=popen,
+            container=self.container,
+            started_at=time.time(),
+            budget_s=timeout_s,
+            deadline_s=timeout_s + TIMEOUT_KILL_AFTER_S + 30,
+            raise_on_timeout=raise_on_timeout,
         )
 
     def sync_out(self) -> None:

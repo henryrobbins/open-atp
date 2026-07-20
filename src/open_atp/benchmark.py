@@ -42,9 +42,33 @@ from tqdm import tqdm
 
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
-from open_atp.provers.base import AutomatedProver, ProofResult
+from open_atp.provers.base import (
+    AutomatedProver,
+    ProofResult,
+    _status_for_exception,
+)
 
 log = logging.getLogger("open_atp")
+
+
+def _errored_result(prover: str, output_dir: Path, exc: BaseException) -> ProofResult:
+    """Synthesize a minimal failed :class:`ProofResult` from an escaped exception.
+
+    For the runs ``prove`` cannot record itself: an input rejected before the run
+    started (a toolchain mismatch, absent credentials, a sandbox that never came up)
+    and a run abandoned past the wall-clock ceiling. The exception is classified onto
+    :attr:`~ProofResult.status`, its class name recorded in
+    :attr:`~ProofResult.error` and its message in :attr:`~ProofResult.error_msg`;
+    :attr:`~ProofResult.verification` stays ``None``.
+    """
+    return ProofResult(
+        prover=prover,
+        verification=None,
+        output_dir=output_dir,
+        error=type(exc).__name__,
+        error_msg=str(exc),
+        status=_status_for_exception(exc),
+    )
 
 
 class RunCeilingExceeded(Exception):
@@ -226,14 +250,14 @@ def run_benchmark(
         # verifier records stay attributed and any failure is already logged (with
         # traceback) inside that binding. It also returns a record for any run that
         # starts -- its own failures land as a status on the result. The only escapees
-        # are an input rejected before the run (toolchain mismatch) and a run abandoned
-        # past the wall-clock ceiling; neither has a run record, so ``errored``
-        # synthesizes a minimal one.
+        # are a run that never started (a toolchain mismatch, absent credentials, a
+        # sandbox that failed to provision) and a run abandoned past the wall-clock
+        # ceiling; neither has a run record, so ``_errored_result`` synthesizes one.
         with gates[prover_name]:
             try:
                 result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
-                result = ProofResult.errored(prover.name, run_dir, exc)
+                result = _errored_result(prover.name, run_dir, exc)
         (run_dir / "results.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str)
         )

@@ -43,10 +43,10 @@ def _make_prover() -> AristotleProver:
     return AristotleProver(backend=backend)
 
 
-def test_missing_api_key_fails_fast(
+def test_missing_api_key_raises_out_of_prove(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No API key raises out of prove() before any network call, like a mismatch."""
+    """No API key raises out of prove() before any network call -- not a record."""
     monkeypatch.delenv("ARISTOTLE_API_KEY", raising=False)
     prover = AristotleProver(backend=DockerBackend(image=DEFAULT_IMAGE))
     out = tmp_path / "run"
@@ -54,7 +54,8 @@ def test_missing_api_key_fails_fast(
     with pytest.raises(MissingCredentials, match="ARISTOTLE_API_KEY"):
         prover.prove(ProofTask(LeanProject(FIXTURE)), out)
 
-    assert not (out / "wd").exists()
+    # The run never completed, so no result record was written.
+    assert not (out / "logs" / "result.json").exists()
 
 
 def _fake_result(*, solved: bool) -> object:
@@ -142,7 +143,7 @@ def test_generate_raises_when_aristotle_produces_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """No candidate archive is an error, not a silent verify of the original project."""
-    from open_atp.provers.aristotle import AristotleNoOutput
+    from open_atp.provers.aristotle import ServiceError
 
     reason = "Aristotle produced no output files."
     monkeypatch.setattr(
@@ -155,7 +156,7 @@ def test_generate_raises_when_aristotle_produces_nothing(
     logs_dir.mkdir()
     result = ProofResult(prover="aristotle", verification=None, output_dir=tmp_path)
 
-    with pytest.raises(AristotleNoOutput, match=reason):
+    with pytest.raises(ServiceError, match=reason):
         prover._generate(ProofTask(LeanProject(FIXTURE)), wd, logs_dir, result)
 
     # The reason and run metadata survive on the result for the caller to inspect.

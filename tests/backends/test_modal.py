@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 import open_atp.backends.modal as modal_mod
-from open_atp.backends.base import ExecTimeout, SandboxUnreachable
+from open_atp.backends.base import ExecTimeout, SandboxDead
 from open_atp.backends.modal import (
     EXEC_DEADLINE_MARGIN_S,
     TIMEOUT_KILL_AFTER_S,
@@ -94,10 +94,11 @@ def test_modal_image_name_strips_tag() -> None:
     assert _modal_image_name("registry/org/img:v1") == "registry/org/img"
 
 
-def test_check_ready_raises_without_modal_credentials(
+def test_provision_raises_without_modal_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """No env tokens and no ~/.modal.toml is a fail-fast MissingCredentials."""
+    """No env tokens and no ~/.modal.toml raises MissingCredentials before any Modal
+    call -- the run never gets off the ground."""
     from open_atp.harness import MissingCredentials
 
     monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
@@ -105,13 +106,7 @@ def test_check_ready_raises_without_modal_credentials(
     monkeypatch.setattr(Path, "home", lambda: tmp_path)  # a home with no .modal.toml
 
     with pytest.raises(MissingCredentials, match="modal"):
-        ModalBackend().check_ready()
-
-
-def test_check_ready_passes_with_env_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MODAL_TOKEN_ID", "id")
-    monkeypatch.setenv("MODAL_TOKEN_SECRET", "secret")
-    ModalBackend().check_ready()  # present -> no raise
+        ModalBackend()._provision(tmp_path, timeout_s=60, env=None, mounts=None)
 
 
 def test_wallclock_overhead_sums_provision_and_sync_phases() -> None:
@@ -132,7 +127,7 @@ def test_wallclock_overhead_sums_provision_and_sync_phases() -> None:
 # The push/pull/exec plumbing is pure control flow given a stand-in Sandbox and
 # process, so most of it is exercised here without Modal creds or a live Sandbox.
 # `_is_dead` is driven off `poll()`, so a "dead" fake short-circuits every
-# liveness-gated path (the pull skips, the bound call raises SandboxUnreachable).
+# liveness-gated path (the pull skips, the bound call raises SandboxDead).
 
 
 class FakeProc:
@@ -206,7 +201,7 @@ def test_safe_run_reraises_fn_exception() -> None:
 def test_safe_run_dead_sandbox_raises_unreachable(monkeypatch) -> None:
     monkeypatch.setattr(modal_mod, "LIVENESS_POLL_INTERVAL_S", 0.02)
     blocked = threading.Event()
-    with pytest.raises(SandboxUnreachable):
+    with pytest.raises(SandboxDead):
         _safe_run(
             blocked.wait,
             timeout_s=10,
@@ -240,7 +235,7 @@ def test_stream_rebuffers_chunks_into_lines() -> None:
 def test_stream_maps_errors_via_raise_stream_error() -> None:
     proc = FakeProc(raise_on_stream=RuntimeError("dropped"))
     handle = _handle(FakeSandbox(dead=True), proc)
-    with pytest.raises(SandboxUnreachable):
+    with pytest.raises(SandboxDead):
         list(handle.stream())
 
 
@@ -260,7 +255,7 @@ def test_stream_reaped_sandbox_raises_unreachable(monkeypatch) -> None:
             yield ""
 
     handle = _handle(FakeSandbox(dead=True), BlockingProc())
-    with pytest.raises(SandboxUnreachable):
+    with pytest.raises(SandboxDead):
         list(handle.stream())
 
 
@@ -289,23 +284,22 @@ def test_handle_wait_leaves_sandbox_up() -> None:
 # backend + session (offline surface) ----------------------------------------
 
 
-def test_sync_out_raises_transfer_error_on_dead_sandbox(tmp_path: Path) -> None:
-    from open_atp.backends.base import TransferError
+def test_sync_out_raises_sandbox_dead_on_dead_sandbox(tmp_path: Path) -> None:
     from open_atp.backends.modal import ModalSession
 
     # sync_out is the result-bearing pull: a dead Sandbox means the workdir can't be
     # retrieved, so it fails loudly rather than silently returning an empty workdir.
     sb = FakeSandbox(dead=True)
     session = ModalSession(backend=ModalBackend(), sb=sb, workdir=tmp_path)
-    with pytest.raises(TransferError, match="pull_wd"):
+    with pytest.raises(SandboxDead, match="pull_wd"):
         session.sync_out()
 
 
-def test_session_close_swallows_pull_failure_and_terminates(tmp_path: Path) -> None:
+def test_session_close_terminates_without_pulling(tmp_path: Path) -> None:
     from open_atp.backends.modal import ModalSession
 
-    # close()'s teardown pull is best-effort: on a dead Sandbox it must not raise
-    # (masking the real outcome), and termination still runs.
+    # close() only reclaims the Sandbox (the result-bearing pull is sync_out); it must
+    # not raise even on a dead Sandbox, and termination runs.
     sb = FakeSandbox(dead=True)
     session = ModalSession(backend=ModalBackend(), sb=sb, workdir=tmp_path)
     session.close()

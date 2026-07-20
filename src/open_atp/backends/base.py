@@ -24,6 +24,11 @@ from open_atp.images import DEFAULT_IMAGE, Image
 WORKDIR_MOUNT = "/workspace/wd"
 #: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
 BAKED_LAKE = "/workspace/.lake"
+#: Exit code coreutils ``timeout`` reports when it kills a command past its budget.
+TIMEOUT_EXIT_CODE = 124
+#: Grace before coreutils ``timeout`` escalates SIGTERM to SIGKILL -- a window for a
+#: killed agent to flush its final usage/cost record before it dies.
+TIMEOUT_KILL_AFTER_S = 30
 
 
 class ComputeError(RuntimeError):
@@ -33,25 +38,21 @@ class ComputeError(RuntimeError):
 class ExecTimeout(ComputeError):
     """A sandbox operation stalled past its client-side wall-clock deadline.
 
-    Narrow by design: this is an *infra* signal -- a backend operation (a push/pull,
-    a warm build, a ``proc.wait``) that failed to complete before the client gave up
-    on it, typically an unresponsive worker. It is **not** the generation command
-    reaching its own budget: that is enforced inside the sandbox (a killed process
-    with a timeout exit code) and surfaces as
-    :class:`~open_atp.provers.base.GenerationTimeout`, not this.
+    An *infra* stall -- a backend operation (a push/pull, a warm build, a
+    ``proc.wait``) that did not complete before the client gave up on it, typically an
+    unresponsive worker. Distinct from a command using up its own budget, which the
+    backend surfaces as :class:`CommandTimeout`.
     """
 
 
-class SandboxUnreachable(ComputeError):
-    """The backend compute sandbox became unreachable mid-run."""
+class SandboxDead(ComputeError):
+    """The backend compute sandbox was terminated or reaped mid-run."""
 
 
 class TransferError(ComputeError):
     """A workdir file transfer (push into, or pull out of, the sandbox) failed.
 
-    Raised for the result-bearing transfers so an incomplete or missing workdir is
-    an explicit failure rather than a silent degrade into an empty verify. The
-    message leads with the transfer's op label (``push_dir`` / ``pull_wd``).
+    The message leads with the transfer's op label (``push_dir`` / ``pull_wd``).
     """
 
 
@@ -59,10 +60,36 @@ class ProvisionError(ComputeError):
     """The sandbox/container failed to come up for a run.
 
     Covers a substrate that never produced a usable sandbox: the Docker daemon down
-    or unreachable, the image absent, or a Modal ``App.lookup`` / ``Sandbox.create``
-    failure (capacity, a rejected token). Distinct from a mid-run loss
-    (:class:`SandboxUnreachable`) -- the run never got off the ground.
+    or unreachable, or a Modal ``App.lookup`` / ``Sandbox.create`` failure (capacity, a
+    rejected token). Distinct from a mid-run loss (:class:`SandboxDead`).
     """
+
+
+class ImageUnavailable(ProvisionError):
+    """The Lean+Mathlib sandbox image is not available to the backend.
+
+    Raised when the ``open-atp`` image has not been built locally (Docker) or
+    published (Modal), so provisioning cannot start.
+    """
+
+
+class CommandTimeout(Exception):
+    """A sandbox command was killed for exceeding its own wall-clock budget.
+
+    Deliberately **not** a :class:`ComputeError`: this is the command using up the
+    budget it was given -- a healthy timeout -- not an infra fault. The backend raises
+    it from a live command's ``wait`` when the command was force-killed at its
+    deadline. :attr:`result` carries whatever the command produced before the kill.
+
+    Attributes
+    ----------
+    result : CommandResult or None
+        The command's partial output captured before it was killed, when available.
+    """
+
+    def __init__(self, message: str, *, result: CommandResult | None = None) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 @dataclass
@@ -155,6 +182,7 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         *,
         timeout_s: int,
         env: Mapping[str, str] | None = None,
+        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         """Run ``command`` in the live sandbox; the handle does NOT tear it down.
 
@@ -163,10 +191,16 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         command : str
             The shell command to run in the live sandbox.
         timeout_s : int
-            Wall-clock cap for the command, in seconds.
+            Wall-clock cap for the command, in seconds. Enforced by killing the command
+            when it is exceeded (a killed process surfaces exit code ``124``).
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
+        raise_on_timeout : bool
+            When the command is killed for exceeding ``timeout_s``, raise
+            :class:`CommandTimeout` from :meth:`~CommandHandle.wait` instead of
+            returning a result with the timeout exit code. Default ``False`` -- callers
+            that read the exit code themselves (the verifier) leave it off.
 
         Returns
         -------
@@ -350,19 +384,6 @@ class ComputeBackend(abc.ABC):
             workdir, timeout_s=timeout_s, env=env, mounts=mounts
         ) as session:
             return session.exec(command, timeout_s=timeout_s).wait()
-
-    def check_ready(self) -> None:
-        """Fail fast if a prerequisite the backend needs is absent. Default: none.
-
-        A cheap, local precondition check run before any work is staged (by
-        :meth:`~open_atp.provers.base.AutomatedProver.prove`, alongside the toolchain
-        check). Backends needing compute credentials override this to raise -- e.g.
-        Modal rejects an unconfigured token with
-        :class:`~open_atp.harness.MissingCredentials` -- so the failure reaches the
-        caller instead of surfacing deep in a run. A substrate that is configured but
-        unreachable (a stopped Docker daemon) is *not* caught here: that is a run-time
-        :class:`ProvisionError`, recorded, not a fail-fast precondition.
-        """
 
     def test(self) -> bool:
         """Smoke-test the backend by verifying a trivial proof end to end.

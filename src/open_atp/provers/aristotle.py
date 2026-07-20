@@ -40,14 +40,14 @@ log = logging.getLogger("open_atp")
 _T = TypeVar("_T")
 
 
-class AristotleNoOutput(Exception):
-    """Aristotle returned no candidate to verify -- no task to wait on, or no files.
+class ServiceError(Exception):
+    """The hosted Aristotle service produced no candidate to verify.
 
-    The hosted run produced nothing to unpack over the workdir, so there is no
-    candidate for the shared verifier to check. Distinct from a candidate that fails
-    to verify (:attr:`~open_atp.provers.base.ProofStatus.UNVERIFIED`): nothing was
-    generated at all, so :meth:`~open_atp.provers.base.AutomatedProver.prove`
-    classifies it as :attr:`~open_atp.provers.base.ProofStatus.ERROR`.
+    No task to wait on, or no output files came back, so there is nothing for the
+    shared verifier to check. Distinct from a candidate that fails to verify
+    (:attr:`~open_atp.provers.base.ProofStatus.UNVERIFIED`): nothing was generated at
+    all, so :meth:`~open_atp.provers.base.AutomatedProver.prove` classifies it as
+    :attr:`~open_atp.provers.base.ProofStatus.ERROR`.
     """
 
 
@@ -207,18 +207,6 @@ class AristotleProver(AutomatedProver):
         """The prover's own prompt handed to Aristotle, before any user prompt."""
         return PROVER_PROMPT
 
-    def _preflight(self, task: ProofTask) -> None:
-        """Require the API key up front so a missing key fails fast to the caller.
-
-        The key is otherwise only consulted deep in the async submit path, where its
-        absence would surface as a remote 4xx recorded on the run; checking here makes
-        it a caller-facing error, like a toolchain mismatch.
-        """
-        if not (self._api_key or os.environ.get("ARISTOTLE_API_KEY")):
-            raise MissingCredentials(
-                "aristotle prover requires ARISTOTLE_API_KEY (set it or pass api_key)"
-            )
-
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult
     ) -> None:
@@ -248,7 +236,7 @@ class AristotleProver(AutomatedProver):
             # No archive means no candidate: fail the run rather than verifying the
             # unchanged project into a misleading UNVERIFIED. The reason (no task / no
             # output files) was recorded in metadata["error"] by the submit path.
-            raise AristotleNoOutput(
+            raise ServiceError(
                 str(metadata.get("error", "Aristotle produced no output."))
             )
         self._extract_over(downloaded, wd)
@@ -291,8 +279,11 @@ class AristotleProver(AutomatedProver):
         _quiet_aristotle_logger()
 
         key = self._api_key or os.environ.get("ARISTOTLE_API_KEY")
-        if key:
-            aristotlelib.set_api_key(key)
+        if not key:
+            raise MissingCredentials(
+                "aristotle prover requires ARISTOTLE_API_KEY (set it or pass api_key)"
+            )
+        aristotlelib.set_api_key(key)
 
         questions = (
             AgentQuestionsSetting.TIMEOUT_15_MIN

@@ -45,7 +45,7 @@ The concrete candidate generators.
 .. autoclass:: open_atp.provers.aristotle.AristotleProver
    :show-inheritance:
 
-.. autoexception:: open_atp.provers.aristotle.AristotleNoOutput
+.. autoexception:: open_atp.provers.aristotle.ServiceError
 ```
 
 ## Standard catalog

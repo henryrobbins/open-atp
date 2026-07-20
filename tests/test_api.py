@@ -27,8 +27,9 @@ import pytest
 from open_atp.backends.base import (
     ComputeError,
     ExecTimeout,
+    ImageUnavailable,
     ProvisionError,
-    SandboxUnreachable,
+    SandboxDead,
     TransferError,
 )
 from open_atp.backends.docker import DockerBackend
@@ -38,6 +39,7 @@ from open_atp.harness import (
     CodexHarness,
     OpenCodeHarness,
 )
+from open_atp.harness.base import MissingCredentials
 from open_atp.images import DEFAULT_IMAGE, Image
 from open_atp.lean import LeanProject, ProofTask, ToolchainMismatch, create_project
 from open_atp.provers.agent_prover import AgentProver
@@ -243,23 +245,44 @@ def test_prove_records_a_started_run_failure_as_a_result(tmp_path: Path) -> None
         # by the recorded exception class name in ``error``.
         (GenerationTimeout("out of budget"), ProofStatus.TIMEOUT),
         (ExecTimeout("t"), ProofStatus.ERROR),
-        (SandboxUnreachable("s"), ProofStatus.ERROR),
+        (SandboxDead("s"), ProofStatus.ERROR),
         (TransferError("pull_wd: gone"), ProofStatus.ERROR),
-        (ProvisionError("docker run: daemon down"), ProofStatus.ERROR),
         (ComputeError("c"), ProofStatus.ERROR),
         (RuntimeError("boom"), ProofStatus.ERROR),
     ],
 )
-def test_prove_classifies_a_started_run_failure(
+def test_prove_records_a_started_run_failure(
     exc: Exception, expected: ProofStatus, tmp_path: Path
 ) -> None:
+    """A failure once the run has started comes back as a classified record."""
     result = FakeProver("agent", raises=exc).prove(
         _task(), tmp_path / type(exc).__name__
     )
     assert result.status is expected
+    assert result.verification is None and not result.success
     # The class name is the search key; the message is the human "why".
     assert result.error == type(exc).__name__
     assert result.error_msg == str(exc)
+    # The record is self-describing on disk too.
+    payload = json.loads((result.logs_dir / "result.json").read_text())
+    assert payload["status"] == expected.value
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        MissingCredentials("no key"),
+        ProvisionError("docker run: daemon down"),
+        ImageUnavailable("image not built"),
+    ],
+)
+def test_prove_reraises_a_run_that_never_started(
+    exc: Exception, tmp_path: Path
+) -> None:
+    """Absent credentials / a failed provision raise out of prove, not a record."""
+    prover = FakeProver("agent", raises=exc)
+    with pytest.raises(type(exc)):
+        prover.prove(_task(), tmp_path / "run")
 
 
 def test_prove_rejects_toolchain_mismatch_before_generating(tmp_path: Path) -> None:
@@ -277,23 +300,11 @@ def test_prove_unverified_candidate_sets_status(tmp_path: Path) -> None:
     assert result.status is ProofStatus.UNVERIFIED
 
 
-# --- status classification -------------------------------------------------
-
-
-def test_errored_synthesizes_a_minimal_classified_result(tmp_path: Path) -> None:
-    result = ProofResult.errored("agent", tmp_path, GenerationTimeout("out of budget"))
-    assert result.prover == "agent"
-    assert result.verification is None and not result.success
-    assert result.error == "GenerationTimeout" and result.error_msg == "out of budget"
-    assert result.status is ProofStatus.TIMEOUT
-    assert result.to_dict()["status"] == "timeout"
-
-
-def test_errored_classifies_an_infra_failure_as_error(tmp_path: Path) -> None:
-    # A narrowed ExecTimeout (an infra stall) is a plain ERROR, greppable by kind.
-    result = ProofResult.errored("agent", tmp_path, ExecTimeout("pull_wd stalled"))
-    assert result.status is ProofStatus.ERROR
-    assert result.error == "ExecTimeout" and result.error_msg == "pull_wd stalled"
+def test_prove_verified_candidate_sets_status(tmp_path: Path) -> None:
+    result = FakeProver("agent", verified=True).prove(_task(), tmp_path / "run")
+    assert result.success
+    assert result.status is ProofStatus.VERIFIED
+    assert result.error is None and result.error_msg is None
 
 
 def test_prove_runs_standalone_verify_when_generate_leaves_it_unset(
