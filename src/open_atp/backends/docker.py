@@ -39,22 +39,6 @@ from open_atp.images import DEFAULT_IMAGE, Image
 
 log = logging.getLogger("open_atp")
 
-#: Fragments Docker prints when a ``docker run`` fails because the image is not present
-#: locally and cannot be pulled (open-atp images are built locally, never published).
-_IMAGE_MISSING_MARKERS = (
-    "pull access denied",
-    "repository does not exist",
-    "manifest unknown",
-    "not found: manifest",
-    "no such image",
-)
-
-
-def _is_image_missing(stderr: str) -> bool:
-    """Whether a failed ``docker run``'s stderr indicates the image is absent."""
-    low = stderr.lower()
-    return any(marker in low for marker in _IMAGE_MISSING_MARKERS)
-
 
 @dataclass
 class DockerCommandHandle(CommandHandle):
@@ -252,6 +236,7 @@ class DockerBackend(ComputeBackend):
         ComputeSession
             A live :class:`DockerSession` over the workdir.
         """
+        self._require_image()
         container = f"afps-{uuid.uuid4().hex[:12]}"
         argv = self._build_cmd(workdir, container, env or {}, mounts or ())
         argv += ["sleep", "infinity"]
@@ -272,19 +257,37 @@ class DockerBackend(ComputeBackend):
             log.error("docker binary not found", extra={"container": container})
             raise ProvisionError(f"docker: {exc}") from exc
         if proc.returncode != 0:
-            # Daemon down, image missing, bad mount -- the container never came up.
+            # Daemon down or bad mount -- the image was checked above, so the
+            # container never came up for some other reason.
             stderr = proc.stderr.strip() or "(no stderr)"
             log.error(
                 "docker session container failed to start",
                 extra={"container": container, "stderr": stderr},
             )
-            if _is_image_missing(stderr):
-                raise ImageUnavailable(
-                    f"docker image {self.image.name!r} not found locally; build it "
-                    f"with `open-atp build-docker-image` ({stderr})"
-                )
             raise ProvisionError(f"docker run: {stderr}")
         return DockerSession(backend=self, container=container)
+
+    def _require_image(self) -> None:
+        """Fail fast if the sandbox image isn't present locally.
+
+        open-atp images are built locally and never published, so ``docker run``
+        can't pull a missing one. ``docker image inspect`` matches ``repo:tag``
+        natively and returns nonzero when absent -- a cheaper, sturdier signal than
+        scraping a failed ``docker run``'s stderr.
+        """
+        try:
+            proc = subprocess.run(
+                ["docker", "image", "inspect", self.image.name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError as exc:
+            raise ProvisionError(f"docker: {exc}") from exc
+        if proc.returncode != 0:
+            raise ImageUnavailable(
+                f"docker image {self.image.name!r} not found locally; build it "
+                f"with `open-atp build-docker-image`"
+            )
 
 
 @dataclass
