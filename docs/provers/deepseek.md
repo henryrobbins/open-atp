@@ -22,7 +22,7 @@ environment (a `.env` file at the project root is read automatically):
 export DEEPSEEK_API_KEY=...
 ```
 
-Alternatively pass it to the harness explicitly via `provider_api_key`. The harness
+Alternatively pass it to the harness explicitly via `api_key`. The harness
 forwards the key into the sandbox under `DEEPSEEK_API_KEY`.
 
 ## Using the prover

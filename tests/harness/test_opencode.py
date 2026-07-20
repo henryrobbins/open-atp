@@ -1,8 +1,8 @@
 """Unit tests for :class:`~open_atp.harness.opencode.OpenCodeHarness`.
 
-No compute backend or agent CLI is launched here -- these exercise provider
-inference and the two auth strategies (``api_key`` env forwarding vs ``login``
-credential-store mount) at the harness level. Live runs are in
+No compute backend or agent CLI is launched here -- these exercise the two auth
+strategies (``api_key`` env forwarding vs ``login`` credential-store mount) at the
+harness level. Live runs are in
 ``tests/harness/test_capabilities.py`` and ``tests/test_e2e_provers.py``.
 """
 
@@ -25,22 +25,21 @@ def _write_auth(home: Path, entries: dict[str, object]) -> Path:
     return store
 
 
-def test_provider_inferred_from_model() -> None:
-    assert OpenCodeHarness(model="grok-4.5").provider == "xai"
-    assert OpenCodeHarness(model="deepseek-v4-pro").provider == "deepseek"
-    assert OpenCodeHarness(model="gpt-5.5").provider == "openai"
-    explicit = OpenCodeHarness(model="anything", provider="fireworks")
-    assert explicit.provider == "fireworks"
+def test_provider_stored() -> None:
+    harness = OpenCodeHarness(provider="fireworks", model="anything")
+    assert harness.provider == "fireworks"
 
 
 def test_invalid_auth_rejected() -> None:
     with pytest.raises(ValueError, match="unknown auth"):
-        OpenCodeHarness(auth="oauth")
+        OpenCodeHarness(provider="deepseek", auth="oauth")
 
 
 def test_api_key_forwards_provider_env_var() -> None:
     # Explicit key wins over the host env and is forwarded under the canonical name.
-    harness = OpenCodeHarness(model="deepseek-v4-pro", provider_api_key="sk-fake")
+    harness = OpenCodeHarness(
+        provider="deepseek", model="deepseek-v4-pro", api_key="sk-fake"
+    )
     auth = harness.agent_auth()
     assert auth.env == {"DEEPSEEK_API_KEY": "sk-fake"}
     assert auth.mounts == []
@@ -48,7 +47,7 @@ def test_api_key_forwards_provider_env_var() -> None:
 
 def test_api_key_reads_host_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("XAI_API_KEY", "sk-xai")
-    harness = OpenCodeHarness(model="grok-4.5", auth="api_key")
+    harness = OpenCodeHarness(provider="xai", model="grok-4.5", auth="api_key")
     assert harness.agent_auth().env == {"XAI_API_KEY": "sk-xai"}
 
 
@@ -63,7 +62,9 @@ def test_api_key_unknown_provider_uses_convention(
 
 def test_api_key_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    harness = OpenCodeHarness(model="deepseek-v4-pro", auth="api_key")
+    harness = OpenCodeHarness(
+        provider="deepseek", model="deepseek-v4-pro", auth="api_key"
+    )
     with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
         harness.agent_auth()
 

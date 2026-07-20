@@ -19,7 +19,7 @@ OpenCode resolves a provider's credentials from two channels, selected by the ha
 
 `auth="api_key"` (default)
 : Forward the provider's API key as its canonical env var. The harness reads the key
-  from the host environment (or an explicit `provider_api_key`) and forwards it under
+  from the host environment (or an explicit `api_key`) and forwards it under
   the provider's standard name (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`,
   `XAI_API_KEY`, …; any other provider falls back to `<PROVIDER>_API_KEY`). Best for
   providers billed against an API account:
@@ -31,7 +31,7 @@ OpenCode resolves a provider's credentials from two channels, selected by the ha
   ```{testcode}
   from open_atp.harness import OpenCodeHarness
 
-  OpenCodeHarness(model="deepseek-v4-pro", provider_api_key="sk-...")
+  OpenCodeHarness(provider="deepseek", model="deepseek-v4-pro", api_key="sk-...")
   ```
 
 `auth="login"`
@@ -48,9 +48,8 @@ OpenCode resolves a provider's credentials from two channels, selected by the ha
   which may hold other providers' credentials) and points `XDG_DATA_HOME` at the mount,
   so OpenCode reads the credential there. See {doc}`/provers/grok` for a worked example.
 
-The provider is inferred from the model prefix (`claude-*` → `anthropic`, `grok-*` →
-`xai`, `deepseek-*` → `deepseek`, …) unless you pass `provider` explicitly; any OpenCode
-provider is accepted, not just the inferable ones.
+The `provider` argument is required and names the OpenCode provider (`anthropic`, `xai`,
+`deepseek`, …); any OpenCode provider is accepted.
 
 ## Customizing the harness
 
@@ -68,7 +67,7 @@ from open_atp.provers import AgentProver
 
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
-    harness=OpenCodeHarness(model="deepseek-v4-pro", effort="medium"),
+    harness=OpenCodeHarness(provider="deepseek", model="deepseek-v4-pro", effort="medium"),
     backend=DockerBackend(image=DEFAULT_IMAGE),
 )
 result = prover.prove(task, output_dir=Path("demo"))

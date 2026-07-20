@@ -12,7 +12,6 @@ from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import (
     Harness,
     HarnessRunResult,
-    _infer_provider,
 )
 
 #: The authentication strategies :class:`OpenCodeHarness` supports.
@@ -30,9 +29,8 @@ class OpenCodeHarness(Harness):
     :attr:`auth`:
 
     * ``"api_key"`` -- forward the provider's API key as its canonical env var
-      (:func:`~open_atp.harness.base._provider_env_var`), read from
-      :attr:`provider_api_key` or the host environment. Works for any API-key provider
-      (DeepSeek, OpenAI, ...).
+      (:func:`~open_atp.harness.base._provider_env_var`), read from :attr:`api_key`
+      or the host environment. Works for any API-key provider (DeepSeek, OpenAI, ...).
     * ``"login"`` -- authenticate from opencode's own credential store, so an OAuth
       login (e.g. a SuperGrok / X-Premium subscription) or an ``opencode auth login``
       API key works without exporting a key. :meth:`_home_dirs` stages **only** the
@@ -43,17 +41,16 @@ class OpenCodeHarness(Harness):
 
     Parameters
     ----------
+    provider : str
+        opencode provider name (e.g. ``"anthropic"``, ``"xai"``, ``"deepseek"``). Any
+        opencode provider is accepted.
     model : str
         Model id the agent runs. Default ``"deepseek-v4-pro"``.
     effort : str
         Reasoning-effort level. Default ``"high"``.
-    provider : str, optional
-        opencode provider name. ``None`` infers it from the model prefix (``claude-*``
-        -> ``anthropic``, ``grok-*`` -> ``xai``, ...). Any opencode provider is
-        accepted, not just the inferable ones.
     auth : str
         Authentication strategy, ``"api_key"`` (default) or ``"login"`` (see above).
-    provider_api_key : str, optional
+    api_key : str, optional
         For ``auth="api_key"``, the provider's API key, forwarded under its canonical
         env var. ``None`` (default) reads that env var from the host; resolution fails
         if neither is set. No format check is done (OpenAI and DeepSeek keys are
@@ -61,20 +58,16 @@ class OpenCodeHarness(Harness):
 
     Examples
     --------
-    The provider is inferred from the model prefix when not given explicitly:
-
-    >>> from open_atp.harness import OpenCodeHarness
-    >>> harness = OpenCodeHarness(model="gpt-5.5")
-    >>> harness.name
-    'opencode'
-    >>> harness.provider
-    'openai'
-
     With ``auth="api_key"`` (the default) and the key supplied explicitly,
     :meth:`agent_auth` forwards it under the provider's canonical env var without
     reading the host environment:
 
-    >>> harness = OpenCodeHarness(model="claude-opus-4-8", provider_api_key="sk-fake")
+    >>> from open_atp.harness import OpenCodeHarness
+    >>> harness = OpenCodeHarness(
+    ...     provider="anthropic", model="claude-opus-4-8", api_key="sk-fake"
+    ... )
+    >>> harness.name
+    'opencode'
     >>> harness.agent_auth().env
     {'ANTHROPIC_API_KEY': 'sk-fake'}
     """
@@ -91,26 +84,21 @@ class OpenCodeHarness(Harness):
     def __init__(
         self,
         *,
+        provider: str,
         model: str = "deepseek-v4-pro",
         effort: str = "high",
-        provider: str | None = None,
         auth: str = "api_key",
-        provider_api_key: str | None = None,
+        api_key: str | None = None,
     ) -> None:
         super().__init__(model=model, effort=effort)
         if auth not in _AUTH_MODES:
             raise ValueError(f"unknown auth {auth!r}; choose from {list(_AUTH_MODES)}")
-        self._provider = provider
+        self.provider = provider
         self.auth = auth
-        self._provider_api_key = provider_api_key
+        self._api_key = api_key
         # Guards the lazy _opencode_data init: a benchmark sweep shares one harness
         # instance across tasks run concurrently, so check-then-create must be atomic.
         self._opencode_data_lock = threading.Lock()
-
-    @property
-    def provider(self) -> str:
-        """opencode provider, taken from config or inferred from the model prefix."""
-        return self._provider or _infer_provider(self.model)
 
     def stage_wd(self, wd: Path) -> None:
         super().stage_wd(wd)
@@ -149,7 +137,7 @@ class OpenCodeHarness(Harness):
         # _home_dirs), so no API key is forwarded.
         if self.auth == "login":
             return {}
-        return self._provider_key_env(self.provider, self._provider_api_key)
+        return self._provider_key_env(self.provider, self._api_key)
 
     def _home_dirs(self) -> list[tuple[Path, str]]:
         # Only "login" needs a mount; "api_key" forwards an env var instead.
