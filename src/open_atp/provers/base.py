@@ -329,9 +329,10 @@ class AutomatedProver(abc.ABC):
             If the project records a Mathlib revision that differs from the backend
             image's. Checked up front, before any run starts.
         ~open_atp.harness.MissingCredentials
-            If a credential the prover needs to run is absent. Resolved in
-            :meth:`_preflight`, before any run starts -- so this raises rather than
-            returning an empty result.
+            If a credential the run needs is absent -- the prover's own (resolved in
+            :meth:`_preflight`) or the backend's compute credential (via
+            :meth:`~open_atp.backends.base.ComputeBackend.check_ready`). Checked before
+            any run starts, so this raises rather than returning an empty result.
         """
         # Bind task (when named) + prover + a per-run id onto the context so every
         # downstream event -- including backend/verify records that never see ``self``
@@ -343,6 +344,7 @@ class AutomatedProver(abc.ABC):
             binding["task"] = task.name
         with structlog.contextvars.bound_contextvars(**binding):
             self.verifier.check_compatible(task.project)
+            self.verifier.backend.check_ready()
             self._preflight(task)
 
             output_dir = Path(output_dir)

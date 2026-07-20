@@ -27,6 +27,7 @@ import pytest
 from open_atp.backends.base import (
     ComputeError,
     ExecTimeout,
+    ProvisionError,
     SandboxUnreachable,
     TransferError,
 )
@@ -244,6 +245,7 @@ def test_prove_records_a_started_run_failure_as_a_result(tmp_path: Path) -> None
         (ExecTimeout("t"), ProofStatus.ERROR),
         (SandboxUnreachable("s"), ProofStatus.ERROR),
         (TransferError("pull_wd: gone"), ProofStatus.ERROR),
+        (ProvisionError("docker run: daemon down"), ProofStatus.ERROR),
         (ComputeError("c"), ProofStatus.ERROR),
         (RuntimeError("boom"), ProofStatus.ERROR),
     ],

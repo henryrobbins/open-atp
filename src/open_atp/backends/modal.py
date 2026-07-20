@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextvars
 import io
 import logging
+import os
 import queue
 import shlex
 import tarfile
@@ -49,10 +50,12 @@ from open_atp.backends.base import (
     ComputeError,
     ComputeSession,
     ExecTimeout,
+    ProvisionError,
     SandboxUnreachable,
     TransferError,
     wrap_command,
 )
+from open_atp.harness.base import MissingCredentials
 from open_atp.images import DEFAULT_IMAGE, Image
 
 if TYPE_CHECKING:
@@ -302,6 +305,17 @@ def _modal_image_name(image: str) -> str:
     return image.rsplit(":", 1)[0]
 
 
+def _modal_configured() -> bool:
+    """Whether Modal has credentials: env tokens or a ``~/.modal.toml`` profile.
+
+    Modal auth lands in either place (``modal token set`` writes the toml), so a
+    presence check must accept both -- a CLI-authenticated machine has no env tokens.
+    """
+    if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
+        return True
+    return (Path.home() / ".modal.toml").is_file()
+
+
 @dataclass
 class ModalCommandHandle(CommandHandle):
     """A command exec'd into a live :class:`ModalSession`.
@@ -540,6 +554,23 @@ class ModalBackend(ComputeBackend):
         """Short identifier for the backend: ``"modal"``."""
         return "modal"
 
+    def check_ready(self) -> None:
+        """Fail fast when Modal has no credentials configured.
+
+        Checks only *presence* (env tokens or a ``~/.modal.toml`` profile) -- a cheap
+        local precondition, so a forgotten ``modal token set`` is a caller-facing
+        :class:`~open_atp.harness.MissingCredentials` rather than an opaque failure
+        deep in ``Sandbox.create``. A present-but-rejected token is only discovered on
+        contact and surfaces as a run-time
+        :class:`~open_atp.backends.base.ProvisionError`.
+        """
+        if not _modal_configured():
+            log.error("modal not configured", extra={"app": self.app})
+            raise MissingCredentials(
+                "modal backend requires credentials: set MODAL_TOKEN_ID / "
+                "MODAL_TOKEN_SECRET or run `modal token set`"
+            )
+
     @property
     def wallclock_overhead_s(self) -> int:
         """Modal Sandbox lifecycle overhead: file sync + warm build + teardown."""
@@ -566,12 +597,16 @@ class ModalBackend(ComputeBackend):
         alive for many commands). On any failure the Sandbox is terminated before
         propagating so a failed provision never leaks compute. The push, warm build,
         and pull steps that follow are each bounded (liveness + wall-clock); the
-        pre-Sandbox ``App.lookup``/``Sandbox.create`` RPCs are not -- no Sandbox
-        exists yet to poll for liveness, and no failures have been observed in
-        practice.
+        pre-Sandbox ``App.lookup``/``Sandbox.create`` RPCs have no Sandbox to poll for
+        liveness, so they are unbounded; a failure there (capacity, a rejected token)
+        is wrapped as a :class:`~open_atp.backends.base.ProvisionError` -- the run never
+        got off the ground -- rather than leaking a raw Modal class.
         """
-        app = modal.App.lookup(self.app, create_if_missing=True)
-        image = modal.Image.from_name(_modal_image_name(self.image.name))
+        try:
+            app = modal.App.lookup(self.app, create_if_missing=True)
+            image = modal.Image.from_name(_modal_image_name(self.image.name))
+        except Exception as exc:
+            raise ProvisionError(f"modal app/image lookup: {exc}") from exc
 
         cpu = self.cpu
         secret_dict: dict[str, str | None] = {
@@ -599,15 +634,18 @@ class ModalBackend(ComputeBackend):
             },
         )
         started_at = time.time()
-        sb = modal.Sandbox.create(
-            app=app,
-            image=image,
-            secrets=[secret],
-            cpu=cpu,
-            memory=self.memory_mib,
-            timeout=timeout_s + self.wallclock_overhead_s,
-            region=self.region,
-        )
+        try:
+            sb = modal.Sandbox.create(
+                app=app,
+                image=image,
+                secrets=[secret],
+                cpu=cpu,
+                memory=self.memory_mib,
+                timeout=timeout_s + self.wallclock_overhead_s,
+                region=self.region,
+            )
+        except Exception as exc:
+            raise ProvisionError(f"modal sandbox create: {exc}") from exc
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces
             # Docker's bind mounts (workdir + credential dirs).
@@ -618,7 +656,7 @@ class ModalBackend(ComputeBackend):
             # Warm the Lean cache (and wire the .lake symlink) before timing real
             # work: Modal pages image layers in lazily, so the first build is slow.
             log.debug("warming lean cache", extra={"workdir": WORKDIR_MOUNT})
-            _safe_run(
+            warm_exit = _safe_run(
                 lambda: _sb_exec(
                     sb,
                     f"ln -sfn {BAKED_LAKE} {WORKDIR_MOUNT}/.lake && lake build",
@@ -629,6 +667,14 @@ class ModalBackend(ComputeBackend):
                 sb=sb,
                 label="warm_build",
             )
+            # The warm build is best-effort (the real compile is the source of truth),
+            # so a nonzero exit doesn't fail provisioning -- but surface it rather than
+            # discarding it, so a broken cache/symlink isn't silently swallowed.
+            if warm_exit != 0:
+                log.warning(
+                    "warm_build: lake build exited nonzero; proceeding on a cold cache",
+                    extra={"exit_code": warm_exit},
+                )
         except BaseException:
             log.error("modal sandbox provisioning failed", exc_info=True)
             _terminate(sb)

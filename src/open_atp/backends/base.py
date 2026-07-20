@@ -55,6 +55,16 @@ class TransferError(ComputeError):
     """
 
 
+class ProvisionError(ComputeError):
+    """The sandbox/container failed to come up for a run.
+
+    Covers a substrate that never produced a usable sandbox: the Docker daemon down
+    or unreachable, the image absent, or a Modal ``App.lookup`` / ``Sandbox.create``
+    failure (capacity, a rejected token). Distinct from a mid-run loss
+    (:class:`SandboxUnreachable`) -- the run never got off the ground.
+    """
+
+
 @dataclass
 class CommandResult:
     """Outcome of a finished command run inside a backend.
@@ -340,6 +350,19 @@ class ComputeBackend(abc.ABC):
             workdir, timeout_s=timeout_s, env=env, mounts=mounts
         ) as session:
             return session.exec(command, timeout_s=timeout_s).wait()
+
+    def check_ready(self) -> None:
+        """Fail fast if a prerequisite the backend needs is absent. Default: none.
+
+        A cheap, local precondition check run before any work is staged (by
+        :meth:`~open_atp.provers.base.AutomatedProver.prove`, alongside the toolchain
+        check). Backends needing compute credentials override this to raise -- e.g.
+        Modal rejects an unconfigured token with
+        :class:`~open_atp.harness.MissingCredentials` -- so the failure reaches the
+        caller instead of surfacing deep in a run. A substrate that is configured but
+        unreachable (a stopped Docker daemon) is *not* caught here: that is a run-time
+        :class:`ProvisionError`, recorded, not a fail-fast precondition.
+        """
 
     def test(self) -> bool:
         """Smoke-test the backend by verifying a trivial proof end to end.

@@ -27,6 +27,7 @@ from open_atp.backends.base import (
     CommandResult,
     ComputeBackend,
     ComputeSession,
+    ProvisionError,
     wrap_command,
 )
 from open_atp.images import DEFAULT_IMAGE, Image
@@ -215,17 +216,22 @@ class DockerBackend(ComputeBackend):
                 "env_keys": sorted({**self.env, **(env or {})}),
             },
         )
-        proc = subprocess.run(
-            argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
-        )
+        try:
+            proc = subprocess.run(
+                argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+            )
+        except FileNotFoundError as exc:
+            # No ``docker`` on PATH: the substrate isn't there to run against.
+            log.error("docker binary not found", extra={"container": container})
+            raise ProvisionError(f"docker: {exc}") from exc
         if proc.returncode != 0:
+            # Daemon down, image missing, bad mount -- the container never came up.
+            stderr = proc.stderr.strip() or "(no stderr)"
             log.error(
                 "docker session container failed to start",
-                extra={"container": container, "stderr": proc.stderr.strip()},
+                extra={"container": container, "stderr": stderr},
             )
-            raise RuntimeError(
-                f"failed to start docker session container: {proc.stderr.strip()}"
-            )
+            raise ProvisionError(f"docker run: {stderr}")
         return DockerSession(backend=self, container=container)
 
 

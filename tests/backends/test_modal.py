@@ -94,6 +94,26 @@ def test_modal_image_name_strips_tag() -> None:
     assert _modal_image_name("registry/org/img:v1") == "registry/org/img"
 
 
+def test_check_ready_raises_without_modal_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No env tokens and no ~/.modal.toml is a fail-fast MissingCredentials."""
+    from open_atp.harness import MissingCredentials
+
+    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
+    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)  # a home with no .modal.toml
+
+    with pytest.raises(MissingCredentials, match="modal"):
+        ModalBackend().check_ready()
+
+
+def test_check_ready_passes_with_env_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MODAL_TOKEN_ID", "id")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "secret")
+    ModalBackend().check_ready()  # present -> no raise
+
+
 def test_wallclock_overhead_sums_provision_and_sync_phases() -> None:
     # Isolated filesystem: push + warm build + pull, plus coreutils-timeout and
     # sb.exec client-deadline buffers, each summed as a backstop -- unlike Docker's
