@@ -85,7 +85,8 @@ and the `STANDARD_PROVERS` registry (`config.py`):
 | `aristotle` | Harmonic Aristotle (hosted) | remote API via `aristotlelib`, no local gen sandbox |
 | `claude` | Claude Code (`claude_code` harness) | default; coding agent + lean-lsp-mcp |
 | `codex` | OpenAI Codex CLI | model `gpt-5.5` |
-| `opencode` | opencode | |
+| `deepseek` | DeepSeek via opencode | `opencode` harness on the `deepseek` provider, `auth="api_key"` (`DEEPSEEK_API_KEY`); model `deepseek-v4-pro` |
+| `grok` | xAI Grok via opencode | `opencode` harness on the `xai` provider, `auth="login"`; model `grok-4.5`; auth via `opencode auth login` -> xAI, bills the xAI plan |
 | `axproverbase` | ax-prover (LangGraph) | proposer→builder→reviewer loop; default model `claude-opus-4-8`, effort `high` |
 | `numina` | Numina skills/prompts on Claude Code | round-continuation loop |
 | `leanstral` | Mistral Vibe `lean` scaffold | hosted model (default `magistral-medium-latest`), no GPU; `--model` configurable |
@@ -215,6 +216,10 @@ skill/test degrade or skip:
 - `GEMINI_API_KEY` / `OPENAI_API_KEY` / `LEAN_LEANDEX_API_KEY` — Numina helper skills
 - `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` — `axproverbase` (raw provider key matching
   the configured `model`); `TAVILY_API_KEY` optional (ax-prover web search)
+- `DEEPSEEK_API_KEY` — the `deepseek` prover (opencode harness, `auth="api_key"`)
+- `opencode auth login` -> xAI (writes an `xai` entry to opencode's `auth.json`) —
+  the `grok` prover (opencode harness, `auth="login"`); that entry is mounted into the
+  sandbox (no API key), so runs bill against your xAI plan
 - `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` — Modal backend
 
 ## Docs: API reference convention
@@ -255,20 +260,24 @@ Practical rules:
 
 ## Docs: prover comparison table
 
-The prover table in both `README.md` and `docs/provers/index.md` is generated from
-a single source of truth, `docs/provers.yaml` (company / paper / source / skills
-metadata). **Edit the YAML, never the tables by hand.**
+The prover table in both `README.md` and `docs/provers/index.md` is generated from a
+single source of truth, `docs/provers.yaml` (skills / MCP / company / paper / source
+metadata). There is no harness table or Harness column: most harnesses are 1:1 with a
+model, so `source` names each prover's own CLI/model. The one provider-agnostic harness
+(OpenCode) is documented as a subsection page under Provers (`docs/provers/opencode.md`)
+with its model-specific provers (e.g. `deepseek`) nested beneath it in that page's own
+toctree. **Edit the YAML, never the table by hand.**
 
-- `docs/_ext/provers_table.py` renders both tables. As a Sphinx extension
+- `docs/_ext/provers_table.py` renders the table. As a Sphinx extension
   (`provers_table` in `conf.py`) its `builder-inited` hook writes the gitignored
   `docs/provers/_table.md`, which `index.md` pulls in via `{include}`.
-- It also writes a gitignored per-prover metadata field list,
-  `docs/provers/_meta_<page>.md` (id / skills / MCP / company / paper / source),
-  which each `docs/provers/<page>.md` includes right under its title. `company` is
-  shown here even though it's no longer a table column — keep it in the YAML.
-- The README table is materialized between `<!-- BEGIN/END PROVER TABLE -->`
-  markers (GitHub can't run Sphinx). Run `make gen-provers` after editing the YAML
-  and commit the README change.
+- It also writes a gitignored per-prover metadata bar, `docs/provers/_meta_<page>.md`
+  (id / company), which each `docs/provers/<page>.md` includes right under its title.
+  `company` is shown here even though it's not a table column — keep it in the YAML.
+  (The `opencode` subsection page is not a prover row, so it has no generated meta.)
+- The README table is materialized between `<!-- BEGIN/END PROVER TABLE -->` markers
+  (GitHub can't run Sphinx). Run `make gen-provers` after editing the YAML and commit
+  the README change.
 - `make check-provers` (wired into `make check`) fails if the README table is stale.
 
 ## Conventions

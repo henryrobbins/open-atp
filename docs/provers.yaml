@@ -37,15 +37,25 @@ provers:
     cite: null
     source: { label: GitHub, url: https://github.com/openai/codex }
 
-  - name: OpenCode
-    page: opencode
-    id:   opencode
+  - name: DeepSeek
+    page: deepseek
+    id:   deepseek
     skills: [leanprover]
     mcp: true
-    company: null
+    company: { label: DeepSeek, url: https://www.deepseek.com }
     paper: null
     cite: null
-    source: { label: GitHub, url: https://github.com/sst/opencode }
+    source: { label: GitHub, url: https://github.com/deepseek-ai }
+
+  - name: Grok
+    page: grok
+    id:   grok
+    skills: [leanprover]
+    mcp: true
+    company: { label: xAI, url: https://x.ai }
+    paper: null
+    cite: null
+    source: null
 
   - name: AxProverBase
     page: axproverbase

@@ -118,8 +118,17 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
     assert isinstance(codex.harness, CodexHarness)
     assert codex.harness.model == "gpt-5.5"
 
-    opencode = build("opencode")
-    assert isinstance(opencode.harness, OpenCodeHarness)
+    deepseek = build("deepseek")
+    assert isinstance(deepseek.harness, OpenCodeHarness)
+    assert deepseek.harness.provider == "deepseek"
+    assert deepseek.harness.auth == "api_key"
+    assert deepseek.harness.model == "deepseek-v4-pro"
+
+    grok = build("grok")
+    assert isinstance(grok.harness, OpenCodeHarness)
+    assert grok.harness.provider == "xai"
+    assert grok.harness.auth == "login"
+    assert grok.harness.model == "grok-4.5"
 
     numina = build("numina")
     assert isinstance(numina, NuminaProver)
