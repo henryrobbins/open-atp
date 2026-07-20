@@ -57,16 +57,30 @@ result = prover.prove(task, output_dir="runs/example")
 The `ID` is the standard prover name used by `standard_prover`, the CLI `prove` command's `prover` argument, and the `benchmark` command's `-p/--provers` option. Also see [Provers](https://open-atp.readthedocs.io/en/latest/provers/index.html).
 
 <!-- BEGIN PROVER TABLE (generated from docs/provers.yaml) -->
-| Prover | ID | Skills | MCP | Paper | Source |
-| --- | --- | --- | --- | --- | --- |
-| [Claude Code](docs/provers/claude_code.md) | `claude` | [leanprover](https://github.com/leanprover/skills), [lean4](https://github.com/cameronfreer/lean4-skills) | ✓ | — | — |
-| [Codex](docs/provers/codex.md) | `codex` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/openai/codex) |
-| [DeepSeek](docs/provers/deepseek.md) | `deepseek` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/deepseek-ai) |
-| [AxProverBase](docs/provers/axproverbase.md) | `axproverbase` | — | ✗ | [Requena et al. 2026](https://openreview.net/forum?id=E30g7bO7rU) | [GitHub](https://github.com/Axiomatic-AI/ax-prover-base) |
-| [Leanstral](docs/provers/leanstral.md) | `leanstral` | [leanprover](https://github.com/leanprover/skills) | ✓ | [Leanstral (blog)](https://mistral.ai/news/leanstral) | [HuggingFace](https://huggingface.co/mistralai/Leanstral-2603) |
-| [Numina](docs/provers/numina.md) | `numina` | — | ✓ | [Liu et al. 2026](https://arxiv.org/abs/2601.14027) | [GitHub](https://github.com/project-numina/numina-lean-agent) |
-| [Aristotle](docs/provers/aristotle.md) | `aristotle` | — | — | [Achim et al. 2025](https://arxiv.org/abs/2510.01346) | — |
+| Prover | ID | Harness | Paper | Source |
+| --- | --- | --- | --- | --- |
+| [Claude Code](docs/provers/claude_code.md) | `claude` | Claude Code | — | — |
+| [Codex](docs/provers/codex.md) | `codex` | Codex | — | — |
+| [DeepSeek](docs/provers/deepseek.md) | `deepseek` | [OpenCode](docs/harnesses/opencode.md) | — | [GitHub](https://github.com/deepseek-ai) |
+| [AxProverBase](docs/provers/axproverbase.md) | `axproverbase` | ax-prover | [Requena et al. 2026](https://openreview.net/forum?id=E30g7bO7rU) | — |
+| [Leanstral](docs/provers/leanstral.md) | `leanstral` | Vibe | [Leanstral (blog)](https://mistral.ai/news/leanstral) | [HuggingFace](https://huggingface.co/mistralai/Leanstral-2603) |
+| [Numina](docs/provers/numina.md) | `numina` | Claude Code | [Liu et al. 2026](https://arxiv.org/abs/2601.14027) | [GitHub](https://github.com/project-numina/numina-lean-agent) |
+| [Aristotle](docs/provers/aristotle.md) | `aristotle` | — | [Achim et al. 2025](https://arxiv.org/abs/2510.01346) | — |
 <!-- END PROVER TABLE -->
+
+## Available harnesses
+
+An agent prover runs on a coding-agent **harness** — the CLI that drives the model, staged into the sandbox with Lean skills and MCP tooling. The harness is independent of the model it runs. Also see [Harnesses](https://open-atp.readthedocs.io/en/latest/harnesses/index.html).
+
+<!-- BEGIN HARNESS TABLE (generated from docs/harnesses.yaml) -->
+| Harness | ID | Skills | MCP | Source |
+| --- | --- | --- | --- | --- |
+| Claude Code | `claude_code` | [leanprover](https://github.com/leanprover/skills), [lean4](https://github.com/cameronfreer/lean4-skills) | ✓ | — |
+| Codex | `codex` | [leanprover](https://github.com/leanprover/skills) | ✓ | [GitHub](https://github.com/openai/codex) |
+| [OpenCode](docs/harnesses/opencode.md) | `opencode` | [leanprover](https://github.com/leanprover/skills) | ✓ | [GitHub](https://github.com/sst/opencode) |
+| Vibe | `vibe` | [leanprover](https://github.com/leanprover/skills) | ✓ | [Docs](https://docs.mistral.ai/vibe) |
+| ax-prover | `axproverbase` | — | ✗ | [GitHub](https://github.com/Axiomatic-AI/ax-prover-base) |
+<!-- END HARNESS TABLE -->
 
 ## Download common datasets
 

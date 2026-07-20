@@ -253,23 +253,28 @@ Practical rules:
 - `make docs` builds with `-W` (warnings are errors) — a broken xref or duplicate
   fails the build.
 
-## Docs: prover comparison table
+## Docs: prover and harness comparison tables
 
-The prover table in both `README.md` and `docs/provers/index.md` is generated from
-a single source of truth, `docs/provers.yaml` (company / paper / source / skills
-metadata). **Edit the YAML, never the tables by hand.**
+Two generated tables share one generator. A **prover** names a method/model
+(`docs/provers.yaml`); a **harness** names the coding-agent CLI it runs on
+(`docs/harnesses.yaml`), and owns the skills/MCP columns because those are harness
+properties, not model ones. Each prover's `harness` field keys into the harness list
+by `id` (null for a hosted prover, e.g. `aristotle`). `source` on a prover row is its
+own method/model; a harness's own repo lives on the harness row. **Edit the YAML,
+never the tables by hand.**
 
-- `docs/_ext/provers_table.py` renders both tables. As a Sphinx extension
-  (`provers_table` in `conf.py`) its `builder-inited` hook writes the gitignored
-  `docs/provers/_table.md`, which `index.md` pulls in via `{include}`.
-- It also writes a gitignored per-prover metadata field list,
-  `docs/provers/_meta_<page>.md` (id / skills / MCP / company / paper / source),
-  which each `docs/provers/<page>.md` includes right under its title. `company` is
-  shown here even though it's no longer a table column — keep it in the YAML.
-- The README table is materialized between `<!-- BEGIN/END PROVER TABLE -->`
-  markers (GitHub can't run Sphinx). Run `make gen-provers` after editing the YAML
-  and commit the README change.
-- `make check-provers` (wired into `make check`) fails if the README table is stale.
+- `docs/_ext/provers_table.py` renders both tables in both `README.md` and the docs.
+  As a Sphinx extension (`provers_table` in `conf.py`) its `builder-inited` hook writes
+  the gitignored `docs/provers/_table.md` and `docs/harnesses/_table.md`, which the two
+  `index.md` pages pull in via `{include}`.
+- It also writes a gitignored per-page metadata bar, `_meta_<page>.md` (id / company),
+  for every prover and for any harness with a `page`, included right under the page
+  title. `company` is shown here even though it's not a table column — keep it in the
+  YAML.
+- The README tables are materialized between `<!-- BEGIN/END PROVER TABLE -->` and
+  `<!-- BEGIN/END HARNESS TABLE -->` markers (GitHub can't run Sphinx). Run
+  `make gen-provers` after editing either YAML and commit the README change.
+- `make check-provers` (wired into `make check`) fails if a README table is stale.
 
 ## Conventions
 

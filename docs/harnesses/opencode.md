@@ -1,5 +1,9 @@
 # OpenCode
 
+```{include} _meta_opencode.md
+:parser: myst
+```
+
 [OpenCode](https://opencode.ai/) is a provider-agnostic coding-agent CLI: one harness fronts Anthropic, OpenAI, Google, or DeepSeek models. OpenATP drives it through the {class}`~open_atp.provers.agent_prover.AgentProver` and the {class}`~open_atp.harness.opencode.OpenCodeHarness`, augmented with Lean skills and MCP tooling. The standard {doc}`/provers/deepseek` prover pins this harness to a DeepSeek model; construct the harness directly to run any other provider.
 
 ## Authentication

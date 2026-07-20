@@ -3,8 +3,13 @@
 # README table in place; the docs fragment is written at build time by the
 # `provers_table` Sphinx extension). `make check-provers` fails if README drifts.
 #
-# Cell conventions: any field left null renders as an em dash (—). `skills` is a
-# list of keys into the `skills` map below; an empty list renders as —.
+# A prover names a method/model; the coding-agent harness it runs on (and its
+# skills / MCP tooling) is a separate axis, described in docs/harnesses.yaml. The
+# `harness` field is a key into that file's `harnesses` list (null for a hosted
+# prover that runs no local harness). `source` here is the prover's own
+# method/model -- the harness's own repo lives on the harness row instead.
+#
+# Cell conventions: any field left null renders as an em dash (—).
 #
 # `paper` ({label, url}) is the plain Markdown link used in the README and as the
 # docs fallback. `cite` is a BibTeX key in docs/ref.bib: when set, the docs table
@@ -12,76 +17,65 @@
 # instead of the `paper` link. The README always uses `paper` (GitHub can't run
 # Sphinx). Keep both in sync.
 
-skills:
-  leanprover: https://github.com/leanprover/skills
-  lean4: https://github.com/cameronfreer/lean4-skills
-
 provers:
   - name: Claude Code
     page: claude_code
     id:   claude
-    skills: [leanprover, lean4]
-    mcp: true               # lean-lsp-mcp via mcp.json
+    harness: claude_code
     company: { label: Anthropic, url: https://www.anthropic.com }
     paper: null
     cite: null
-    source: null            # Claude Code is not open source
+    source: null            # the coding agent itself; not open source
 
   - name: Codex
     page: codex
     id:   codex
-    skills: [leanprover]
-    mcp: true               # lean-lsp-mcp via -c overrides
+    harness: codex
     company: { label: OpenAI, url: https://openai.com }
     paper: null
     cite: null
-    source: { label: GitHub, url: https://github.com/openai/codex }
+    source: null            # model gpt-5.5; the Codex CLI repo is on the harness row
 
   - name: DeepSeek
     page: deepseek
     id:   deepseek
-    skills: [leanprover]
-    mcp: true
+    harness: opencode
     company: { label: DeepSeek, url: https://www.deepseek.com }
     paper: null
     cite: null
-    source: { label: GitHub, url: https://github.com/deepseek-ai }  # the model, not the harness
+    source: { label: GitHub, url: https://github.com/deepseek-ai }  # the model
 
   - name: AxProverBase
     page: axproverbase
     id:   axproverbase
-    skills: []              # ships its own Lean tooling
-    mcp: false              # uses its own Lean tools, not lean-lsp-mcp
+    harness: axproverbase
     company: { label: Axiomatic AI, url: https://axiomatic-ai.com }
     paper: { label: "Requena et al. 2026", url: "https://openreview.net/forum?id=E30g7bO7rU" }
     cite: requena2026a
-    source: { label: GitHub, url: https://github.com/Axiomatic-AI/ax-prover-base }
+    source: null            # the method is the paper; the repo is on the harness row
 
   - name: Leanstral
     page: leanstral
     id:   leanstral
-    skills: [leanprover]
-    mcp: true
+    harness: vibe
     company: { label: Mistral AI, url: https://mistral.ai }
     paper: { label: "Leanstral (blog)", url: "https://mistral.ai/news/leanstral" }
     cite: mistral2026leanstral
-    source: { label: HuggingFace, url: https://huggingface.co/mistralai/Leanstral-2603 }
+    source: { label: HuggingFace, url: https://huggingface.co/mistralai/Leanstral-2603 }  # the model
 
   - name: Numina
     page: numina
     id:   numina
-    skills: []              # uses Numina's own vendored scaffold
-    mcp: true               # runs on the Claude Code harness
+    harness: claude_code
     company: { label: Project Numina, url: https://projectnumina.ai }
     paper: { label: "Liu et al. 2026", url: "https://arxiv.org/abs/2601.14027" }
     cite: liu2026numina
-    source: { label: GitHub, url: https://github.com/project-numina/numina-lean-agent }
+    source: { label: GitHub, url: https://github.com/project-numina/numina-lean-agent }  # the scaffold
 
   - name: Aristotle
     page: aristotle
     id:   aristotle
-    skills: []              # hosted; no local generation sandbox
-    mcp: null               # hosted; no local generation sandbox
+    harness: null           # hosted; runs no local harness
     company: { label: Harmonic, url: https://www.harmonic.fun }
     paper: { label: "Achim et al. 2025", url: "https://arxiv.org/abs/2510.01346" }
     cite: achim2025aristotle

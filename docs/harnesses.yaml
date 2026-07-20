@@ -1,0 +1,59 @@
+# Single source of truth for the harness comparison tables in README.md and
+# docs/harnesses/index.md. Edit here, then run `make gen-provers` (regenerates the
+# README table in place; the docs fragment is written at build time by the
+# `provers_table` Sphinx extension). `make check-provers` fails if README drifts.
+#
+# A harness is the coding-agent CLI an agent prover runs on. Skills and MCP are
+# properties of the harness, not the model driving it, so they live here rather
+# than on the prover row (docs/provers.yaml). Each prover's `harness` field keys
+# into the `harnesses` list below by `id`.
+#
+# Cell conventions: any field left null renders as an em dash (—). `skills` is a
+# list of keys into the `skills` map below; an empty list renders as —. `page` is
+# the harness's doc page under docs/harnesses/ (null when it has none yet, in
+# which case its harness detail still lives on the prover page).
+
+skills:
+  leanprover: https://github.com/leanprover/skills
+  lean4: https://github.com/cameronfreer/lean4-skills
+
+harnesses:
+  - name: Claude Code
+    page: null
+    id:   claude_code
+    skills: [leanprover, lean4]
+    mcp: true
+    company: { label: Anthropic, url: https://www.anthropic.com }
+    source: null            # the coding agent itself; not open source
+
+  - name: Codex
+    page: null
+    id:   codex
+    skills: [leanprover]
+    mcp: true
+    company: { label: OpenAI, url: https://openai.com }
+    source: { label: GitHub, url: https://github.com/openai/codex }
+
+  - name: OpenCode
+    page: opencode
+    id:   opencode
+    skills: [leanprover]
+    mcp: true
+    company: { label: SST, url: https://sst.dev }
+    source: { label: GitHub, url: https://github.com/sst/opencode }
+
+  - name: Vibe
+    page: null
+    id:   vibe
+    skills: [leanprover]
+    mcp: true
+    company: { label: Mistral AI, url: https://mistral.ai }
+    source: { label: Docs, url: https://docs.mistral.ai/vibe }
+
+  - name: ax-prover
+    page: null
+    id:   axproverbase
+    skills: []              # ships its own Lean tooling
+    mcp: false              # uses its own Lean tools, not lean-lsp-mcp
+    company: { label: Axiomatic AI, url: https://axiomatic-ai.com }
+    source: { label: GitHub, url: https://github.com/Axiomatic-AI/ax-prover-base }
