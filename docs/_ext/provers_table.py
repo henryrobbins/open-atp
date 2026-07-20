@@ -1,13 +1,13 @@
-"""Generate the prover comparison table from ``docs/provers.yaml``.
+"""Generate the prover comparison tables from ``docs/provers.yaml``.
 
-Single source of truth for the hand-synced table that previously lived in both
-``README.md`` and ``docs/provers/index.md``. This module renders it and is used
-in two ways:
+Single source of truth for the two hand-synced tables that previously lived in
+``README.md`` and ``docs/provers/index.md``. This module renders both from the
+YAML and is used in two ways:
 
 * As a **Sphinx extension** (``extensions = [..., "provers_table"]``): the
-  ``builder-inited`` hook writes the gitignored ``docs/provers/_table.md``, which
-  ``index.md`` pulls in with an ``{include}`` directive, plus a per-prover
-  ``_meta_<page>.md``. Regenerated on every build, including Read the Docs.
+  ``builder-inited`` hook writes ``docs/provers/_table.md`` (gitignored), which
+  ``index.md`` pulls in with an ``{include}`` directive. Regenerated on every
+  build, including Read the Docs.
 * As a **CLI** (``python docs/_ext/provers_table.py``): materializes the table
   into ``README.md`` between marker comments (GitHub can't run Sphinx). Pass
   ``--check`` to fail without writing if the README table is stale -- wired into
@@ -29,7 +29,7 @@ _THIS = Path(__file__).resolve()
 DOCS_DIR = _THIS.parent.parent
 REPO_ROOT = DOCS_DIR.parent
 PROVERS_DIR = DOCS_DIR / "provers"
-PROVERS_YAML = DOCS_DIR / "provers.yaml"
+YAML_PATH = DOCS_DIR / "provers.yaml"
 FRAGMENT_PATH = PROVERS_DIR / "_table.md"
 README_PATH = REPO_ROOT / "README.md"
 
@@ -52,11 +52,11 @@ def _link(item: dict | None) -> str:
     return f"[{item['label']}]({item['url']})"
 
 
-def _mcp_cell(mcp: bool | None) -> str:
+def _mcp_cell(prover: dict) -> str:
     """Render the MCP cell: ✓/✗ for a boolean, — when null (e.g. hosted)."""
-    if mcp is None:
+    if prover.get("mcp") is None:
         return EM_DASH
-    return CHECK if mcp else CROSS
+    return CHECK if prover["mcp"] else CROSS
 
 
 def _skills_cell(keys: list[str], skill_urls: dict[str, str]) -> str:
@@ -88,11 +88,12 @@ def _render_table(data: dict, page_prefix: str, *, cite: bool) -> str:
     sep = "| " + " | ".join("---" for _ in COLUMNS) + " |"
     rows = [header, sep]
     for p in data["provers"]:
+        prover = f"[{p['name']}]({page_prefix}{p['page']}.md)"
         cells = [
-            f"[{p['name']}]({page_prefix}{p['page']}.md)",
+            prover,
             f"`{p['id']}`",
             _skills_cell(p.get("skills") or [], skill_urls),
-            _mcp_cell(p.get("mcp")),
+            _mcp_cell(p),
             _paper_cell(p, cite=cite),
             _link(p.get("source")),
         ]
@@ -101,7 +102,7 @@ def _render_table(data: dict, page_prefix: str, *, cite: bool) -> str:
 
 
 def load() -> dict:
-    with PROVERS_YAML.open() as fh:
+    with YAML_PATH.open() as fh:
         return yaml.safe_load(fh)
 
 
@@ -115,7 +116,7 @@ def render_readme_table(data: dict) -> str:
     return _render_table(data, page_prefix="docs/provers/", cite=False)
 
 
-def render_meta(prover: dict) -> str:
+def render_meta(prover: dict, skill_urls: dict[str, str]) -> str:
     """Render a prover's metadata as one compact inline bar.
 
     A field list wastes vertical space (each value drops to its own line), so we
@@ -144,10 +145,11 @@ def write_fragment(data: dict | None = None) -> None:
     """Write the table fragment plus a per-page metadata fragment for each prover."""
     data = data if data is not None else load()
     _write_if_changed(FRAGMENT_PATH, f"{_GENERATED}\n\n{render_docs_table(data)}")
+    skill_urls = data["skills"]
     for prover in data["provers"]:
         _write_if_changed(
             _meta_path(prover["page"]),
-            f"{_GENERATED}\n\n{render_meta(prover)}",
+            f"{_GENERATED}\n\n{render_meta(prover, skill_urls)}",
         )
 
 

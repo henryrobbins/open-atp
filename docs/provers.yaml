@@ -3,11 +3,6 @@
 # README table in place; the docs fragment is written at build time by the
 # `provers_table` Sphinx extension). `make check-provers` fails if README drifts.
 #
-# A prover names a method/model. Most are 1:1 with a coding-agent CLI, so `source`
-# is that CLI or model repo. The exception is a provider-agnostic harness that fronts
-# many models (OpenCode): those provers (e.g. DeepSeek) point `source` at the model
-# and describe the shared harness on the OpenCode subsection page under Provers.
-#
 # Cell conventions: any field left null renders as an em dash (—). `skills` is a
 # list of keys into the `skills` map below; an empty list renders as —.
 #
@@ -26,17 +21,17 @@ provers:
     page: claude_code
     id:   claude
     skills: [leanprover, lean4]
-    mcp: true
+    mcp: true               # lean-lsp-mcp via mcp.json
     company: { label: Anthropic, url: https://www.anthropic.com }
     paper: null
     cite: null
-    source: null            # the coding agent itself; not open source
+    source: null            # Claude Code is not open source
 
   - name: Codex
     page: codex
     id:   codex
     skills: [leanprover]
-    mcp: true
+    mcp: true               # lean-lsp-mcp via -c overrides
     company: { label: OpenAI, url: https://openai.com }
     paper: null
     cite: null
@@ -50,7 +45,7 @@ provers:
     company: { label: DeepSeek, url: https://www.deepseek.com }
     paper: null
     cite: null
-    source: { label: GitHub, url: https://github.com/deepseek-ai }  # the model
+    source: { label: GitHub, url: https://github.com/deepseek-ai }
 
   - name: AxProverBase
     page: axproverbase
@@ -70,7 +65,7 @@ provers:
     company: { label: Mistral AI, url: https://mistral.ai }
     paper: { label: "Leanstral (blog)", url: "https://mistral.ai/news/leanstral" }
     cite: mistral2026leanstral
-    source: { label: HuggingFace, url: https://huggingface.co/mistralai/Leanstral-2603 }  # the model
+    source: { label: HuggingFace, url: https://huggingface.co/mistralai/Leanstral-2603 }
 
   - name: Numina
     page: numina
@@ -80,7 +75,7 @@ provers:
     company: { label: Project Numina, url: https://projectnumina.ai }
     paper: { label: "Liu et al. 2026", url: "https://arxiv.org/abs/2601.14027" }
     cite: liu2026numina
-    source: { label: GitHub, url: https://github.com/project-numina/numina-lean-agent }  # the scaffold
+    source: { label: GitHub, url: https://github.com/project-numina/numina-lean-agent }
 
   - name: Aristotle
     page: aristotle
