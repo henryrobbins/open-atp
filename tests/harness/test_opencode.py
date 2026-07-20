@@ -46,9 +46,11 @@ def test_api_key_forwards_provider_env_var() -> None:
 
 
 def test_api_key_reads_host_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("XAI_API_KEY", "sk-xai")
-    harness = OpenCodeHarness(provider="xai", model="grok-4.5", auth="api_key")
-    assert harness.agent_auth().env == {"XAI_API_KEY": "sk-xai"}
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek")
+    harness = OpenCodeHarness(
+        provider="deepseek", model="deepseek-v4-pro", auth="api_key"
+    )
+    assert harness.agent_auth().env == {"DEEPSEEK_API_KEY": "sk-deepseek"}
 
 
 def test_api_key_unpinned_provider_resolved_via_models_dev(
@@ -62,16 +64,6 @@ def test_api_key_unpinned_provider_resolved_via_models_dev(
     monkeypatch.setenv("MOONSHOT_API_KEY", "sk-moon")
     harness = OpenCodeHarness(model="m", provider="moonshotai", auth="api_key")
     assert harness.agent_auth().env == {"MOONSHOT_API_KEY": "sk-moon"}
-
-
-def test_api_key_unpinned_provider_convention_when_models_dev_silent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # models.dev unreachable/silent -> last-resort <PROVIDER>_API_KEY convention.
-    monkeypatch.setattr(base, "_models_dev_env", dict)
-    monkeypatch.setenv("FIREWORKS_API_KEY", "sk-fw")
-    harness = OpenCodeHarness(model="m", provider="fireworks", auth="api_key")
-    assert harness.agent_auth().env == {"FIREWORKS_API_KEY": "sk-fw"}
 
 
 def test_api_key_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:

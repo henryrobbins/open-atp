@@ -34,55 +34,32 @@ from typing import ClassVar
 
 log = logging.getLogger("open_atp")
 
-#: Provider name (see :func:`_infer_provider`) -> the canonical env var the agent
-#: CLI reads its key from. OpenCode/ax-prover forward the selected provider's key
-#: under this name. Pinned here for the providers our standard provers select; any
-#: other opencode provider is resolved against models.dev (:func:`_provider_env_var`).
-_PROVIDER_ENV = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "google": "GOOGLE_API_KEY",
-    "deepseek": "DEEPSEEK_API_KEY",
-    "xai": "XAI_API_KEY",
-}
+#: API key env vars used by providers used in standard provers
+_PROVIDER_ENV = {"deepseek": "DEEPSEEK_API_KEY"}
 
-#: The registry opencode itself reads provider `env` arrays from to auto-detect keys.
+#: The registry opencode reads provider `env` arrays from to auto-detect keys.
 _MODELS_DEV_URL = "https://models.dev/api.json"
 
 
 @lru_cache(maxsize=1)
 def _models_dev_env() -> dict[str, list[str]]:
-    """provider id -> its ``env`` array from the models.dev registry (cached).
-
-    Best-effort: on any network or parse failure returns an empty map so callers
-    fall back to the ``<PROVIDER>_API_KEY`` convention. Standard provers never reach
-    this (their providers are pinned in :data:`_PROVIDER_ENV`).
-    """
+    """Fetch provider id -> env array from models.dev, cached."""
     try:
         with urllib.request.urlopen(_MODELS_DEV_URL, timeout=10) as resp:
             data = json.load(resp)
     except (OSError, ValueError):
-        log.warning("models.dev registry unreachable", extra={"url": _MODELS_DEV_URL})
-        return {}
+        log.error("models.dev registry unreachable", extra={"url": _MODELS_DEV_URL})
+        raise
     return {
         pid: p["env"] for pid, p in data.items() if isinstance(p, dict) and p.get("env")
     }
 
 
 def _provider_env_var(provider: str) -> str:
-    """The env var an API-key ``provider`` reads its key from.
-
-    Providers backing a standard prover are pinned in :data:`_PROVIDER_ENV`. Any
-    other opencode provider is resolved against the models.dev registry (the same
-    source opencode uses), taking the first entry of its ``env`` array. Falls back to
-    the ``<PROVIDER>_API_KEY`` convention if models.dev is silent or unreachable.
-    """
+    """The env var a provider reads its API key from."""
     if provider in _PROVIDER_ENV:
         return _PROVIDER_ENV[provider]
-    env = _models_dev_env().get(provider)
-    if env:
-        return env[0]
-    return f"{provider.upper()}_API_KEY"
+    return _models_dev_env()[provider][0]
 
 
 #: Files the harness writes into the workdir; named so they never collide with a
@@ -262,21 +239,18 @@ class Harness(ABC):
         """
         return []
 
-    def _provider_key_env(self, provider: str, explicit: str | None) -> dict[str, str]:
-        """Resolve a provider API key, forwarded under its canonical env-var name.
+    def _key_env(self, env_name: str, explicit: str | None) -> dict[str, str]:
+        """Resolve an API key, forwarded under ``env_name``.
 
         ``explicit`` (a constructor override) wins; otherwise read the host env under
-        the provider's canonical name (:func:`_provider_env_var`: :data:`_PROVIDER_ENV`
-        for standard-prover providers, else resolved via models.dev). Raise if neither
-        is set. No
-        format check -- OpenAI and DeepSeek keys are both ``sk-...`` and
-        indistinguishable, so the key is assumed correct for the selected provider.
+        ``env_name``. Raise if neither is set. No format check -- OpenAI and DeepSeek
+        keys are both ``sk-...`` and indistinguishable, so the key is assumed correct
+        for the selected provider.
 
         Parameters
         ----------
-        provider : str
-            Provider name (see :func:`_infer_provider`) whose canonical env var the
-            key is forwarded under.
+        env_name : str
+            The canonical env-var name the key is forwarded under.
         explicit : str, optional
             A constructor override that takes precedence over the host environment;
             ``None`` falls back to reading the host env.
@@ -291,16 +265,13 @@ class Harness(ABC):
         RuntimeError
             If neither ``explicit`` nor the host env supplies the key.
         """
-        env_name = _provider_env_var(provider)
         key = explicit or os.environ.get(env_name)
         if not key:
             log.error(
                 "missing provider credential",
-                extra={"harness": self.name, "provider": provider, "env": env_name},
+                extra={"harness": self.name, "env": env_name},
             )
-            raise RuntimeError(
-                f"{self.name} harness requires {env_name} for provider {provider!r}"
-            )
+            raise RuntimeError(f"{self.name} harness requires {env_name}")
         return {env_name: key}
 
     def stage_wd(self, wd: Path) -> None:
@@ -482,15 +453,3 @@ class Harness(ABC):
         HarnessRunResult
             Token totals, cost, and stop metadata parsed from the stream.
         """
-
-
-def _infer_provider(model: str) -> str:
-    if model.startswith("claude"):
-        return "anthropic"
-    if model.startswith("deepseek"):
-        return "deepseek"
-    if model.startswith("gemini"):
-        return "google"
-    if model.startswith("grok"):
-        return "xai"
-    return "openai"

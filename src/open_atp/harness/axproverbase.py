@@ -9,11 +9,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from open_atp.harness._paths import _SCRIPTS
-from open_atp.harness.base import (
-    Harness,
-    HarnessRunResult,
-    _infer_provider,
-)
+from open_atp.harness.base import Harness, HarnessRunResult
 
 log = logging.getLogger("open_atp")
 
@@ -24,6 +20,16 @@ log = logging.getLogger("open_atp")
 #: run silently hangs for hours instead of failing fast. Three is plenty to ride out a
 #: transient blip while turning any hard error into a prompt, visible failure.
 _LLM_MAX_RETRIES = 3
+
+
+def _infer_provider(model: str) -> str:
+    if model.startswith("claude"):
+        return "anthropic"
+    if model.startswith("deepseek"):
+        return "deepseek"
+    if model.startswith("gemini"):
+        return "google"
+    return "openai"
 
 
 class AxProverBaseHarness(Harness):
@@ -94,6 +100,14 @@ class AxProverBaseHarness(Harness):
         "deepseek": "deepseek",
     }
 
+    #: open-atp provider name -> the canonical env var ax-prover reads its key from.
+    _PROVIDER_ENV: ClassVar[dict[str, str]] = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "google": "GOOGLE_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+    }
+
     def __init__(
         self,
         *,
@@ -110,9 +124,8 @@ class AxProverBaseHarness(Harness):
         # ax-prover reads the provider key from the process env; forward the selected
         # provider's key under its canonical name (ANTHROPIC_API_KEY / OPENAI_API_KEY
         # / GOOGLE_API_KEY / DEEPSEEK_API_KEY).
-        return self._provider_key_env(
-            _infer_provider(self.model), self._provider_api_key
-        )
+        env_name = self._PROVIDER_ENV[_infer_provider(self.model)]
+        return self._key_env(env_name, self._provider_api_key)
 
     def stage_wd(self, wd: Path) -> None:
         # ax-prover has its own prompts and ignores the written prompt, but the base

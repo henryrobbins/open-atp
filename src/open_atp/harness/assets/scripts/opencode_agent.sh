@@ -10,10 +10,9 @@
 #
 # https://opencode.ai/docs/cli/#run-1
 #
-# With auth='login' the harness mounts a minimal opencode data dir (just the
-# selected provider's auth entry) at $HOME/.opencode-data, so opencode reads the
-# credential from there instead of an API-key env var. Point XDG_DATA_HOME at the
-# mount when it is present.
+# With auth='login' the harness mounts a minimal opencode data dir at
+# $HOME/.opencode-data, so opencode reads the credential from there instead
+# of an API-key env var.
 [ -d "$HOME/.opencode-data" ] && export XDG_DATA_HOME="$HOME/.opencode-data"
 
 opencode run --dir /workspace/wd --format json \

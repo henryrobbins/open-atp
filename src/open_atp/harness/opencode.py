@@ -12,6 +12,7 @@ from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import (
     Harness,
     HarnessRunResult,
+    _provider_env_var,
 )
 
 #: The authentication strategies :class:`OpenCodeHarness` supports.
@@ -23,53 +24,36 @@ _OPENCODE_DATA_MOUNT = ".opencode-data"
 
 
 class OpenCodeHarness(Harness):
-    """OpenCode CLI, driving any opencode provider under either auth strategy.
-
-    opencode resolves a provider's credentials from two channels, exposed here as
-    :attr:`auth`:
-
-    * ``"api_key"`` -- forward the provider's API key as its canonical env var
-      (:func:`~open_atp.harness.base._provider_env_var`), read from :attr:`api_key`
-      or the host environment. Works for any API-key provider (DeepSeek, OpenAI, ...).
-    * ``"login"`` -- authenticate from opencode's own credential store, so an OAuth
-      login (e.g. a SuperGrok / X-Premium subscription) or an ``opencode auth login``
-      API key works without exporting a key. :meth:`_home_dirs` stages **only** the
-      :attr:`provider` entry of the host ``opencode auth.json`` (never other providers'
-      credentials) and mounts it; the launch script points ``XDG_DATA_HOME`` at the
-      mount so opencode reads the credential. Run ``opencode auth login`` for the
-      provider on the host first.
+    """OpenCode CLI driving any supported OpenCode model provider.
 
     Parameters
     ----------
     provider : str
-        opencode provider name (e.g. ``"anthropic"``, ``"xai"``, ``"deepseek"``). Any
-        opencode provider is accepted.
+        opencode provider name (e.g. ``"deepseek"``). Any OpenCode provider is accepted.
+        Default ``"deepseek"``.
     model : str
-        Model id the agent runs. Default ``"deepseek-v4-pro"``.
+        Model id the agent runs. Must be supported by the chosen provider.
+        Default ``"deepseek-v4-pro"``.
     effort : str
         Reasoning-effort level. Default ``"high"``.
     auth : str
-        Authentication strategy, ``"api_key"`` (default) or ``"login"`` (see above).
+        Authentication strategy, ``"api_key"`` (default) or ``"login"``.
+        See :ref:`opencode-authentication` for details.
     api_key : str, optional
-        For ``auth="api_key"``, the provider's API key, forwarded under its canonical
-        env var. ``None`` (default) reads that env var from the host; resolution fails
-        if neither is set. No format check is done (OpenAI and DeepSeek keys are
-        indistinguishable). Ignored when ``auth="login"``.
+        For ``auth="api_key"``, the provider's API key.
+        Default ``None`` reads the host environment.
 
     Examples
     --------
-    With ``auth="api_key"`` (the default) and the key supplied explicitly,
-    :meth:`agent_auth` forwards it under the provider's canonical env var without
-    reading the host environment:
+    By default, the harness authenticates with the provider's API key and reads
+    the value from the host environment.
 
     >>> from open_atp.harness import OpenCodeHarness
-    >>> harness = OpenCodeHarness(
-    ...     provider="anthropic", model="claude-opus-4-8", api_key="sk-fake"
-    ... )
+    >>> harness = OpenCodeHarness(provider="openai", model="gpt-5.5")
     >>> harness.name
     'opencode'
-    >>> harness.agent_auth().env
-    {'ANTHROPIC_API_KEY': 'sk-fake'}
+    >>> harness.provider
+    'openai'
     """
 
     name = "opencode"
@@ -84,7 +68,7 @@ class OpenCodeHarness(Harness):
     def __init__(
         self,
         *,
-        provider: str,
+        provider: str = "deepseek",
         model: str = "deepseek-v4-pro",
         effort: str = "high",
         auth: str = "api_key",
@@ -137,7 +121,7 @@ class OpenCodeHarness(Harness):
         # _home_dirs), so no API key is forwarded.
         if self.auth == "login":
             return {}
-        return self._provider_key_env(self.provider, self._api_key)
+        return self._key_env(_provider_env_var(self.provider), self._api_key)
 
     def _home_dirs(self) -> list[tuple[Path, str]]:
         # Only "login" needs a mount; "api_key" forwards an env var instead.
