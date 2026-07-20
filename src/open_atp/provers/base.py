@@ -31,12 +31,7 @@ from pathlib import Path
 import structlog
 
 from open_atp.backends.base import ComputeBackend, ComputeError, ExecTimeout
-from open_atp.lean import (
-    LeanProject,
-    MathlibRevMismatch,
-    ProofTask,
-    ToolchainMismatch,
-)
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.verify import VerificationReport, Verifier
 
 log = logging.getLogger("open_atp")
@@ -49,9 +44,13 @@ class ProofStatus(enum.Enum):
     """Coarse outcome bucket for a :class:`ProofResult`.
 
     Deliberately small: each member is a *distinct caller action* (score it, retry
-    it, retry with more budget, fix the input, file a bug), not a distinct cause.
-    Same-bucket runs are told apart by the free-text :attr:`ProofResult.error`, so the
-    enum stays the index and the string carries the "why".
+    it, retry with more budget, file a bug), not a distinct cause. Same-bucket runs
+    are told apart by the free-text :attr:`ProofResult.error`, so the enum stays the
+    index and the string carries the "why".
+
+    Every bucket is an outcome of a run that *started*: :meth:`AutomatedProver.prove`
+    rejects an incompatible input (toolchain / Mathlib pin mismatch) by raising, before
+    any run exists, so there is no ``input_error`` bucket.
     """
 
     #: Verified proof: compiles, ``sorry``-free, no foreign axioms.
@@ -62,24 +61,21 @@ class ProofStatus(enum.Enum):
     TIMEOUT = "timeout"
     #: The compute substrate failed (sandbox disconnect, worker gone, pull failed).
     INFRA_ERROR = "infra_error"
-    #: The input was rejected before compute (toolchain / Mathlib pin mismatch).
-    INPUT_ERROR = "input_error"
-    #: An unexpected error -- a prover bug, not a classified operational failure.
+    #: Any other failure of a started run -- an unexpected prover bug, or a caller
+    #: surfacing an escaped exception it could not classify.
     ERROR = "error"
 
 
 def _status_for_exception(exc: BaseException) -> ProofStatus:
-    """Classify an exception raised out of :meth:`AutomatedProver.prove`.
+    """Classify an exception from a *started* run onto a :class:`ProofStatus`.
 
-    Maps the backend's typed operational failures and the input-contract mismatches
-    onto a :class:`ProofStatus`; anything unrecognised is :attr:`ProofStatus.ERROR`.
+    Maps the backend's typed operational failures (timeout, sandbox loss); anything
+    else is :attr:`ProofStatus.ERROR`.
     """
     if isinstance(exc, ExecTimeout):
         return ProofStatus.TIMEOUT
     if isinstance(exc, ComputeError):
         return ProofStatus.INFRA_ERROR
-    if isinstance(exc, (ToolchainMismatch, MathlibRevMismatch)):
-        return ProofStatus.INPUT_ERROR
     return ProofStatus.ERROR
 
 
@@ -127,9 +123,11 @@ class ProofResult:
     metadata : dict[str, object]
         Harness-specific run metadata (token counts, run summaries, ...).
     error : str, optional
-        Set when the prover raised before producing a result (Docker down, API error,
-        toolchain mismatch). :attr:`verification` is ``None`` and :attr:`success` is
-        ``False``.
+        A one-line ``"<ExcType>: <message>"`` summary, set when a started run failed
+        (a timeout, an infra failure, or an unexpected error); ``None`` on a clean
+        verify. The full traceback goes to the logs -- this is the short human-facing
+        detail that rides in :meth:`to_dict`. :attr:`status` is the coarse bucket, this
+        the "why".
     status : ProofStatus
         Coarse outcome bucket (see :class:`ProofStatus`).
     wd : pathlib.Path
@@ -157,17 +155,19 @@ class ProofResult:
 
     @classmethod
     def errored(cls, prover: str, output_dir: Path, exc: BaseException) -> ProofResult:
-        """Build a failed result from an exception raised out of :meth:`prove`.
+        """Build a minimal failed result from an exception that escaped :meth:`prove`.
 
-        The exception is classified onto :attr:`status` (see
-        :func:`_status_for_exception`) and its message captured in :attr:`error`;
-        :attr:`verification` stays ``None``.
+        For the two cases a caller cannot get a run record from ``prove`` itself: an
+        input rejected before the run started, and a run abandoned past a hard
+        wall-clock ceiling. The exception is classified onto :attr:`status` and
+        summarized in :attr:`error`; :attr:`verification` stays ``None`` and no run
+        artifacts are attached.
         """
         return cls(
             prover=prover,
             verification=None,
             output_dir=output_dir,
-            error=str(exc),
+            error=f"{type(exc).__name__}: {exc}",
             status=_status_for_exception(exc),
         )
 
@@ -284,17 +284,22 @@ class AutomatedProver(abc.ABC):
         Returns
         -------
         ProofResult
-            The verification verdict and run metadata, pointing at the populated
-            :attr:`~ProofResult.wd` and :attr:`~ProofResult.logs_dir`.
+            The outcome of the run, pointing at the populated :attr:`~ProofResult.wd`
+            and :attr:`~ProofResult.logs_dir`. Once a run starts, its failure is a
+            *record*, not a raise: a timeout, an infra failure, or an unexpected error
+            comes back with the matching :attr:`~ProofResult.status` and a
+            :attr:`~ProofResult.error` summary, keeping the partial workdir, logs, and
+            cost for inspection.
 
         Raises
         ------
         ~open_atp.lean.ToolchainMismatch
             If the project's toolchain differs from the backend image's. Checked up
-            front, before any generation compute is spent.
+            front, before any run starts -- so this raises rather than returning an
+            empty result.
         ~open_atp.lean.MathlibRevMismatch
             If the project records a Mathlib revision that differs from the backend
-            image's. Checked up front, before any generation compute is spent.
+            image's. Checked up front, before any run starts.
         """
         # Bind task (when named) + prover + a per-run id onto the context so every
         # downstream event -- including backend/verify records that never see ``self``
@@ -327,21 +332,23 @@ class AutomatedProver(abc.ABC):
             start = time.monotonic()
             try:
                 self._generate(task, wd, logs_dir, result)
-            except Exception:
-                log.exception("generation failed")
-                raise
+                # An agentic prover ran generation and the final check in one live
+                # session and set ``result.verification`` itself; reuse it rather than
+                # spinning a second sandbox. Only Aristotle (network generation, no
+                # session) lands here and gets the standalone check.
+                if result.verification is None:
+                    result.verification = self.verifier.verify(LeanProject(wd))
+                result.status = (
+                    ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
+                )
+            except Exception as exc:
+                # The run started, so its failure is a record, not a raise: the partial
+                # workdir/logs/cost stay on ``result`` for the caller to inspect. The
+                # traceback is logged here; ``error`` carries the one-line summary.
+                log.exception("prove failed")
+                result.status = _status_for_exception(exc)
+                result.error = f"{type(exc).__name__}: {exc}"
             result.duration_s = time.monotonic() - start
-
-            # An agentic prover ran generation and the final check in one live session
-            # and set ``result.verification`` itself; reuse it rather than spinning a
-            # second sandbox. Only Aristotle (network generation, no session) lands here
-            # and gets the standalone check.
-            if result.verification is None:
-                result.verification = self.verifier.verify(LeanProject(wd))
-
-            result.status = (
-                ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
-            )
 
             # A self-describing summary so a downloaded logs dir stands on its own.
             (logs_dir / "result.json").write_text(
@@ -350,6 +357,7 @@ class AutomatedProver(abc.ABC):
             log.info(
                 "prove complete",
                 extra={
+                    "status": result.status.value,
                     "success": result.success,
                     "cost_usd": result.cost_usd,
                     "duration_s": round(result.duration_s, 1),

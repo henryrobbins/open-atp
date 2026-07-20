@@ -111,7 +111,7 @@ def test_layout_and_results_json(tmp_path: Path) -> None:
     }
 
 
-def test_raising_prover_recorded_not_aborted(tmp_path: Path) -> None:
+def test_failing_prover_recorded_not_aborted(tmp_path: Path) -> None:
     provers = {
         "boom": FakeProver("agent", raises=RuntimeError("docker down")),
         "ok": FakeProver("numina"),
@@ -120,16 +120,30 @@ def test_raising_prover_recorded_not_aborted(tmp_path: Path) -> None:
     result = run_benchmark({"alpha": _tasks()["alpha"]}, provers, tmp_path)
 
     by_prover = {r.prover: r.result for r in result.runs}
-    assert by_prover["boom"].error == "docker down"
+    # prove() caught the started run's failure and returned an ERROR record.
+    assert by_prover["boom"].error == "RuntimeError: docker down"
     assert by_prover["boom"].verification is None
     assert by_prover["boom"].success is False
-    # A bare RuntimeError is an unclassified prover failure.
     assert by_prover["boom"].status is ProofStatus.ERROR
     assert by_prover["ok"].success is True
     assert by_prover["ok"].status is ProofStatus.VERIFIED
     # The failed cell still wrote its results.json, status included.
     payload = json.loads((tmp_path / "alpha" / "boom" / "results.json").read_text())
-    assert payload["error"] == "docker down"
+    assert payload["error"] == "RuntimeError: docker down"
+    assert payload["status"] == "error"
+
+
+def test_input_rejection_recorded_as_errored_cell(tmp_path: Path) -> None:
+    """A pre-run rejection raises out of prove(); the sweep records an error cell."""
+    provers = {"bad": FakeProver("agent", toolchain="leanprover/lean4:v9.99.0")}
+
+    result = run_benchmark({"alpha": _tasks()["alpha"]}, provers, tmp_path)
+
+    r = result.runs[0].result
+    assert r.status is ProofStatus.ERROR
+    assert r.error is not None and "ToolchainMismatch" in r.error
+    assert r.verification is None and not r.success
+    payload = json.loads((tmp_path / "alpha" / "bad" / "results.json").read_text())
     assert payload["status"] == "error"
 
 

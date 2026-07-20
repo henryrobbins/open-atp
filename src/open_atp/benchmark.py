@@ -211,8 +211,12 @@ def run_benchmark(
         run_dir = output_dir / task_name / prover_name
         run_dir.mkdir(parents=True, exist_ok=True)
         # ``prove`` binds task/prover/run_id onto the context itself, so backend and
-        # verifier records stay attributed and a generation crash is already logged
-        # (with traceback) inside that binding -- here we only build the error result.
+        # verifier records stay attributed and any failure is already logged (with
+        # traceback) inside that binding. It also returns a record for any run that
+        # starts -- its own failures land as a status on the result. The only escapees
+        # are an input rejected before the run (toolchain mismatch) and a run abandoned
+        # past the wall-clock ceiling; neither has a run record, so ``errored``
+        # synthesizes a minimal one.
         with gates[prover_name]:
             try:
                 result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)

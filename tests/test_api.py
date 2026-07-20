@@ -5,9 +5,10 @@ Two layers, mirroring the per-prover tests:
 * **Fast unit** (no Docker, no creds): :func:`standard_prover` builds each catalog
   prover with the right config + injected backend; the inherited ``prove`` lifecycle
   stages ``output_dir/{wd,logs}``, runs the subclass ``_generate``, verifies, and
-  writes ``result.json``; a prover that raises propagates (no orchestration layer
-  swallows it); ``ProofResult.to_dict`` round-trips to JSON. Provers are stubbed with
-  a fake :class:`AutomatedProver`.
+  writes ``result.json``; a started run's failure comes back as a failure
+  :class:`~open_atp.provers.base.ProofStatus` on the result (only a pre-run input
+  rejection raises); ``ProofResult.to_dict`` round-trips to JSON. Provers are stubbed
+  with a fake :class:`AutomatedProver`.
 * **Docker integration** (``docker`` marker): ``prove`` over ``mil_trivial`` with a
   stubbed-remote :class:`AristotleProver` (reusing the ``_submit_and_download`` seam),
   exercising the real Docker verify.
@@ -23,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from open_atp.backends.base import ComputeError, ExecTimeout, SandboxUnreachable
 from open_atp.backends.docker import DockerBackend
 from open_atp.config import standard_prover, standard_provers
 from open_atp.harness import (
@@ -38,7 +40,6 @@ from open_atp.provers.base import (
     AutomatedProver,
     ProofResult,
     ProofStatus,
-    _status_for_exception,
 )
 from open_atp.provers.numina import NuminaProver
 from open_atp.verify import VerificationReport
@@ -211,14 +212,43 @@ def test_prove_populates_output_dir_and_verifies(tmp_path: Path) -> None:
     assert result.duration_s is not None
 
 
-def test_prove_propagates_a_failing_generate(tmp_path: Path) -> None:
-    """No orchestration layer swallows the error: prove raises straight through."""
+def test_prove_records_a_started_run_failure_as_a_result(tmp_path: Path) -> None:
+    """A started run's failure is a record, not a raise -- partial artifacts survive."""
     boom = FakeProver("agent", raises=RuntimeError("docker down"))
-    with pytest.raises(RuntimeError, match="docker down"):
-        boom.prove(_task(), tmp_path / "run")
+
+    result = boom.prove(_task(), tmp_path / "run")
+
+    assert result.status is ProofStatus.ERROR
+    assert result.error == "RuntimeError: docker down"
+    assert result.verification is None and not result.success
+    # The run's output layout is still pointed at, and a result.json still written.
+    assert result.output_dir == tmp_path / "run" and result.logs_dir.is_dir()
+    payload = json.loads((result.logs_dir / "result.json").read_text())
+    assert payload["status"] == "error"
+    assert payload["error"] == "RuntimeError: docker down"
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (ExecTimeout("t"), ProofStatus.TIMEOUT),
+        (SandboxUnreachable("s"), ProofStatus.INFRA_ERROR),
+        (ComputeError("c"), ProofStatus.INFRA_ERROR),
+        (RuntimeError("boom"), ProofStatus.ERROR),
+    ],
+)
+def test_prove_classifies_a_started_run_failure(
+    exc: Exception, expected: ProofStatus, tmp_path: Path
+) -> None:
+    result = FakeProver("agent", raises=exc).prove(
+        _task(), tmp_path / type(exc).__name__
+    )
+    assert result.status is expected
+    assert result.error == f"{type(exc).__name__}: {exc}"
 
 
 def test_prove_rejects_toolchain_mismatch_before_generating(tmp_path: Path) -> None:
+    """A pre-run input rejection raises -- there is no run to record."""
     prover = FakeProver("agent", toolchain="leanprover/lean4:v9.99.0")
     with pytest.raises(ToolchainMismatch):
         prover.prove(_task(), tmp_path / "run")
@@ -235,25 +265,11 @@ def test_prove_unverified_candidate_sets_status(tmp_path: Path) -> None:
 # --- status classification -------------------------------------------------
 
 
-def test_status_for_exception_maps_typed_failures() -> None:
-    from open_atp.backends.base import ComputeError, ExecTimeout, SandboxUnreachable
-    from open_atp.lean import MathlibRevMismatch, ToolchainMismatch
-
-    assert _status_for_exception(ExecTimeout("t")) is ProofStatus.TIMEOUT
-    assert _status_for_exception(SandboxUnreachable("s")) is ProofStatus.INFRA_ERROR
-    assert _status_for_exception(ComputeError("c")) is ProofStatus.INFRA_ERROR
-    assert _status_for_exception(ToolchainMismatch("i")) is ProofStatus.INPUT_ERROR
-    assert _status_for_exception(MathlibRevMismatch("i")) is ProofStatus.INPUT_ERROR
-    assert _status_for_exception(RuntimeError("boom")) is ProofStatus.ERROR
-
-
-def test_errored_captures_message_and_classifies(tmp_path: Path) -> None:
-    from open_atp.backends.base import ExecTimeout
-
+def test_errored_synthesizes_a_minimal_classified_result(tmp_path: Path) -> None:
     result = ProofResult.errored("agent", tmp_path, ExecTimeout("out of time"))
     assert result.prover == "agent"
     assert result.verification is None and not result.success
-    assert result.error == "out of time"
+    assert result.error == "ExecTimeout: out of time"
     assert result.status is ProofStatus.TIMEOUT
     assert result.to_dict()["status"] == "timeout"
 

@@ -11,13 +11,13 @@ it, so no backend is exercised.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
 import pytest
 
 from open_atp import __main__ as cli
-from open_atp.backends.base import ExecTimeout
 from open_atp.config import build_backend, standard_provers
 
 from .test_api import FIXTURE, FakeProver
@@ -168,11 +168,14 @@ def test_load_dotenv_seeds_missing_without_overriding(
     assert os.environ["EXISTING_KEY"] == "real-env"  # setdefault keeps real env
 
 
-def test_prove_classifies_a_raising_prover_instead_of_crashing(
+def test_prove_renders_a_pre_run_rejection_instead_of_crashing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    boom = FakeProver("agent", raises=ExecTimeout("out of time"))
-    monkeypatch.setattr(cli, "standard_prover", lambda name, backend: boom)
+    # A toolchain mismatch raises out of prove() before any run starts; the CLI must
+    # catch it and render a result rather than crash with a traceback. (A started run's
+    # own failures come back as a status on the result, so they never reach this catch.)
+    bad = FakeProver("agent", toolchain="leanprover/lean4:v9.99.0")
+    monkeypatch.setattr(cli, "standard_prover", lambda name, backend: bad)
 
     args = argparse.Namespace(
         path=str(FIXTURE),
@@ -184,11 +187,9 @@ def test_prove_classifies_a_raising_prover_instead_of_crashing(
     rc = cli._prove(args)
 
     assert rc == 1  # a failed run exits nonzero, but does not raise
-    import json
-
     payload = json.loads(capsys.readouterr().out)
-    assert payload["status"] == "timeout"
-    assert payload["error"] == "out of time"
+    assert payload["status"] == "error"
+    assert "ToolchainMismatch" in payload["error"]
 
 
 def test_download_dispatches_to_download_dataset(
