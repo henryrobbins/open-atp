@@ -43,7 +43,7 @@ This generates the necessary authentication credentials on your machine. You can
 ```{testcode}
 from open_atp.harness import OpenCodeHarness
 
-OpenCodeHarness(provider="xai", model="grok-4.5", auth="login")
+OpenCodeHarness(provider="deepseek", model="deepseek-v4-pro", auth="login")
 ```
 
 ## Using the harness
@@ -74,9 +74,7 @@ By default, the OpenCode harness is equipped with:
 - Official Lean skills {cite:p}`leanprover_skills`.
 - `lean-lsp-mcp` MCP server {cite:p}`lean_lsp_mcp`.
 
-The agent prompt (below) is written into the working directory and read into `$PROMPT`.
-The OpenCode CLI is then invoked in non-interactive mode with `$PROMPT` as the input. See
-the script below for the full OpenCode CLI invocation.
+The agent prompt (below) is written into the working directory and read into `$PROMPT`. The OpenCode CLI is then invoked in non-interactive mode with `$PROMPT` as the input. See the script below for the full OpenCode CLI invocation.
 
 :::{dropdown} Agent Prompt
 :icon: book
@@ -99,10 +97,4 @@ See the {doc}`/api/index` for all {class}`~open_atp.harness.opencode.OpenCodeHar
 (tracking-cost-and-usage-opencode)=
 ## Tracking cost and usage
 
-The OpenCode CLI reports a per-step cost and token breakdown for each provider call.
-When present, the cost is summed to populate `cost_usd` in
-{class}`~open_atp.provers.base.ProofResult`; when a provider does not self-report USD
-(e.g. an OAuth plan), the cost is estimated from the token counts using
-{data}`~open_atp.harness.cost.COST_PER_MTOK` (see
-{func}`~open_atp.harness.cost.compute_cost_usd`). You can also monitor consumption from
-your provider's usage dashboard.
+The OpenCode CLI reports a per-step cost and token breakdown for each provider call. The cost is summed to populate `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. You can also monitor consumption from your provider's usage dashboard — each model page links its own.

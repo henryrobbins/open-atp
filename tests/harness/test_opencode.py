@@ -82,11 +82,13 @@ def test_login_mounts_only_selected_provider_entry(
     _write_auth(
         tmp_path,
         {
-            "xai": {"type": "oauth", "access": "tok", "refresh": "r"},
-            "anthropic": {"type": "api", "key": "sk-secret"},
+            "anthropic": {"type": "oauth", "access": "tok", "refresh": "r"},
+            "deepseek": {"type": "api", "key": "sk-secret"},
         },
     )
-    harness = OpenCodeHarness(model="grok-4.5", provider="xai", auth="login")
+    harness = OpenCodeHarness(
+        model="claude-opus-4-8", provider="anthropic", auth="login"
+    )
     auth = harness.agent_auth()
 
     # No API key forwarded -- opencode reads the mounted credential store.
@@ -94,17 +96,19 @@ def test_login_mounts_only_selected_provider_entry(
     (src, dest) = auth.mounts[0]
     assert dest == ".opencode-data"
     staged = json.loads((src / "opencode" / "auth.json").read_text())
-    # Only the xai entry is staged -- never the anthropic key.
-    assert staged == {"xai": {"type": "oauth", "access": "tok", "refresh": "r"}}
+    # Only the anthropic entry is staged -- never the deepseek key.
+    assert staged == {"anthropic": {"type": "oauth", "access": "tok", "refresh": "r"}}
 
 
 def test_login_missing_entry_raises(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
-    _write_auth(tmp_path, {"anthropic": {"type": "api", "key": "sk"}})
-    harness = OpenCodeHarness(model="grok-4.5", provider="xai", auth="login")
-    with pytest.raises(RuntimeError, match="requires a 'xai' login"):
+    _write_auth(tmp_path, {"deepseek": {"type": "api", "key": "sk"}})
+    harness = OpenCodeHarness(
+        model="claude-opus-4-8", provider="anthropic", auth="login"
+    )
+    with pytest.raises(RuntimeError, match="requires a 'anthropic' login"):
         harness.agent_auth()
 
 
@@ -115,8 +119,10 @@ def test_login_home_dirs_is_concurrency_safe(
     # _home_dirs() must return the same staged dir whose auth.json survives -- without
     # the lock the loser's TemporaryDirectory finalizer deletes it.
     monkeypatch.setenv("HOME", str(tmp_path))
-    _write_auth(tmp_path, {"xai": {"type": "oauth", "access": "tok"}})
-    harness = OpenCodeHarness(model="grok-4.5", provider="xai", auth="login")
+    _write_auth(tmp_path, {"anthropic": {"type": "oauth", "access": "tok"}})
+    harness = OpenCodeHarness(
+        model="claude-opus-4-8", provider="anthropic", auth="login"
+    )
 
     results: list[Path] = []
     barrier = threading.Barrier(8)
