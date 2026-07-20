@@ -11,6 +11,7 @@ We recommend {doc}`/provers/claude_code` and {doc}`/provers/codex` prover over u
 :hidden:
 
 deepseek
+grok
 ```
 
 (opencode-authentication)=
