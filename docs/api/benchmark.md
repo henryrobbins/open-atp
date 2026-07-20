@@ -16,6 +16,8 @@ run never aborts the sweep.
 
 ```{eval-rst}
 .. autofunction:: open_atp.benchmark.run_benchmark
+
+.. autoexception:: open_atp.benchmark.RunCeilingExceeded
 ```
 
 ## Building tasks from a directory

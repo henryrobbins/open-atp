@@ -134,6 +134,37 @@ def test_failing_prover_recorded_not_aborted(tmp_path: Path) -> None:
     assert payload["status"] == "error"
 
 
+class HangingProver(FakeProver):
+    """A ``FakeProver`` that never returns, with a tiny wall-clock ceiling.
+
+    Drives the outer backstop in ``_prove_bounded``: ``_generate`` sleeps past the
+    ceiling so the worker thread is abandoned and ``RunCeilingExceeded`` is raised.
+    """
+
+    @property
+    def max_duration_s(self) -> int:  # type: ignore[override]
+        return 0  # join returns immediately; the sleeping worker is still alive
+
+    def _generate(
+        self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult
+    ) -> None:
+        time.sleep(5)  # never completes within the ceiling
+
+
+def test_run_ceiling_recorded_as_errored_cell(tmp_path: Path) -> None:
+    """A run wedged past its wall-clock ceiling is a RunCeilingExceeded ERROR cell."""
+    result = run_benchmark(
+        {"alpha": _tasks()["alpha"]}, {"slow": HangingProver("agent")}, tmp_path
+    )
+
+    r = result.runs[0].result
+    assert r.status is ProofStatus.ERROR
+    assert r.error == "RunCeilingExceeded"
+    assert r.verification is None and not r.success
+    payload = json.loads((tmp_path / "alpha" / "slow" / "results.json").read_text())
+    assert payload["status"] == "error"
+
+
 def test_input_rejection_recorded_as_errored_cell(tmp_path: Path) -> None:
     """A pre-run rejection raises out of prove(); the sweep records an error cell."""
     provers = {"bad": FakeProver("agent", toolchain="leanprover/lean4:v9.99.0")}

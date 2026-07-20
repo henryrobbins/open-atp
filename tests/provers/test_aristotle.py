@@ -123,6 +123,45 @@ def test_generate_extracts_result_and_reports_changed_files(
     assert (logs_dir / "events.json").is_file()
 
 
+def _fake_no_output(reason: str) -> object:
+    """An async stand-in for ``_submit_and_download`` that produced no candidate."""
+
+    async def _stub(
+        self: AristotleProver,
+        project_dir: Path,
+        prompt: str,
+        dest_tar: Path,
+        logs_dir: Path,
+    ) -> tuple[None, dict[str, object]]:
+        return None, {"project_id": "test-123", "error": reason}
+
+    return _stub
+
+
+def test_generate_raises_when_aristotle_produces_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No candidate archive is an error, not a silent verify of the original project."""
+    from open_atp.provers.aristotle import AristotleNoOutput
+
+    reason = "Aristotle produced no output files."
+    monkeypatch.setattr(
+        AristotleProver, "_submit_and_download", _fake_no_output(reason)
+    )
+    prover = _make_prover()
+    wd = tmp_path / "wd"
+    logs_dir = tmp_path / "logs"
+    wd.mkdir()
+    logs_dir.mkdir()
+    result = ProofResult(prover="aristotle", verification=None, output_dir=tmp_path)
+
+    with pytest.raises(AristotleNoOutput, match=reason):
+        prover._generate(ProofTask(LeanProject(FIXTURE)), wd, logs_dir, result)
+
+    # The reason and run metadata survive on the result for the caller to inspect.
+    assert result.metadata["error"] == reason
+
+
 def test_is_transient_distinguishes_dropped_links_from_real_errors() -> None:
     """Transport failures and 5xx retry; a 4xx (bad key/missing project) fails fast."""
     import httpx

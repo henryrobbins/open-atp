@@ -44,6 +44,8 @@ The concrete candidate generators.
 ```{eval-rst}
 .. autoclass:: open_atp.provers.aristotle.AristotleProver
    :show-inheritance:
+
+.. autoexception:: open_atp.provers.aristotle.AristotleNoOutput
 ```
 
 ## Standard catalog

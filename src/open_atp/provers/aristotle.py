@@ -39,6 +39,18 @@ log = logging.getLogger("open_atp")
 
 _T = TypeVar("_T")
 
+
+class AristotleNoOutput(Exception):
+    """Aristotle returned no candidate to verify -- no task to wait on, or no files.
+
+    The hosted run produced nothing to unpack over the workdir, so there is no
+    candidate for the shared verifier to check. Distinct from a candidate that fails
+    to verify (:attr:`~open_atp.provers.base.ProofStatus.UNVERIFIED`): nothing was
+    generated at all, so :meth:`~open_atp.provers.base.AutomatedProver.prove`
+    classifies it as :attr:`~open_atp.provers.base.ProofStatus.ERROR`.
+    """
+
+
 PROVER_PROMPT = (
     "Complete every `sorry` in this Lean project. Make the project compile and be "
     "sorry-free without introducing new axioms; do not weaken or delete the stated "
@@ -231,8 +243,15 @@ class AristotleProver(AutomatedProver):
                 self._submit_and_download(wd, prompt, result_tar, logs_dir)
             )
 
-        if downloaded is not None:
-            self._extract_over(downloaded, wd)
+        result.metadata = metadata
+        if downloaded is None:
+            # No archive means no candidate: fail the run rather than verifying the
+            # unchanged project into a misleading UNVERIFIED. The reason (no task / no
+            # output files) was recorded in metadata["error"] by the submit path.
+            raise AristotleNoOutput(
+                str(metadata.get("error", "Aristotle produced no output."))
+            )
+        self._extract_over(downloaded, wd)
 
         # Report the .lean files Aristotle changed or added.
         completed: dict[str, str] = {}
@@ -253,7 +272,6 @@ class AristotleProver(AutomatedProver):
         result.completed_files = completed
         # The Aristotle API does not expose a per-run cost; leave it unset.
         result.cost_usd = None
-        result.metadata = metadata
 
     async def _submit_and_download(
         self, project_dir: Path, prompt: str, dest_tar: Path, logs_dir: Path

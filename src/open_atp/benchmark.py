@@ -40,12 +40,24 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from open_atp.backends.base import ExecTimeout
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult
 
 log = logging.getLogger("open_atp")
+
+
+class RunCeilingExceeded(Exception):
+    """A whole ``prove()`` run blew the benchmark's hard wall-clock ceiling.
+
+    The ceiling (:attr:`~open_atp.provers.base.AutomatedProver.max_duration_s`) sits
+    above the generation budget, so exceeding it means a run wedged past even its
+    verify + overhead allowance and its worker thread was abandoned -- an infra/stuck
+    signal, not a clean generation-budget timeout. Distinct from
+    :class:`~open_atp.provers.base.GenerationTimeout` (which maps to
+    :attr:`~open_atp.provers.base.ProofStatus.TIMEOUT`): this classifies as
+    :attr:`~open_atp.provers.base.ProofStatus.ERROR`.
+    """
 
 
 @dataclass(frozen=True)
@@ -110,7 +122,7 @@ def _prove_bounded(
     The backend already bounds each Modal call, so this rarely fires; it is the outer
     backstop guaranteeing no single wedged run can stall the whole sweep. On timeout
     the worker thread is abandoned (daemon, so it can't block process exit) and
-    :class:`~open_atp.backends.base.ExecTimeout` is raised for the caller to classify.
+    :class:`RunCeilingExceeded` is raised for the caller to classify.
     """
     result: list[ProofResult] = []
     error: list[BaseException] = []
@@ -129,7 +141,7 @@ def _prove_bounded(
             "task exceeded wall-clock ceiling",
             extra={"prover": prover.name, "task": task.name, "ceiling_s": ceiling_s},
         )
-        raise ExecTimeout(f"task exceeded {ceiling_s:.0f}s wall-clock ceiling")
+        raise RunCeilingExceeded(f"task exceeded {ceiling_s:.0f}s wall-clock ceiling")
     if error:
         raise error[0]
     return result[0]
