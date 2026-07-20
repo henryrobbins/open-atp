@@ -1,15 +1,21 @@
 # OpenCode harness
 
 [OpenCode](https://opencode.ai/) is a provider-agnostic coding agent: one CLI fronts
-any of its [supported providers](https://opencode.ai/docs/providers/). open-atp drives
-it through the {class}`~open_atp.harness.opencode.OpenCodeHarness` (paired with the
-{class}`~open_atp.provers.agent_prover.AgentProver`), so a single harness backs several
-standard provers on different providers — {doc}`/provers/deepseek` (DeepSeek) and
-{doc}`/provers/grok` (xAI Grok) today.
+any of its [supported providers](https://opencode.ai/docs/providers/). OpenATP drives it
+through the {class}`~open_atp.harness.opencode.OpenCodeHarness` (paired with the
+{class}`~open_atp.provers.agent_prover.AgentProver`), so a single harness backs a
+standard prover on any provider under either authentication strategy — {doc}`/provers/deepseek`
+(DeepSeek) is the ready-to-run default today.
 
 This page documents the harness the OpenCode-backed provers share: the two
-authentication strategies, the launch script, and cost tracking. For a ready-to-run
-prover, see the {doc}`/provers/deepseek` and {doc}`/provers/grok` pages.
+authentication strategies, the launch script, and cost tracking.
+
+```{toctree}
+:maxdepth: 1
+:hidden:
+
+deepseek
+```
 
 (opencode-authentication)=
 ## Authentication
@@ -37,7 +43,7 @@ OpenCode resolves a provider's credentials from two channels, selected by the ha
 `auth="login"`
 : Authenticate from OpenCode's own credential store, so an OAuth login (e.g. a
   subscription plan) or an `opencode auth login` API key works without exporting a key.
-  Log in once on the host:
+  Log in once on the host, selecting the provider (e.g. **xAI** for a SuperGrok plan):
 
   ```bash
   opencode auth login
@@ -46,10 +52,16 @@ OpenCode resolves a provider's credentials from two channels, selected by the ha
   This writes the provider's entry into `~/.local/share/opencode/auth.json`. The harness
   stages **only** the selected provider's entry into the sandbox (never the whole file,
   which may hold other providers' credentials) and points `XDG_DATA_HOME` at the mount,
-  so OpenCode reads the credential there. See {doc}`/provers/grok` for a worked example.
+  so OpenCode reads the credential there. Runs draw on the logged-in plan:
+
+  ```{testcode}
+  from open_atp.harness import OpenCodeHarness
+
+  OpenCodeHarness(provider="xai", model="grok-4.5", auth="login")
+  ```
 
 The `provider` argument is required and names the OpenCode provider (`anthropic`, `xai`,
-`deepseek`, …); any OpenCode provider is accepted.
+`deepseek`, …); any OpenCode provider is accepted under either strategy.
 
 ## Customizing the harness
 
@@ -105,6 +117,8 @@ the script below for the full OpenCode CLI invocation.
 :language: bash
 ```
 :::
+
+See the {doc}`/api/index` for all {class}`~open_atp.harness.opencode.OpenCodeHarness` configuration options.
 
 (tracking-cost-and-usage-opencode)=
 ## Tracking cost and usage

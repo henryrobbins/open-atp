@@ -61,8 +61,7 @@ The `ID` is the standard prover name used by `standard_prover`, the CLI `prove` 
 | --- | --- | --- | --- | --- | --- |
 | [Claude Code](docs/provers/claude_code.md) | `claude` | [leanprover](https://github.com/leanprover/skills), [lean4](https://github.com/cameronfreer/lean4-skills) | ✓ | — | — |
 | [Codex](docs/provers/codex.md) | `codex` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/openai/codex) |
-| [DeepSeek](docs/provers/deepseek.md) | `deepseek` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/sst/opencode) |
-| [Grok](docs/provers/grok.md) | `grok` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/sst/opencode) |
+| [DeepSeek](docs/provers/deepseek.md) | `deepseek` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/deepseek-ai) |
 | [AxProverBase](docs/provers/axproverbase.md) | `axproverbase` | — | ✗ | [Requena et al. 2026](https://openreview.net/forum?id=E30g7bO7rU) | [GitHub](https://github.com/Axiomatic-AI/ax-prover-base) |
 | [Leanstral](docs/provers/leanstral.md) | `leanstral` | [leanprover](https://github.com/leanprover/skills) | ✓ | [Leanstral (blog)](https://mistral.ai/news/leanstral) | [HuggingFace](https://huggingface.co/mistralai/Leanstral-2603) |
 | [Numina](docs/provers/numina.md) | `numina` | — | ✓ | [Liu et al. 2026](https://arxiv.org/abs/2601.14027) | [GitHub](https://github.com/project-numina/numina-lean-agent) |

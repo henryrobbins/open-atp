@@ -15,15 +15,22 @@ OpenCode-backed provers.
 
 ## Authentication
 
-DeepSeek bills against an API account. Fund an account, then set the key in the host
-environment (a `.env` file at the project root is read automatically):
+DeepSeek bills against an API account. Sign up at the
+[DeepSeek platform](https://platform.deepseek.com/), fund it, then set the key in the
+host environment (a `.env` file at the project root is read automatically):
 
 ```bash
 export DEEPSEEK_API_KEY=...
 ```
 
-Alternatively pass it to the harness explicitly via `api_key`. The harness
-forwards the key into the sandbox under `DEEPSEEK_API_KEY`.
+Alternatively pass it to the harness explicitly via `api_key`. The harness forwards the
+key into the sandbox under `DEEPSEEK_API_KEY`:
+
+```{testcode}
+from open_atp.harness import OpenCodeHarness
+
+OpenCodeHarness(provider="deepseek", model="deepseek-v4-pro", api_key="sk-...")
+```
 
 ## Using the prover
 
@@ -68,7 +75,7 @@ from open_atp.provers import AgentProver
 
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
-    harness=OpenCodeHarness(model="deepseek-v4-flash", effort="medium"),
+    harness=OpenCodeHarness(provider="deepseek", model="deepseek-v4-flash", effort="medium"),
     backend=DockerBackend(image=DEFAULT_IMAGE),
 )
 result = prover.prove(task, output_dir=Path("demo"))
@@ -83,5 +90,6 @@ It runs on the {class}`~open_atp.harness.opencode.OpenCodeHarness` — see the
 ## Tracking cost and usage
 
 The OpenCode CLI reports a per-step cost for each DeepSeek call, summed into `cost_usd`
-on {class}`~open_atp.provers.base.ProofResult`. You can also monitor spend from the
+on {class}`~open_atp.provers.base.ProofResult` (see {ref}`tracking-cost-and-usage-opencode`).
+You can also monitor spend from the
 [DeepSeek usage dashboard](https://platform.deepseek.com/usage).
