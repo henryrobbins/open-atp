@@ -69,10 +69,6 @@ prover = AgentProver(
 result = prover.prove(task, output_dir=Path("demo"))
 ```
 
-:::{tip}
-The OpenCode harness fronts more than DeepSeek — passing an Anthropic, OpenAI, or Google model switches provider automatically. If you are harness agnostic and want to use Anthropic or OpenAI models, it is recommended to use the {doc}`/provers/claude_code` or {doc}`/provers/codex` provers, which bill against subscription plans rather than API usage and are often much cheaper.
-:::
-
 ## Tracking cost and usage
 
 Cost is captured from the OpenCode CLI's per-call breakdown and summed into `cost_usd` on {class}`~open_atp.provers.base.ProofResult` (see {ref}`tracking-cost-and-usage-opencode`). You can also monitor DeepSeek consumption from the provider dashboard at [DeepSeek Usage](https://platform.deepseek.com/usage).

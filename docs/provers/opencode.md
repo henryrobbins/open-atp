@@ -28,6 +28,10 @@ OpenCodeHarness(model="claude-opus-4-8", provider_api_key="sk-...")
 
 The provider is inferred from the model prefix unless you pass `provider` explicitly. Either way the harness forwards the key into the sandbox under its canonical env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `DEEPSEEK_API_KEY`). Each model page documents its own key and usage dashboard; see {ref}`tracking-cost-and-usage-opencode` for how cost is measured.
 
+:::{tip}
+If you are harness agnostic and want to use Anthropic or OpenAI models, it is recommended to use the {doc}`/provers/claude_code` or {doc}`/provers/codex`  provers. These provers are billed against subscription plans rather than API usage, which is often much cheaper.
+:::
+
 ## Harness details
 
 By default, the OpenCode harness is equipped with:
