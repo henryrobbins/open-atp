@@ -108,10 +108,10 @@ PROVER_SPECS = [
         id="agent-codex",
     ),
     pytest.param(
-        "opencode",
-        _need_env("ANTHROPIC_API_KEY"),
+        "deepseek",
+        _need_env("DEEPSEEK_API_KEY"),
         marks=pytest.mark.agent_api,
-        id="agent-opencode",
+        id="agent-deepseek",
     ),
     pytest.param(
         "axproverbase",

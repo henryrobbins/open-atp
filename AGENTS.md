@@ -85,7 +85,7 @@ and the `STANDARD_PROVERS` registry (`config.py`):
 | `aristotle` | Harmonic Aristotle (hosted) | remote API via `aristotlelib`, no local gen sandbox |
 | `claude` | Claude Code (`claude_code` harness) | default; coding agent + lean-lsp-mcp |
 | `codex` | OpenAI Codex CLI | model `gpt-5.5` |
-| `opencode` | opencode | |
+| `deepseek` | DeepSeek on the `opencode` harness | model `deepseek-v4-pro` |
 | `axproverbase` | ax-prover (LangGraph) | proposer→builder→reviewer loop; default model `claude-opus-4-8`, effort `high` |
 | `numina` | Numina skills/prompts on Claude Code | round-continuation loop |
 | `leanstral` | Mistral Vibe `lean` scaffold | hosted model (default `magistral-medium-latest`), no GPU; `--model` configurable |

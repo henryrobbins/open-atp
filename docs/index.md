@@ -8,7 +8,7 @@
 :width: 80%
 ```
 
-Follow the {doc}`/installation` instructions to install the `open-atp` Python package. Use the {doc}`guides/index` to configure your compute backend ({doc}`Docker </guides/docker>` or {doc}`Modal </guides/modal>`) and then {doc}`run </guides/run_provers>` and {doc}`benchmark </guides/benchmark>` provers. See {doc}`/provers/index` for a complete list of the standard provers and {doc}`/datasets` for supported proof-synthesis datasets. Lastly, we provide complete {doc}`API </api/index>` and {doc}`CLI </cli>` references.
+Follow the {doc}`/installation` instructions to install the `open-atp` Python package. Use the {doc}`guides/index` to configure your compute backend ({doc}`Docker </guides/docker>` or {doc}`Modal </guides/modal>`) and then {doc}`run </guides/run_provers>` and {doc}`benchmark </guides/benchmark>` provers. See {doc}`/provers/index` for a complete list of the standard provers, {doc}`/harnesses/index` for the coding-agent harnesses that back the agent provers, and {doc}`/datasets` for supported proof-synthesis datasets. Lastly, we provide complete {doc}`API </api/index>` and {doc}`CLI </cli>` references.
 
 ```{toctree}
 :maxdepth: 1
@@ -17,6 +17,7 @@ Follow the {doc}`/installation` instructions to install the `open-atp` Python pa
 installation
 guides/index
 provers/index
+harnesses/index
 datasets
 examples
 api/index
