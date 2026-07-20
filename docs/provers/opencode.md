@@ -1,11 +1,10 @@
 # OpenCode
 
-[OpenCode](https://opencode.ai/) ([GitHub](https://github.com/sst/opencode), by [SST](https://sst.dev)) is a provider-agnostic coding-agent CLI: one harness fronts Anthropic, OpenAI, Google, or DeepSeek models. Unlike the other provers, whose CLI is tied to a single model family, OpenCode is a shared harness — so the provers that run on it are grouped here, each pinning it to a specific model. OpenATP drives it through the {class}`~open_atp.provers.agent_prover.AgentProver` and the {class}`~open_atp.harness.opencode.OpenCodeHarness`, augmented with Lean skills and MCP tooling.
-
-The pages below cover each model; this page covers what they share.
+Use [OpenCode](https://opencode.ai/) as an automated theorem prover with common skills and MCP tooling for working with Lean. OpenCode is an open-source coding-agent harness with many supported model providers. OpenATP supports OpenCode through the {class}`~open_atp.provers.agent_prover.AgentProver` and the {class}`~open_atp.harness.opencode.OpenCodeHarness`.
 
 ```{toctree}
 :maxdepth: 1
+:hidden:
 
 deepseek
 ```
@@ -26,7 +25,7 @@ from open_atp.harness import OpenCodeHarness
 OpenCodeHarness(model="claude-opus-4-8", provider_api_key="sk-...")
 ```
 
-The provider is inferred from the model prefix unless you pass `provider` explicitly. Either way the harness forwards the key into the sandbox under its canonical env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `DEEPSEEK_API_KEY`). Each model page documents its own key and usage dashboard; see {ref}`tracking-cost-and-usage-opencode` for how cost is measured.
+The provider is inferred from the model prefix unless you pass `provider` explicitly. Either way the harness forwards the key into the sandbox under its canonical env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `DEEPSEEK_API_KEY`).
 
 :::{tip}
 If you are harness agnostic and want to use Anthropic or OpenAI models, it is recommended to use the {doc}`/provers/claude_code` or {doc}`/provers/codex`  provers. These provers are billed against subscription plans rather than API usage, which is often much cheaper.

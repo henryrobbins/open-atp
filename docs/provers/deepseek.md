@@ -4,7 +4,7 @@
 :parser: myst
 ```
 
-Use a [DeepSeek](https://www.deepseek.com/) model as an automated theorem prover. This prover runs on the {doc}`/provers/opencode` harness pinned to DeepSeek's `deepseek-v4-pro` model. The harness mechanics (provider-agnostic auth, skills, MCP tooling, the agent invocation, how cost is measured) live on the {doc}`/provers/opencode` page; this page covers the DeepSeek model — authentication, running the prover, and tracking usage.
+Use a [DeepSeek](https://www.deepseek.com/) model as an automated theorem prover. This prover runs on the OpenCode harness pinned to DeepSeek's `deepseek-v4-pro` model. See {doc}`/provers/opencode` for harness details.
 
 ## Authentication
 
@@ -50,7 +50,7 @@ open-atp prove path/to/task.lean output_dir deepseek
 
 ### Customizing the prover
 
-To override knobs like `model` and `effort`, construct the class directly:
+To override knobs like `effort`, construct the class directly:
 
 ```{testcode}
 from pathlib import Path
@@ -63,7 +63,7 @@ from open_atp.provers import AgentProver
 
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
-    harness=OpenCodeHarness(model="deepseek-reasoner", effort="medium"),
+    harness=OpenCodeHarness(model="deepseek-v4-pro", effort="medium"),
     backend=DockerBackend(image=DEFAULT_IMAGE),
 )
 result = prover.prove(task, output_dir=Path("demo"))
