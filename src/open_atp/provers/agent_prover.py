@@ -377,9 +377,7 @@ class AgentProver(AutomatedProver):
                 lines.append(line)
 
         with stdout_path.open("a", encoding="utf-8") as sink:
-            handle = session.exec(
-                harness.command, timeout_s=timeout_s, env=env, raise_on_timeout=True
-            )
+            handle = session.exec(harness.command, timeout_s=timeout_s, env=env)
             drain(handle, sink)
             try:
                 result = handle.wait()

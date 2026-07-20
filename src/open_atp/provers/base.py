@@ -32,7 +32,7 @@ import structlog
 
 from open_atp.backends.base import ComputeBackend, ProvisionError
 from open_atp.harness.base import MissingCredentials
-from open_atp.lean import LeanProject, ProofTask
+from open_atp.lean import ProofTask
 from open_atp.verify import VerificationReport, Verifier
 
 log = logging.getLogger("open_atp")
@@ -260,11 +260,12 @@ class AutomatedProver(abc.ABC):
     ) -> None:
         """Generate the completed project in ``wd`` and record the run in ``result``.
 
-        Implementations must leave ``wd`` containing the full completed project so the
-        verifier can compile it in place, write the run's logs into ``logs_dir``, and
-        fill ``result`` (``completed_files``, ``cost_usd``, ``metadata``). A prover that
-        already verified the candidate in its own live sandbox sets
-        ``result.verification`` itself; otherwise :meth:`prove` runs the shared check.
+        Implementations must leave ``wd`` containing the full completed project, write
+        the run's logs into ``logs_dir``, fill ``result`` (``completed_files``,
+        ``cost_usd``, ``metadata``), and run the shared check to set
+        ``result.verification`` -- in their own live sandbox when they have one
+        (``verify(..., session=session)``), else standalone
+        (``self.verifier.verify(LeanProject(wd))``).
         """
 
     def prove(self, task: ProofTask, output_dir: Path | str) -> ProofResult:
@@ -339,12 +340,6 @@ class AutomatedProver(abc.ABC):
             start = time.monotonic()
             try:
                 self._generate(task, wd, logs_dir, result)
-                # An agentic prover ran generation and the final check in one live
-                # session and set ``result.verification`` itself; reuse it rather than
-                # spinning a second sandbox. Only Aristotle (network generation, no
-                # session) lands here and gets the standalone check.
-                if result.verification is None:
-                    result.verification = self.verifier.verify(LeanProject(wd))
                 result.status = (
                     ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
                 )

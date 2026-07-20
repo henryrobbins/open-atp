@@ -21,6 +21,7 @@ from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.aristotle import AristotleProver
 from open_atp.provers.base import ProofResult
+from open_atp.verify import VerificationReport
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 
@@ -97,8 +98,8 @@ def test_generate_extracts_result_and_reports_changed_files(
 ) -> None:
     """_generate alone: stage -> (stub) submit -> extract -> diff. No Docker needed.
 
-    The public ``prove`` runs the shared Docker verify, so the no-Docker unit test
-    drives the generation half directly and asserts on the filled result.
+    ``_generate`` ends with the shared verify; that half is stubbed here so the
+    no-Docker unit test can assert on the extracted/reported files in isolation.
     """
     from open_atp.lean import LeanProject, ProofTask
 
@@ -106,6 +107,14 @@ def test_generate_extracts_result_and_reports_changed_files(
         AristotleProver, "_submit_and_download", _fake_result(solved=True)
     )
     prover = _make_prover()
+    # Isolate the generation half: stub the shared verify so it doesn't hit Docker.
+    monkeypatch.setattr(
+        prover.verifier,
+        "verify",
+        lambda project, session=None: VerificationReport(
+            compiles=True, sorry_free=True
+        ),
+    )
     wd = tmp_path / "wd"
     logs_dir = tmp_path / "logs"
     wd.mkdir()

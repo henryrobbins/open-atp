@@ -50,36 +50,23 @@ class SandboxDead(ComputeError):
 
 
 class TransferError(ComputeError):
-    """A workdir file transfer (push into, or pull out of, the sandbox) failed.
-
-    The message leads with the transfer's op label (``push_dir`` / ``pull_wd``).
-    """
+    """A file transfer into or out of the sandbox failed."""
 
 
 class ProvisionError(ComputeError):
-    """The sandbox/container failed to come up for a run.
-
-    Covers a substrate that never produced a usable sandbox: the Docker daemon down
-    or unreachable, or a Modal ``App.lookup`` / ``Sandbox.create`` failure (capacity, a
-    rejected token). Distinct from a mid-run loss (:class:`SandboxDead`).
-    """
+    """The sandbox/container failed to come up for a run."""
 
 
 class ImageUnavailable(ProvisionError):
-    """The Lean+Mathlib sandbox image is not available to the backend.
+    """The OpenATP Docker image is not available to the backend.
 
-    Raised when the ``open-atp`` image has not been built locally (Docker) or
-    published (Modal), so provisioning cannot start.
+    The most likely cause is the image has not yet been built. Build with the
+    ``open-atp build-docker-image`` and ``open-atp build-modal-image`` commands.
     """
 
 
 class CommandTimeout(Exception):
     """A sandbox command was killed for exceeding its own wall-clock budget.
-
-    Deliberately **not** a :class:`ComputeError`: this is the command using up the
-    budget it was given -- a healthy timeout -- not an infra fault. The backend raises
-    it from a live command's ``wait`` when the command was force-killed at its
-    deadline. :attr:`result` carries whatever the command produced before the kill.
 
     Attributes
     ----------
@@ -182,7 +169,6 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         *,
         timeout_s: int,
         env: Mapping[str, str] | None = None,
-        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         """Run ``command`` in the live sandbox; the handle does NOT tear it down.
 
@@ -191,16 +177,12 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         command : str
             The shell command to run in the live sandbox.
         timeout_s : int
-            Wall-clock cap for the command, in seconds. Enforced by killing the command
-            when it is exceeded (a killed process surfaces exit code ``124``).
+            Wall-clock cap for the command, in seconds. When the command exceeds this
+            budget it is killed, surfaced as :class:`CommandTimeout` from
+            :meth:`~CommandHandle.wait`.
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
-        raise_on_timeout : bool
-            When the command is killed for exceeding ``timeout_s``, raise
-            :class:`CommandTimeout` from :meth:`~CommandHandle.wait` instead of
-            returning a result with the timeout exit code. Default ``False`` -- callers
-            that read the exit code themselves (the verifier) leave it off.
 
         Returns
         -------
@@ -403,4 +385,5 @@ class ComputeBackend(abc.ABC):
             lean_file = tmp_path / "Trivial.lean"
             lean_file.write_text("theorem trivial_proof : True := trivial\n")
             project = create_project([lean_file], tmp_path / "project")
-            return Verifier(self).verify(project).verified
+            report = Verifier(self).verify(project)
+            return report is not None and report.verified

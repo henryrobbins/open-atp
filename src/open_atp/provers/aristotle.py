@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, TypeVar
 from open_atp._capture import capture_stdout
 from open_atp.backends.base import ComputeBackend
 from open_atp.harness.base import MissingCredentials
-from open_atp.lean import ProofTask
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
     ProofResult,
@@ -260,6 +260,10 @@ class AristotleProver(AutomatedProver):
         result.completed_files = completed
         # The Aristotle API does not expose a per-run cost; leave it unset.
         result.cost_usd = None
+
+        # Generation was network-only, so there is no live session to reuse: run the
+        # shared check in a fresh sandbox over the extracted workdir.
+        result.verification = self.verifier.verify(LeanProject(wd))
 
     async def _submit_and_download(
         self, project_dir: Path, prompt: str, dest_tar: Path, logs_dir: Path

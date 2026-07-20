@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import io
 import json
-import shutil
 import tarfile
 from pathlib import Path
 
@@ -314,27 +313,6 @@ def test_prove_verified_candidate_sets_status(tmp_path: Path) -> None:
     assert result.success
     assert result.status is ProofStatus.VERIFIED
     assert result.error is None and result.error_msg is None
-
-
-def test_prove_runs_standalone_verify_when_generate_leaves_it_unset(
-    tmp_path: Path,
-) -> None:
-    """If _generate does not set verification, prove falls back to the verifier."""
-    calls: list[LeanProject] = []
-
-    class NoVerifyProver(FakeProver):
-        def _generate(self, task, wd, logs_dir, result):  # type: ignore[no-untyped-def]
-            # Stage a real lake project so the base's LeanProject(wd) is valid.
-            shutil.copytree(task.project.root, wd, dirs_exist_ok=True)
-            result.completed_files = {"MILExample.lean": "x"}
-
-    prover = NoVerifyProver("agent")
-    report = VerificationReport(compiles=True, sorry_free=True)
-    prover.verifier.verify = lambda project: (  # type: ignore[method-assign]
-        calls.append(project) or report
-    )
-    result = prover.prove(_task(), tmp_path / "run")
-    assert result.verification is report and len(calls) == 1
 
 
 # --- serialization ---------------------------------------------------------

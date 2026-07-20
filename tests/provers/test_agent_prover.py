@@ -311,13 +311,12 @@ def test_generate_reports_no_changes_when_agent_does_nothing(
 class _ExitCodeHandle(CommandHandle):
     """A finished command reporting a fixed exit code and no output.
 
-    Models the real backend handles: when the caller opts in and the command exited
-    with the coreutils-``timeout`` code, ``wait`` raises :class:`CommandTimeout`.
+    Models the real backend handles: a command that exited with the
+    coreutils-``timeout`` code makes ``wait`` raise :class:`CommandTimeout`.
     """
 
-    def __init__(self, exit_code: int, *, raise_on_timeout: bool = False) -> None:
+    def __init__(self, exit_code: int) -> None:
         self._exit_code = exit_code
-        self._raise_on_timeout = raise_on_timeout
 
     def stream(self) -> Iterator[str]:
         return iter(())
@@ -326,7 +325,7 @@ class _ExitCodeHandle(CommandHandle):
         result = CommandResult(
             exit_code=self._exit_code, stdout="", stderr="", duration_s=0.0
         )
-        if self._raise_on_timeout and self._exit_code == TIMEOUT_EXIT_CODE:
+        if self._exit_code == TIMEOUT_EXIT_CODE:
             raise CommandTimeout("command exceeded its budget", result=result)
         return result
 
@@ -335,9 +334,9 @@ class _ExitCodeSession(ComputeSession):
     """A real session whose first exec (the agent) reports ``agent_exit``; rest 0.
 
     Models a backend that caps the agent command: the generation exec comes back with
-    a coreutils-``timeout`` exit code (raising :class:`CommandTimeout` since the agent
-    run opts in), then the in-session verify exec runs normally (empty compile log ->
-    the candidate does not verify).
+    a coreutils-``timeout`` exit code (raising :class:`CommandTimeout`), then the
+    in-session verify exec runs normally (empty compile log -> the candidate does not
+    verify).
     """
 
     def __init__(self, agent_exit: int) -> None:
@@ -350,12 +349,9 @@ class _ExitCodeSession(ComputeSession):
         *,
         env: Mapping[str, str] | None = None,
         timeout_s: int,
-        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         first, self._execs = self._execs == 0, self._execs + 1
-        return _ExitCodeHandle(
-            self._agent_exit if first else 0, raise_on_timeout=raise_on_timeout
-        )
+        return _ExitCodeHandle(self._agent_exit if first else 0)
 
     def sync_out(self) -> None:
         pass

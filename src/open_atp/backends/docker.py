@@ -54,7 +54,6 @@ class DockerCommandHandle(CommandHandle):
     started_at: float
     budget_s: int
     deadline_s: float
-    raise_on_timeout: bool = False
     _stdout_lines: list[str] = field(default_factory=list)
 
     def stream(self) -> Iterator[str]:
@@ -71,7 +70,7 @@ class DockerCommandHandle(CommandHandle):
         The in-container ``timeout`` wrapper caps the command; if it fails to kill in
         time the local ``communicate`` deadline is a backstop that ``docker kill``s the
         container. A command killed for exceeding its budget exits ``124`` -- surfaced
-        as :class:`~open_atp.backends.base.CommandTimeout` when the caller opted in.
+        as :class:`~open_atp.backends.base.CommandTimeout`.
         """
         try:
             stdout, stderr = self.popen.communicate(timeout=self.deadline_s)
@@ -102,7 +101,7 @@ class DockerCommandHandle(CommandHandle):
                 "duration_s": round(result.duration_s, 1),
             },
         )
-        if self.raise_on_timeout and result.exit_code == TIMEOUT_EXIT_CODE:
+        if result.exit_code == TIMEOUT_EXIT_CODE:
             raise CommandTimeout(
                 f"command exceeded its {self.budget_s}s budget and was killed",
                 result=result,
@@ -307,7 +306,6 @@ class DockerSession(ComputeSession):
         *,
         timeout_s: int,
         env: Mapping[str, str] | None = None,
-        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         """``docker exec`` ``command`` into the container; close() owns teardown.
 
@@ -345,7 +343,6 @@ class DockerSession(ComputeSession):
             started_at=time.time(),
             budget_s=timeout_s,
             deadline_s=timeout_s + TIMEOUT_KILL_AFTER_S + 30,
-            raise_on_timeout=raise_on_timeout,
         )
 
     def sync_out(self) -> None:

@@ -333,8 +333,6 @@ class ModalCommandHandle(CommandHandle):
     deadline_s: float
     #: Budget the command was given, for the timeout message.
     budget_s: int = 0
-    #: Raise CommandTimeout (rather than return exit 124) on a budget kill.
-    raise_on_timeout: bool = False
     _stdout_lines: list[str] = field(default_factory=list)
     _buf: str = ""
 
@@ -392,11 +390,11 @@ class ModalCommandHandle(CommandHandle):
 
         A command killed by the in-Sandbox coreutils ``timeout`` for exceeding its
         budget exits ``124``; surfaced as
-        :class:`~open_atp.backends.base.CommandTimeout` when the caller opted in, so a
-        budget timeout is told apart from an infra stall (:class:`ExecTimeout`).
+        :class:`~open_atp.backends.base.CommandTimeout`, so a budget timeout is told
+        apart from an infra stall (:class:`ExecTimeout`).
         """
         result = self._collect_result()
-        if self.raise_on_timeout and result.exit_code == TIMEOUT_EXIT_CODE:
+        if result.exit_code == TIMEOUT_EXIT_CODE:
             raise CommandTimeout(
                 f"command exceeded its {self.budget_s}s budget and was killed",
                 result=result,
@@ -769,7 +767,6 @@ class ModalSession(ComputeSession):
         *,
         timeout_s: int,
         env: Mapping[str, str] | None = None,
-        raise_on_timeout: bool = False,
     ) -> CommandHandle:
         """Exec ``command`` in the live Sandbox; close() owns teardown.
 
@@ -805,7 +802,6 @@ class ModalSession(ComputeSession):
             started_at=started_at,
             deadline_s=_sb_exec_deadline(timeout_s),
             budget_s=timeout_s,
-            raise_on_timeout=raise_on_timeout,
         )
 
     def sync_out(self) -> None:
