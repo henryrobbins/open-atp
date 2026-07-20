@@ -55,7 +55,7 @@ provers:
     company: { label: xAI, url: https://x.ai }
     paper: null
     cite: null
-    source: { label: xAI, url: https://x.ai/api }
+    source: null
 
   - name: AxProverBase
     page: axproverbase
