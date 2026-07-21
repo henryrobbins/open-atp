@@ -1,132 +1,101 @@
-"""Tests for the dict-config factory (:mod:`open_atp.config`).
+"""Tests for the standard prover catalog (:mod:`open_atp.config`).
 
 All offline: construction wires backends/harnesses/provers together but contacts no
-daemon, so these exercise the dispatch + kwargs plumbing and the loud-on-typo guard.
+daemon.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from open_atp.config import build_backend, build_harness, build_prover
+from open_atp import standard_prover, standard_provers
+from open_atp.backends.docker import DockerBackend
+from open_atp.config import STANDARD_PROVERS, _build_backend, _build_harness
 from open_atp.harness import ClaudeCodeHarness, CodexHarness, VibeHarness
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.provers.agent_prover import AgentProver
 from open_atp.provers.aristotle import AristotleProver
 from open_atp.provers.numina import NuminaProver
 
-# --- build_backend ---------------------------------------------------------
+# --- the catalog -----------------------------------------------------------
 
 
-def test_build_backend_docker_defaults() -> None:
-    backend = build_backend({"type": "docker"})
-    assert backend.name == "docker"
-    assert backend.image == DEFAULT_IMAGE
+def test_standard_provers_lists_the_catalog_keys() -> None:
+    assert standard_provers() == list(STANDARD_PROVERS)
 
 
-def test_build_backend_modal_with_knobs() -> None:
-    backend = build_backend({"type": "modal", "cpu": 4, "memory_mib": 8192})
-    assert backend.name == "modal"
-    assert backend.cpu == 4
-    assert backend.memory_mib == 8192
+@pytest.mark.parametrize("name", sorted(STANDARD_PROVERS))
+def test_every_standard_prover_builds(name: str) -> None:
+    prover = standard_prover(name, backend=DockerBackend())
+    assert prover.name == name
+    assert prover.verifier.backend.name == "docker"
 
 
-def test_build_backend_coerces_nested_image_mapping() -> None:
-    backend = build_backend(
+def test_agentic_entries_are_one_prover_on_different_harnesses() -> None:
+    backend = DockerBackend()
+    claude = standard_prover("claude", backend=backend)
+    codex = standard_prover("codex", backend=backend)
+
+    assert isinstance(claude, AgentProver) and isinstance(codex, AgentProver)
+    assert isinstance(claude.harness, ClaudeCodeHarness)
+    assert isinstance(codex.harness, CodexHarness)
+    assert codex.harness.model == "gpt-5.5"  # the harness's baked-in default
+
+
+def test_standalone_provers_are_their_own_classes() -> None:
+    backend = DockerBackend()
+    assert isinstance(standard_prover("numina", backend=backend), NuminaProver)
+    assert isinstance(standard_prover("aristotle", backend=backend), AristotleProver)
+
+
+def test_unknown_standard_prover_raises() -> None:
+    with pytest.raises(ValueError, match="unknown prover 'nope'"):
+        standard_prover("nope", backend=DockerBackend())
+
+
+# --- the dict factory ------------------------------------------------------
+#
+# The spec factories are private: in production they are reached only through the
+# CLI's ``--config`` file, and test_cli.py covers that path end to end. They are
+# exercised directly here because the dispatch/validation in ``_split`` is the
+# intricate part -- the loud-on-typo guard exists to turn a silently-ignored YAML
+# key into an error, and driving every branch of it through a config file would
+# obscure what is being asserted.
+
+
+def test_backend_spec_dispatches_and_carries_knobs() -> None:
+    docker = _build_backend({"type": "docker"})
+    assert docker.name == "docker"
+    assert docker.image == DEFAULT_IMAGE
+
+    modal = _build_backend({"type": "modal", "cpu": 4, "memory_mib": 8192})
+    assert modal.name == "modal"
+    assert (modal.cpu, modal.memory_mib) == (4, 8192)  # type: ignore[attr-defined]
+
+
+def test_backend_spec_coerces_a_nested_image_mapping() -> None:
+    backend = _build_backend(
         {"type": "docker", "image": {"lean_toolchain": "leanprover/lean4:v4.31.0"}}
     )
     assert backend.image.lean_toolchain == "leanprover/lean4:v4.31.0"
 
 
-# --- build_harness ---------------------------------------------------------
-
-
-def test_build_harness_from_mapping() -> None:
-    harness = build_harness({"type": "codex", "effort": "low"})
+def test_harness_spec_accepts_a_mapping_or_a_bare_type_name() -> None:
+    harness = _build_harness({"type": "codex", "effort": "low"})
     assert isinstance(harness, CodexHarness)
-    assert harness.model == "gpt-5.5"  # codex's baked-in default
     assert harness.effort == "low"
 
-
-def test_build_harness_string_shorthand() -> None:
-    harness = build_harness("vibe")
-    assert isinstance(harness, VibeHarness)
-    assert harness.agent == "lean"
+    assert isinstance(_build_harness("vibe"), VibeHarness)
 
 
-# --- build_prover ----------------------------------------------------------
-
-
-def test_build_prover_agent_with_nested_harness() -> None:
-    prover = build_prover(
-        {
-            "compute": {"type": "docker", "image": {"mathlib_rev": "v4.31.0"}},
-            "prover": {
-                "type": "agent",
-                "harness": {"type": "claude_code", "model": "claude-opus-4-8"},
-                "skills": ["lean-proof"],
-            },
-        }
-    )
-    assert isinstance(prover, AgentProver)
-    assert isinstance(prover.harness, ClaudeCodeHarness)
-    assert prover.harness.model == "claude-opus-4-8"
-    assert prover.skills == ["lean-proof"]
-    # The backend is wired into the prover's verifier.
-    assert prover.verifier.backend.name == "docker"
-    assert prover.verifier.backend.image.mathlib_rev == "v4.31.0"
-
-
-def test_build_prover_harness_string_shorthand() -> None:
-    prover = build_prover(
-        {"compute": {"type": "docker"}, "prover": {"type": "agent", "harness": "codex"}}
-    )
-    assert isinstance(prover.harness, CodexHarness)
-
-
-def test_build_prover_numina_on_modal() -> None:
-    prover = build_prover(
-        {
-            "compute": {"type": "modal", "cpu": 2},
-            "prover": {"type": "numina", "max_rounds": 5},
-        }
-    )
-    assert isinstance(prover, NuminaProver)
-    assert prover.max_rounds == 5
-    assert prover.verifier.backend.cpu == 2
-
-
-def test_build_prover_aristotle() -> None:
-    prover = build_prover(
-        {
-            "compute": {"type": "docker"},
-            "prover": {"type": "aristotle", "poll_interval_s": 3},
-        }
-    )
-    assert isinstance(prover, AristotleProver)
-    assert prover.poll_interval_s == 3
-
-
-# --- loud on bad input -----------------------------------------------------
-
-
-def test_unknown_compute_type_raises() -> None:
+def test_unknown_type_raises() -> None:
     with pytest.raises(ValueError, match="unknown compute type 'dockerr'"):
-        build_backend({"type": "dockerr"})
+        _build_backend({"type": "dockerr"})
 
-
-def test_unknown_prover_option_raises() -> None:
-    with pytest.raises(ValueError, match="unknown 'agent' prover option"):
-        build_prover(
-            {"compute": {"type": "docker"}, "prover": {"type": "agent", "effrt": "x"}}
-        )
-
-
-def test_unknown_harness_option_raises() -> None:
-    with pytest.raises(ValueError, match="unknown 'codex' harness option"):
-        build_harness({"type": "codex", "modl": "x"})
-
-
-def test_missing_type_raises() -> None:
     with pytest.raises(ValueError, match="unknown harness type None"):
-        build_harness({"model": "claude-opus-4-8"})
+        _build_harness({"model": "claude-opus-4-8"})
+
+
+def test_misspelled_option_raises_rather_than_being_ignored() -> None:
+    with pytest.raises(ValueError, match="unknown 'codex' harness option"):
+        _build_harness({"type": "codex", "modl": "x"})

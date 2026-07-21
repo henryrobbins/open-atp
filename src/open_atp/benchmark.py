@@ -239,8 +239,8 @@ def run_benchmark(
                     exc_info=exc,
                 )
                 # prover.prove() only raises exceptions that prevent the run from
-                # starting (e.g., missing credentials). To keep the result JSONL
-                # well-formatted, we synthesize a minimal failed ProofResult.
+                # starting (e.g., missing credentials), so synthesize a minimal
+                # failed ProofResult to keep every run's results.json uniform.
                 result = _errored_result(prover.name, run_dir, exc)
         (run_dir / "results.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str)

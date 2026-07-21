@@ -65,7 +65,7 @@ def _status_for_exception(exc: BaseException) -> ProofStatus:
     )
 
 
-def compose_prompt(prover_prompt: str, user_prompt: str | None) -> str:
+def _compose_prompt(prover_prompt: str, user_prompt: str | None) -> str:
     """Combine a prover's own prompt with the task's optional user prompt.
 
     ``prover_prompt`` is the prover-specific instruction set handed to the agent;

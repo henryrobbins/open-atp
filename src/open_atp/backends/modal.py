@@ -201,7 +201,7 @@ def _safe_stream(stream: Iterable[str], sb: modal.Sandbox) -> Iterator[str]:
 
     Yields
     ------
-    Iterator[str]
+    str
         Each stream chunk as the underlying stream delivers it.
 
     Raises
@@ -400,7 +400,7 @@ class ModalCommandHandle(CommandHandle):
 
 
 def _terminate(sb: modal.Sandbox) -> None:
-    """Tear down the Sandbox"""
+    """Tear down the Sandbox."""
     try:
         _safe_run(sb.terminate, timeout_s=TERMINATE_TIMEOUT_S, sb=sb, label="terminate")
     except Exception:
@@ -522,6 +522,8 @@ class ModalBackend(ComputeBackend):
     Examples
     --------
 
+    Constructing the backend records its config without provisioning a Sandbox:
+
     >>> from open_atp.backends.modal import ModalBackend
     >>> from open_atp.images import DEFAULT_IMAGE
     >>> backend = ModalBackend(image=DEFAULT_IMAGE, cpu=4.0)
@@ -636,9 +638,6 @@ class ModalBackend(ComputeBackend):
         secret = modal.Secret.from_dict(secret_dict)
 
         # Idle Sandbox with no main process: we must push the workdir before exec.
-        # Give the Sandbox SYNC_HEADROOM_S beyond the work budget: commands are
-        # coreutils-capped at the budget (see _exec_payload), so the Sandbox outlives
-        # a timed-out command and the partial workdir can still be pulled back.
         log.debug(
             "provisioning modal sandbox",
             extra={
@@ -657,6 +656,9 @@ class ModalBackend(ComputeBackend):
                 secrets=[secret],
                 cpu=cpu,
                 memory=self.memory_mib,
+                # Outlive the work budget: commands are separately coreutils-capped
+                # at it, so a timed-out command still leaves the Sandbox up long
+                # enough to pull the partial workdir back.
                 timeout=timeout_s + self.wallclock_overhead_s,
                 region=self.region,
             )
@@ -748,7 +750,16 @@ class ModalSession(ComputeSession):
 
     The filesystem is isolated, so :meth:`sync_out` (tar pull) and :meth:`sync_in`
     (tar push) bridge host<->Sandbox when a caller needs the host workdir current
-    between commands (e.g. a host-side diff, or Numina's statement tracker).
+    between commands, e.g. to diff the staged files partway through a run.
+
+    Parameters
+    ----------
+    backend : ModalBackend
+        The backend that provisioned the Sandbox.
+    sb : modal.Sandbox
+        The live Sandbox commands execute in.
+    workdir : pathlib.Path
+        Host directory mirrored into the Sandbox and pulled back on sync.
     """
 
     backend: ModalBackend

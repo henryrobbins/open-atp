@@ -48,15 +48,10 @@ class AxProverBaseHarness(Harness):
       ``axprover.yaml`` selecting the model/effort/iterations; it layers on top of
       ax-prover's bundled ``default.yaml`` (auto-prepended by the CLI), so it only
       needs to override the deltas.
-    * **Cost is not on stdout.** ax-prover streams human-readable logs; token usage
-      comes from its ``-o`` JSON (the per-target ``ax_output.<target>.json`` files the
-      launch script writes), which carries ``input_tokens``/``output_tokens`` alongside
-      ``{success, error, summary}`` as of the pinned fork commit (see ``AX_PROVER_REF``
-      in ``__main__.py``). :meth:`parse_result` sums those across every target and
-      leaves ``cost_usd`` ``None`` so the prover converts tokens->USD via the
-      fallback table, exactly like :class:`CodexHarness`. (On an ax-prover build
-      without those fields the tokens are simply absent and the run reports zero
-      cost.)
+    * **Cost is not on stdout.** ax-prover streams human-readable logs, so token
+      usage is read from the JSON it writes per target instead. ``cost_usd`` is left
+      ``None`` and the prover converts tokens->USD via the fallback table, exactly
+      like :class:`CodexHarness`.
 
     Parameters
     ----------
@@ -74,6 +69,9 @@ class AxProverBaseHarness(Harness):
 
     Examples
     --------
+
+    Constructing the harness resolves its defaults:
+
     >>> from open_atp.harness import AxProverBaseHarness
     >>> harness = AxProverBaseHarness()
     >>> harness.name

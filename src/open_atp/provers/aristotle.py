@@ -3,10 +3,10 @@
 No agentic sandbox is needed for generation -- we hand the lake project to the
 hosted Aristotle agent via ``aristotlelib`` (submit -> wait -> download), unpack the
 returned archive over the workdir, and let the shared verifier do the final check in
-our own Docker sandbox. This is the platform's simplest end-to-end slice.
+our own Docker sandbox.
 
-The remote interaction is isolated in :meth:`AristotleProver._submit_and_download`
-so tests can stand in a fake result without touching the network or an API key.
+All remote interaction is confined to a single coroutine, so the rest of the prover
+runs without the network or an API key.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
     ProofResult,
-    compose_prompt,
+    _compose_prompt,
 )
 
 if TYPE_CHECKING:
@@ -114,11 +114,11 @@ class AristotleProver(AutomatedProver):
     api_key : str, optional
         The Harmonic API key. ``None`` (default) reads it from the host
         ``ARISTOTLE_API_KEY`` env var.
-    allow_agent_questions : bool
-        Whether to let the hosted agent ask clarifying questions. Off by default:
-        this is a headless API path and a prompt for stdin would hang the run.
+    allow_agent_questions : bool, default False
+        Whether to let the hosted agent ask clarifying questions. This is a headless
+        API path, so a prompt for stdin would hang the run.
     max_connection_retries : int, default 5
-        Bounds per-call retries (list/refresh/download) when a connection drops.
+        Bounds retries of each API call when a connection drops.
         The hosted run lives server-side, so a dropped connection is recoverable:
         re-fetch rather than reporting the run failed.
     retry_backoff_seconds : float, default 5.0
@@ -203,7 +203,7 @@ class AristotleProver(AutomatedProver):
             for p in task.project.lean_files()
         }
 
-        prompt = compose_prompt(self.prover_prompt, task.user_prompt)
+        prompt = _compose_prompt(self.prover_prompt, task.user_prompt)
         # The raw result archive and the full run record both belong with the run's
         # logs, not the proof project. The hosted agent has no live stdout stream, so
         # its record (events, transcript, summary) is downloaded here rather than teed.
@@ -254,7 +254,7 @@ class AristotleProver(AutomatedProver):
         Also syncs the full run record (task metadata, every event, a readable
         transcript, project metadata) to ``logs_dir`` on the host.
 
-        Returns ``(downloaded_tar_or_None, metadata)``. Isolated for testing.
+        Returns ``(downloaded_tar_or_None, metadata)``.
         """
         import aristotlelib
         from aristotlelib import AgentQuestionsSetting, Project

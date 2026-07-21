@@ -6,9 +6,8 @@ Runs an arbitrary command over a workdir in a Lean+Mathlib container. Mechanics:
   ``/workspace/wd`` (so file mutations land on the host with no copy-out step).
 * A unique container name so a run can be cancelled with ``docker kill``.
 * The image bakes a warm Mathlib olean cache at ``/workspace/.lake``; every command
-  is wrapped to ``cd`` into the mount and symlink ``.lake`` to it, mirroring
-  milp_flare's ``entrypoint.sh``. This is the one image-layout convention the backend
-  owns, keeping the verifier image-agnostic.
+  is wrapped to ``cd`` into the mount and symlink ``.lake`` to it. This is the one
+  image-layout convention the backend owns, keeping the verifier image-agnostic.
 """
 
 from __future__ import annotations
@@ -132,6 +131,8 @@ class DockerBackend(ComputeBackend):
 
     Examples
     --------
+
+    Constructing the backend records its config without contacting the daemon:
 
     >>> from open_atp.backends.docker import DockerBackend
     >>> from open_atp.images import DEFAULT_IMAGE
@@ -289,6 +290,13 @@ class DockerSession(ComputeSession):
 
     The workdir is bind-mounted, so :meth:`sync_out`/:meth:`sync_in` are no-ops --
     edits already live on the host.
+
+    Parameters
+    ----------
+    backend : DockerBackend
+        The backend that provisioned the container.
+    container : str
+        Name of the running container commands are ``docker exec``'d into.
     """
 
     backend: DockerBackend

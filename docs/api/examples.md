@@ -11,6 +11,8 @@ exercise sources are shown on the {doc}`../examples` page.
 ```{eval-rst}
 .. autofunction:: open_atp.examples.example_task
 
+.. autofunction:: open_atp.examples.example_assets
+
 .. autoclass:: open_atp.examples.EXAMPLE
    :members:
 ```

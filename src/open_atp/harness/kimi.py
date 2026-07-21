@@ -21,15 +21,18 @@ class KimiHarness(Harness):
     ----------
     model : str, default "kimi-code/k3"
         Model alias the agent runs (a ``config.toml`` alias). The default is K3.
-    effort : str
-        Reasoning-effort level, one of ``"low"``, ``"high"`` (default), or ``"max"``.
-    home_dir : Path, optional
+    effort : str, default "high"
+        Reasoning-effort level, one of ``"low"``, ``"high"``, or ``"max"``.
+    home_dir : pathlib.Path, optional
         The Kimi Code data directory to stage credentials from. ``None`` (default)
         uses ``$KIMI_CODE_HOME`` or ``~/.kimi-code`` (from ``kimi login``);
         resolution fails if absent.
 
     Examples
     --------
+
+    Constructing the harness resolves its defaults:
+
     >>> from open_atp.harness import KimiHarness
     >>> harness = KimiHarness()
     >>> harness.name

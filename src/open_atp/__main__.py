@@ -40,8 +40,8 @@ from open_atp.benchmark import (
     tasks_from_dir,
 )
 from open_atp.config import (
+    _build_backend,
     _build_prover,
-    build_backend,
     standard_prover,
     standard_provers,
 )
@@ -243,7 +243,7 @@ def _prove(args: argparse.Namespace) -> int:
         project = LeanProject(src)
     task = ProofTask(project)
 
-    backend = build_backend({"type": args.compute})
+    backend = _build_backend({"type": args.compute})
     prover = standard_prover(args.prover, backend=backend)
     result = prover.prove(task, Path(args.output))
 
@@ -391,7 +391,7 @@ def _benchmark(args: argparse.Namespace) -> int:
     directory = Path(args.dataset)
 
     spec = _compute_spec(config.get("compute", "docker"), args.compute)
-    backend = build_backend(spec)
+    backend = _build_backend(spec)
     registry = _build_registry(config.get("provers"), backend)
     provers = _select_provers(registry, args.provers, backend)
     # --timeout is the per-task generation budget: chain it onto each prover
@@ -662,7 +662,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument(
         "--timeout",
         type=float,
-        help="Per-task wall-clock timeout in minutes (default: 30).",
+        help="Per-task wall-clock timeout in minutes; defaults to the prover's own.",
     )
     benchmark.add_argument(
         "--json",

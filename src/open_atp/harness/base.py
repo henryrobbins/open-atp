@@ -1,6 +1,6 @@
-"""The harness contract: the *agent* concern of :class:`~...agent_prover.AgentProver`.
+"""The harness contract: the *agent* concern of the agent prover.
 
-A :class:`Harness` knows, for one agent CLI (Claude Code / Codex / OpenCode):
+A :class:`Harness` knows, for one agent CLI:
 
 * how to populate the working directory from its assets (launch script, MCP
   config, skills) -- :meth:`Harness.stage_wd` -- and where to write the prompt the
@@ -113,7 +113,7 @@ class AgentAuth:
     env : dict[str, str], optional
         Environment variables (name -> value) to forward into the sandbox. Defaults
         to an empty mapping.
-    mounts : list[tuple[Path, str]], optional
+    mounts : list[tuple[pathlib.Path, str]], optional
         Host directories to expose under the sandbox's ``$HOME``, as
         ``(host_dir, dest_basename)`` pairs (e.g. ``(~/.codex, ".codex")``).
         Defaults to an empty list.
@@ -163,8 +163,8 @@ class Harness(ABC):
     Parameters
     ----------
     model : str, default "claude-opus-4-8"
-        Model id the agent runs. Codex defaults to ``"gpt-5.5"`` and Vibe to
-        ``"magistral-medium-latest"``.
+        Model id the agent runs. Subclasses override the default with the model
+        their CLI drives.
     effort : str, default "high"
         Reasoning-effort level passed to harnesses that support it.
     """
@@ -203,10 +203,8 @@ class Harness(ABC):
     def agent_auth(self) -> AgentAuth:
         """Resolve this harness's credentials into a ready-to-forward auth bundle.
 
-        Merges, in order: non-secret constants (:meth:`_static_env`) and resolved
-        required credentials (:meth:`_required_env`, which raises if a needed key is
-        absent). Mount dirs come from :meth:`_home_dirs`. Subclasses needing
-        best-effort host passthrough override this (see ``NuminaHarness``).
+        Raises :exc:`MissingCredentials` if a key this harness requires is absent
+        from both its explicit arguments and the host environment.
 
         Returns
         -------
@@ -374,11 +372,10 @@ class Harness(ABC):
         return result
 
     def _log_usage(self, result: HarnessRunResult) -> None:
-        """Log a run's parsed token/cost totals at INFO.
+        """Log a run's parsed token/cost totals.
 
-        Called by every :meth:`parse_result` (the base one and the Vibe/ax-prover
-        overrides) so a run's usage is visible on the ``open_atp`` logger regardless
-        of which harness produced it.
+        Kept separate from :meth:`parse_result` so usage lands on the ``open_atp``
+        logger regardless of which harness produced it.
         """
         log.debug(
             "parsed agent usage",
@@ -396,11 +393,10 @@ class Harness(ABC):
 
         The streamed event JSONL the prover captures from stdout *is* the agent's
         transcript for every CLI harness, so the default does nothing. Harnesses that
-        *also* drop a richer record inside the workdir (Vibe's session log, ax-prover's
-        per-target logs) override this to relocate those files -- so ``download_wd``
-        stays the proof project and ``download_logs`` carries the full record. Called
-        after :meth:`parse_result` (which may read those files for cost), so moving
-        them is safe.
+        *also* drop a richer record inside the workdir override this to relocate those
+        files, so the downloaded workdir stays the proof project and the downloaded
+        logs carry the full record. Runs after :meth:`parse_result`, which may read
+        those files for cost, so moving them is safe.
 
         Parameters
         ----------

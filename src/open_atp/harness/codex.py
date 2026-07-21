@@ -27,12 +27,15 @@ class CodexHarness(Harness):
         Model id the agent runs; must be an OpenAI model.
     effort : str, default "high"
         Reasoning-effort level.
-    auth_file : Path, optional
+    auth_file : pathlib.Path, optional
         The Codex ``auth.json`` to mount. ``None`` (default) uses ``~/.codex/auth.json``
         (from ``codex login``); resolution fails if the file is absent.
 
     Examples
     --------
+
+    Constructing the harness resolves its defaults:
+
     >>> from open_atp.harness import CodexHarness
     >>> harness = CodexHarness()
     >>> harness.name
@@ -68,9 +71,8 @@ class CodexHarness(Harness):
         # config.toml registers personal MCP servers (e.g. a localhost Zotero server)
         # that don't exist in the sandbox, and codex aborts when one is unreachable.
         # Stage a minimal .codex holding just auth.json -- the launch script supplies
-        # the lean-lsp MCP via -c overrides, so no host config is needed. Staged once
-        # and cached so both _auth() calls (mounts, then env) return the same dir and
-        # it survives until the backend mounts it.
+        # the lean-lsp MCP via -c overrides, so no host config is needed. Cached so
+        # the staged dir survives until the backend mounts it.
         auth = self._auth_file or Path.home() / ".codex" / "auth.json"
         if not auth.is_file():
             log.error(

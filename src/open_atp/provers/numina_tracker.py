@@ -280,7 +280,21 @@ ChangeType = Literal["modified", "added", "removed"]
 
 @dataclass
 class StatementChange:
-    """One detected difference between a file's initial and current statements."""
+    """One detected difference between a file's initial and current statements.
+
+    Parameters
+    ----------
+    file_path : pathlib.Path
+        The Lean file the change was found in.
+    name : str
+        Declaration name of the affected theorem or lemma.
+    original : str
+        The statement as captured in the initial snapshot; empty when added.
+    current : str
+        The statement as it now stands; empty when removed.
+    change_type : {"modified", "added", "removed"}
+        How the statement differs from the snapshot.
+    """
 
     file_path: Path
     name: str

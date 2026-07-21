@@ -36,15 +36,17 @@ class OpenCodeHarness(Harness):
         Model id the agent runs. Must be supported by the chosen provider.
     effort : str, default "high"
         Reasoning-effort level.
-    auth : str
-        Authentication strategy, ``"api_key"`` (default) or ``"login"``.
-        See :ref:`opencode-authentication` for details.
+    auth : str, default "api_key"
+        Authentication strategy, ``"api_key"`` or ``"login"``. Any other value raises
+        :exc:`ValueError`. See :ref:`opencode-authentication` for details.
     api_key : str, optional
-        For ``auth="api_key"``, the provider's API key. ``None`` reads the host
-        environment.
+        For ``auth="api_key"``, the provider's API key. ``None`` (default) reads the
+        host environment, and resolution fails if the key is set in neither. Ignored
+        when ``auth="login"``.
 
     Examples
     --------
+
     By default, the harness authenticates with the provider's API key and reads
     the value from the host environment.
 

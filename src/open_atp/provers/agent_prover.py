@@ -2,15 +2,16 @@
 
 An ``AgentProver`` composes:
 
-* a :class:`~open_atp.harness.Harness` (claude_code / codex / opencode) -- the
-  *agent* concern: launch script, auth forwarding, output parsing; and
+* a :class:`~open_atp.harness.Harness` -- the *agent* concern: launch script,
+  auth forwarding, output parsing; and
 * a :class:`~open_atp.backends.base.ComputeBackend` -- the *compute* concern:
   where the agent runs, with Lean+Mathlib and the lean-lsp MCP server.
 
 ``prove`` stages the project into the workdir, lets the agent fill the sorrys in
 place, then diffs the ``.lean`` files against the staged originals to report what
-changed. The shared :class:`~open_atp.verify.Verifier` (owned by the base
-``run``) does the final compile/sorry/axiom check.
+changed. The shared :class:`~open_atp.verify.Verifier` (owned by
+:meth:`~open_atp.provers.base.AutomatedProver.prove`) does the final
+compile/sorry/axiom check.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ from open_atp.provers.base import (
     AutomatedProver,
     GenerationTimeout,
     ProofResult,
-    compose_prompt,
+    _compose_prompt,
 )
 
 log = logging.getLogger("open_atp")
@@ -110,7 +111,7 @@ class AgentProver(AutomatedProver):
     :class:`~open_atp.backends.base.ComputeBackend` (the *compute* concern): the
     harness edits the staged ``.lean`` files in place, then the shared
     :class:`~open_atp.verify.Verifier` does the final compile/sorry/axiom check.
-    ``codex``, ``opencode``, ``axproverbase``, and ``vibe`` are this prover on a
+    Most entries in :data:`~open_atp.config.STANDARD_PROVERS` are this prover on a
     different harness.
 
     Parameters
@@ -124,13 +125,8 @@ class AgentProver(AutomatedProver):
         key so ``claude``/``leanstral`` report their user-facing name rather than
         the harness name (``claude_code``/``vibe``).
     harness : Harness, optional
-        The harness to drive and its knobs:
-        :class:`~open_atp.harness.ClaudeCodeHarness` (default),
-        :class:`~open_atp.harness.CodexHarness`,
-        :class:`~open_atp.harness.OpenCodeHarness`,
-        :class:`~open_atp.harness.VibeHarness`, or
-        :class:`~open_atp.harness.AxProverBaseHarness`. Carries ``model``/``effort``
-        plus any harness-specific knobs. Plugins are Claude-only and live on
+        The harness to drive, carrying ``model``/``effort`` plus any
+        harness-specific knobs. Defaults to
         :class:`~open_atp.harness.ClaudeCodeHarness`.
     skills : list[str], default ["lean-proof"]
         Skills to mount into the agent workdir, each a name (resolved from the
@@ -211,7 +207,7 @@ class AgentProver(AutomatedProver):
         harness = self.harness
         harness.stage_wd(wd)
         harness.stage_skills(wd, [resolve_skill(s) for s in self.skills])
-        harness.write_prompt(wd, compose_prompt(self.prover_prompt, task.user_prompt))
+        harness.write_prompt(wd, _compose_prompt(self.prover_prompt, task.user_prompt))
         stdout_path = logs_dir / "stdout.txt"
 
         # 4. Run the agent and the final check in one persistent sandbox: generation
@@ -393,10 +389,6 @@ class AgentProver(AutomatedProver):
         ``timeout_s`` is the agent's wall-clock budget, enforced by the backend killing
         the command when it is exceeded. A multi-round caller passes the *remaining*
         budget so successive rounds share one sandbox lifetime.
-
-        Isolated (it owns credential resolution + the backend call) so tests can
-        stand in a fake run -- write a solved file, return a captured stream --
-        without Docker or credentials.
         """
         env, _ = self._auth(harness)
         lines: list[str] = []
