@@ -233,19 +233,19 @@ def test_auth_status_json_reports_every_standard_prover(
     assert {s["kind"] for s in statuses.values()} == {"api key", "oauth"}
 
 
-def test_auth_status_table_flags_a_credential_that_cannot_self_refresh(
+def test_auth_status_table_leaves_an_elapsed_window_blank(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     store = tmp_path / ".local" / "share" / "opencode"
     store.mkdir(parents=True)
-    # An expired-but-refreshable login: valid on the host once its CLI renews it,
-    # but a sandbox copy can never do so itself.
     store.joinpath("auth.json").write_text(
         json.dumps({"xai": {"access": "a", "refresh": "r", "expires": 1_000}})
     )
 
     rc = cli._auth_status(argparse.Namespace(json=False))
 
+    out = capsys.readouterr().out
     assert rc == 0
-    assert "sandboxed run cannot refresh" in capsys.readouterr().out
+    assert "expired" in out  # the status column carries the whole story
+    assert "ago" not in out

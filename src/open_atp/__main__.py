@@ -248,21 +248,17 @@ _AUTH_STYLES = {
 def _format_remaining(remaining: timedelta | None) -> str:
     """A credential's time left, coarsened to its two largest units.
 
-    An elapsed window reads as how long ago it lapsed (``"9h 50m ago"``); the status
-    column already says *that* it expired.
+    Blank once the window has passed -- the status column already says it expired,
+    and how long ago is not what you act on.
     """
-    if remaining is None:
+    if remaining is None or remaining <= timedelta(0):
         return "—"
-    hours, seconds = divmod(int(abs(remaining).total_seconds()), 3600)
+    hours, seconds = divmod(int(remaining.total_seconds()), 3600)
     days, hours = divmod(hours, 24)
     minutes = seconds // 60
     if days:
-        text = f"{days}d {hours}h"
-    elif hours:
-        text = f"{hours}h {minutes}m"
-    else:
-        text = f"{minutes}m"
-    return f"{text} ago" if remaining <= timedelta(0) else text
+        return f"{days}d {hours}h"
+    return f"{hours}h {minutes}m" if hours else f"{minutes}m"
 
 
 def _abbreviate_home(source: str) -> str:
@@ -281,7 +277,6 @@ def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
     table.add_column("credential", overflow="fold")
     table.add_column("status", justify="center")
     table.add_column("expires in", justify="right")
-    table.add_column("refreshable", justify="center")
     for name, status in statuses.items():
         state = status.state()
         style = _AUTH_STYLES[state]
@@ -291,7 +286,6 @@ def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
             _abbreviate_home(status.source),
             f"[{style}]{state.value}[/]",
             _format_remaining(status.time_remaining()),
-            "✓" if status.refreshable else "—",
         )
     return table
 
@@ -328,14 +322,6 @@ def _auth_status(args: argparse.Namespace) -> int:
         return 0
 
     Console().print(_auth_table(statuses))
-    # A refreshable token is renewed by its CLI on the host, never in a sandbox: the
-    # credential is copied in, so a refresh there dies with the container.
-    stale = {AuthState.EXPIRING, AuthState.EXPIRED}
-    if any(s.refreshable and s.state() in stale for s in statuses.values()):
-        print(
-            "note: a sandboxed run cannot refresh its own credential — re-run the "
-            "prover's CLI on this host (or log in again) to renew it first."
-        )
     return 0
 
 
