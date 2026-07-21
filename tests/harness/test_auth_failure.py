@@ -1,12 +1,11 @@
-"""What each agent CLI does when its credentials are bad.
+"""Every agent CLI, launched against a deliberately invalid credential.
 
-Every harness is launched in the Docker sandbox with a deliberately invalid
-credential and a throwaway prompt, so the run fails at authentication before any
-tokens are billed. Each run's exit code / stdout / stderr are written to
-``tests/.runs/auth-probe/<harness>.txt`` for inspection, and the output must be
-recognized by :func:`~open_atp.harness.is_auth_failure` -- the matcher
-``AgentProver`` raises :class:`~open_atp.harness.MissingCredentials` from. This is
-what keeps that matcher honest as the CLIs reword their errors.
+Each run fails at authentication before any tokens are billed, and ``prove`` must
+surface that as :class:`~open_atp.harness.MissingCredentials` rather than an
+ordinary unverified miss. This is what keeps that check honest as the CLIs reword
+their errors: they phrase a 401 six different ways, some on stdout and some only
+on stderr, and ax-prover exits 0 regardless. Each run's logs are kept under
+``tests/.runs/auth-probe/<harness>/`` for inspection.
 
 Marked ``docker`` (needs the built image, which carries the agent CLIs) but not
 ``agent_api``: no real credential is used and nothing is billed.
@@ -21,7 +20,6 @@ from pathlib import Path
 
 import pytest
 
-from open_atp.backends.base import CommandResult, CommandTimeout
 from open_atp.backends.docker import DockerBackend
 from open_atp.harness import (
     AxProverBaseHarness,
@@ -29,10 +27,12 @@ from open_atp.harness import (
     CodexHarness,
     Harness,
     KimiHarness,
+    MissingCredentials,
     OpenCodeHarness,
     VibeHarness,
-    is_auth_failure,
 )
+from open_atp.lean import LeanProject, ProofTask
+from open_atp.provers.agent_prover import AgentProver
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 ARTIFACTS = Path(__file__).parents[1] / ".runs" / "auth-probe"
@@ -40,12 +40,9 @@ ARTIFACTS = Path(__file__).parents[1] / ".runs" / "auth-probe"
 #: A credential that is well-formed enough to be sent and always rejected.
 BOGUS = "open-atp-invalid-credential"
 
-#: Kept trivial so a credential that unexpectedly *works* costs a few tokens
-#: rather than a proof attempt.
-PROBE_PROMPT = "Reply with the single word OK and stop."
-
-#: Auth rejection is one round trip; anything slower is the CLI hanging.
-TIMEOUT_S = 240
+#: Rejection is one round trip, plus whatever start-up the CLI does first
+#: (ax-prover warms up LeanSearch and its REPL cache before its first API call).
+TIMEOUT_S = 300
 
 
 def _claude(_: Path) -> Harness:
@@ -127,48 +124,21 @@ HARNESSES: list[pytest.param] = [
 ]
 
 
-def _record(name: str, result: CommandResult, lines: list[str]) -> None:
-    """Save the probe's raw output so the auth-failure patterns can be read off it."""
-    ARTIFACTS.mkdir(parents=True, exist_ok=True)
-    (ARTIFACTS / f"{name}.txt").write_text(
-        f"exit_code: {result.exit_code}\n"
-        f"duration_s: {result.duration_s:.1f}\n"
-        f"--- stdout ({len(lines)} lines) ---\n" + "\n".join(lines) + "\n"
-        f"--- stderr ---\n{result.stderr}\n"
-    )
-
-
 @pytest.mark.docker
 @pytest.mark.parametrize("build", HARNESSES)
-def test_bogus_credentials_fail_fast(
+def test_bogus_credential_raises_missing_credentials(
     build: Callable[[Path], Harness], tmp_path: Path, request: pytest.FixtureRequest
 ) -> None:
-    """Launch the harness with an invalid credential and record how it fails."""
-    harness = build(tmp_path)
-    wd = tmp_path / "wd"
-    shutil.copytree(FIXTURE, wd)
-    harness.stage_wd(wd)
-    harness.write_prompt(wd, PROBE_PROMPT)
-
-    backend = DockerBackend()
-    auth = harness.agent_auth()
-    mounts = [
-        (str(src), f"{backend.container_home}/{dest}") for src, dest in auth.mounts
-    ]
-    lines: list[str] = []
-    with backend.session(wd, mounts=mounts, timeout_s=TIMEOUT_S) as session:
-        handle = session.exec(harness.command, timeout_s=TIMEOUT_S, env=auth.env)
-        lines.extend(handle.stream())
-        try:
-            result = handle.wait()
-        except CommandTimeout as exc:
-            result = exc.result or CommandResult(124, "", "", 0.0)
-
-    name = request.node.callspec.id
-    _record(name, result, lines)
-    # Not the exit code: ax-prover's launch script keeps going past a failed target
-    # and exits 0 either way, so the output is what AgentProver keys the credential
-    # check off.
-    assert is_auth_failure("\n".join(lines) + "\n" + result.stderr), (
-        f"{name} rejected the credential with an unrecognized message"
+    """The real CLI rejects the credential and ``prove`` reports it as such."""
+    prover = AgentProver(
+        backend=DockerBackend(), harness=build(tmp_path), timeout_s=TIMEOUT_S
     )
+    run = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="rejected"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), run)
+
+    # Keep the CLI's own words around: they are the evidence behind the matcher.
+    kept = ARTIFACTS / request.node.callspec.id
+    shutil.rmtree(kept, ignore_errors=True)
+    shutil.copytree(run / "logs", kept)

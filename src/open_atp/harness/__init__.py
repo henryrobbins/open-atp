@@ -14,7 +14,6 @@ from open_atp.harness.base import (
     Harness,
     HarnessRunResult,
     MissingCredentials,
-    is_auth_failure,
 )
 from open_atp.harness.claude_code import ClaudeCodeHarness
 from open_atp.harness.codex import CodexHarness
@@ -42,7 +41,6 @@ __all__ = [
     "HarnessRunResult",
     "AgentAuth",
     "MissingCredentials",
-    "is_auth_failure",
     "SCRIPT_FILE",
     "PROMPT_FILE",
     "ClaudeCodeHarness",

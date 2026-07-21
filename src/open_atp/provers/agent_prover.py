@@ -32,9 +32,9 @@ from open_atp.harness import (
     Harness,
     MissingCredentials,
     compute_cost_usd,
-    is_auth_failure,
 )
 from open_atp.harness._catalog import resolve_skill
+from open_atp.harness.base import _is_auth_failure
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
@@ -345,7 +345,7 @@ class AgentProver(AutomatedProver):
         if result.completed_files:
             return
         evidence = next(
-            (ln for ln in (*lines, *stderr.splitlines()) if is_auth_failure(ln)), None
+            (ln for ln in (*lines, *stderr.splitlines()) if _is_auth_failure(ln)), None
         )
         if evidence is None:
             return

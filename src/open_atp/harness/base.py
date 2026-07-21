@@ -60,31 +60,8 @@ _AUTH_FAILURE = re.compile(
 )
 
 
-def is_auth_failure(output: str) -> bool:
-    """Whether an agent CLI's output shows its credential was rejected.
-
-    Distinguishes a run that never authenticated from one that ran and simply failed
-    to find a proof. Matches the phrasings the supported CLIs emit on a rejected or
-    absent credential, case-insensitively.
-
-    Parameters
-    ----------
-    output : str
-        Text from the agent run -- its stdout, its stderr, or both.
-
-    Returns
-    -------
-    bool
-        ``True`` if the text carries an authentication failure.
-
-    Examples
-    --------
-    >>> from open_atp.harness import is_auth_failure
-    >>> is_auth_failure('{"error":"authentication_failed","error_status":401}')
-    True
-    >>> is_auth_failure("error: unsolved goals")
-    False
-    """
+def _is_auth_failure(output: str) -> bool:
+    """Whether a line of agent output shows the credential was rejected."""
     return bool(_AUTH_FAILURE.search(output))
 
 
