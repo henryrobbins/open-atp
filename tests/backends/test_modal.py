@@ -16,6 +16,7 @@ import shutil
 import tarfile
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -220,6 +221,23 @@ def test_safe_run_timeout_raises_exec_timeout(monkeypatch) -> None:
             sb=FakeSandbox(dead=False),
             label="t",
         )
+
+
+def test_safe_run_timeout_holds_when_the_liveness_probe_is_slow(monkeypatch) -> None:
+    # A degraded network slows poll() itself, so a loop that assumes each iteration
+    # costs one poll interval undercounts elapsed time and overruns its deadline.
+    monkeypatch.setattr(modal_mod, "LIVENESS_POLL_INTERVAL_S", 0.01)
+
+    class SlowPollSandbox(FakeSandbox):
+        def poll(self):
+            time.sleep(0.1)
+            return None
+
+    blocked = threading.Event()
+    started = time.monotonic()
+    with pytest.raises(ExecTimeout):
+        _safe_run(blocked.wait, timeout_s=0.2, sb=SlowPollSandbox(), label="t")
+    assert time.monotonic() - started < 1.0
 
 
 # stream / drain / collect ---------------------------------------------------

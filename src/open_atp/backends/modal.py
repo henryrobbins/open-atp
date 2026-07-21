@@ -150,12 +150,24 @@ def _safe_run(
     worker = threading.Thread(target=target, daemon=True)
     started = time.monotonic()
     worker.start()
-    waited = 0.0
     while True:
         worker.join(LIVENESS_POLL_INTERVAL_S)
         if not worker.is_alive():
             break
-        waited += LIVENESS_POLL_INTERVAL_S
+        # Check the deadline before liveness: _is_dead is itself a network call, and
+        # it is slowest on exactly the degraded network this guard exists to escape.
+        elapsed = time.monotonic() - started
+        if elapsed >= timeout_s:
+            log.warning(
+                "modal call aborted",
+                extra={
+                    "label": label,
+                    "reason": "timeout",
+                    "elapsed_s": round(elapsed, 1),
+                    "timeout_s": timeout_s,
+                },
+            )
+            raise ExecTimeout(f"Modal call exceeded {timeout_s:.0f}s client deadline")
         if _is_dead(sb):
             log.warning(
                 "modal call aborted",
@@ -166,17 +178,6 @@ def _safe_run(
                 },
             )
             raise SandboxDead("Sandbox terminated while awaiting a Modal call")
-        if waited >= timeout_s:
-            log.warning(
-                "modal call aborted",
-                extra={
-                    "label": label,
-                    "reason": "timeout",
-                    "elapsed_s": round(time.monotonic() - started, 1),
-                    "timeout_s": timeout_s,
-                },
-            )
-            raise ExecTimeout(f"Modal call exceeded {timeout_s:.0f}s client deadline")
     if error:
         raise error[0]
     return result[0]
