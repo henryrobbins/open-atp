@@ -254,9 +254,9 @@ class AutomatedProver(abc.ABC):
     def prove(self, task: ProofTask, output_dir: Path | str) -> ProofResult:
         """Full lifecycle: reject-on-mismatch, generate, verify, write the result.
 
-        A credential with less than :data:`~open_atp.auth.EXPIRY_WARNING` left is
-        logged as a warning up front -- a run outlives that window -- but does not
-        stop the run.
+        The credential is checked up front: an expired one raises, and one with less
+        than :data:`~open_atp.auth.EXPIRY_WARNING` left is logged as a warning -- a
+        run outlives that window -- but does not stop the run.
 
         Parameters
         ----------
@@ -286,9 +286,9 @@ class AutomatedProver(abc.ABC):
             If the project records a Mathlib revision that differs from the backend
             image's. Checked up front, before any run starts.
         ~open_atp.harness.MissingCredentials
-            If a credential the run needs is absent, or if the agent's provider
-            rejected the one it was given. Either way no proof was attempted, so this
-            raises rather than returning an empty result.
+            If a credential the run needs is absent or already expired, or if the
+            agent's provider rejected the one it was given. Either way no proof was
+            attempted, so this raises rather than returning an empty result.
         ~open_atp.backends.base.ProvisionError
             If the compute sandbox fails to come up (daemon down, image missing,
             capacity). Raised before generation, so the run never started.
@@ -303,7 +303,7 @@ class AutomatedProver(abc.ABC):
             binding["task"] = task.name
         with structlog.contextvars.bound_contextvars(**binding):
             self.verifier.check_compatible(task.project)
-            self._warn_if_credential_expiring()
+            self._check_credential()
 
             output_dir = Path(output_dir)
             wd = output_dir / "wd"
@@ -356,30 +356,53 @@ class AutomatedProver(abc.ABC):
             )
             return result
 
-    def _warn_if_credential_expiring(self) -> None:
-        """Warn when the credential has less than ``EXPIRY_WARNING`` left to run on.
+    def _check_credential(self) -> None:
+        """Reject an expired credential, and warn about one that expires mid-run.
 
-        A run outlives that window, and nothing renews the credential mid-run: the
-        sandbox holds a *copy*, so even a refreshable token refreshed in there is
-        discarded with the container. The run still proceeds -- the provider is the
-        authority on whether a credential works, not our reading of its expiry.
+        Nothing renews a credential mid-run: the sandbox holds a *copy*, so even a
+        refreshable token refreshed in there is discarded with the container. An
+        expired one therefore has no path to working, and is rejected before the
+        sandbox comes up rather than 401-ing partway through a billed run.
+
+        Anything still valid only warns -- the provider, not our reading of an
+        expiry, is the authority on whether a credential works.
+
+        Raises
+        ------
+        ~open_atp.harness.MissingCredentials
+            If the credential's validity window has already passed.
         """
         try:
             status = self.auth_status()
         except Exception:
             # Reading the credential is best-effort here: whatever went wrong will
             # resurface as a real failure when the run resolves it for real, and a
-            # pre-flight warning must never be what breaks a run.
+            # pre-flight check must never be what breaks an otherwise-fine run.
             log.debug("could not read credential before run", exc_info=True)
             return
-        if status.state() is not AuthState.EXPIRING:
+
+        state = status.state()
+        if state not in (AuthState.EXPIRED, AuthState.EXPIRING):
             return
         remaining = status.time_remaining()
-        log.warning(
-            "credential expires soon; it will not survive this run",
-            extra={
-                "source": status.source,
-                "expires_in_s": int(remaining.total_seconds()) if remaining else None,
-                "refreshable": status.refreshable,
-            },
+        detail = {
+            "source": status.source,
+            "expires_in_s": int(remaining.total_seconds()) if remaining else None,
+            "refreshable": status.refreshable,
+        }
+        if state is AuthState.EXPIRING:
+            log.warning(
+                "credential expires soon; it will not survive this run", extra=detail
+            )
+            return
+
+        log.error("credential expired", extra=detail)
+        renew = (
+            "run its CLI on this host to refresh it"
+            if status.refreshable
+            else "log in again"
+        )
+        raise MissingCredentials(
+            f"the {self.name} prover's credential ({status.source}) expired; "
+            f"a sandboxed run cannot refresh it -- {renew}"
         )

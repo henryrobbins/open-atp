@@ -344,6 +344,29 @@ def test_prove_warns_when_the_credential_expires_mid_run(
     assert result.success  # a warning, not a refusal
 
 
+def test_prove_rejects_an_expired_credential_before_starting(tmp_path: Path) -> None:
+    prover = FakeProver("agent", auth=_expiring(-5))
+    output = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="expired"):
+        prover.prove(_task(), output)
+
+    assert not output.exists()  # rejected before any sandbox or output dir
+
+
+def test_expired_credential_message_says_how_to_renew_it(tmp_path: Path) -> None:
+    refreshable = AuthStatus(
+        AuthKind.OAUTH,
+        "~/.kimi-code/credentials/kimi-code.json",
+        present=True,
+        expires_at=datetime.now(UTC) - timedelta(hours=2),
+        refreshable=True,
+    )
+
+    with pytest.raises(MissingCredentials, match="run its CLI on this host"):
+        FakeProver("kimi", auth=refreshable).prove(_task(), tmp_path / "run")
+
+
 def test_prove_stays_quiet_for_a_credential_that_outlasts_the_run(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
