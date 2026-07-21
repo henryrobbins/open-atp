@@ -281,6 +281,10 @@ class AristotleProver(AutomatedProver):
 
         key = self._api_key or os.environ.get("ARISTOTLE_API_KEY")
         if not key:
+            log.error(
+                "missing credential",
+                extra={"remedy": "set ARISTOTLE_API_KEY or pass api_key"},
+            )
             raise MissingCredentials(
                 "aristotle prover requires ARISTOTLE_API_KEY (set it or pass api_key)"
             )

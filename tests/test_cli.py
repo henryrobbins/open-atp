@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -20,6 +21,7 @@ import pytest
 from open_atp import __main__ as cli
 from open_atp.backends.docker import DockerBackend
 from open_atp.config import standard_provers
+from open_atp.harness.base import MissingCredentials
 
 from .test_api import FIXTURE, FakeProver
 
@@ -256,6 +258,26 @@ def test_auth_status_transposes_the_table_for_a_single_prover(
     # A row per field, so the labels run down the page rather than across it.
     assert out.index("prover") < out.index("credential") < out.index("expires in")
     assert "codex login" in out  # an empty $HOME has nothing to read
+
+
+def test_main_reports_a_missing_credential_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom(args: argparse.Namespace) -> int:
+        raise MissingCredentials("no credential at FAKE_API_KEY; fake login")
+
+    monkeypatch.setattr(cli, "_auth_status", boom)
+    # main() installs the CLI's own handlers on the shared logger; restore them so
+    # the log capture other tests rely on survives.
+    logger = logging.getLogger("open_atp")
+    monkeypatch.setattr(logger, "handlers", list(logger.handlers))
+    monkeypatch.setattr(logger, "propagate", logger.propagate)
+
+    rc = cli.main(["auth-status"])
+
+    assert rc == 1  # reported, not raised out of the CLI
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.out + captured.err
 
 
 def test_auth_status_table_leaves_an_elapsed_window_blank(

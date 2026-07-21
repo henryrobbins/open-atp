@@ -40,6 +40,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from open_atp.harness.base import MissingCredentials
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import (
@@ -233,11 +234,16 @@ def run_benchmark(
             try:
                 result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
-                log.exception(
-                    "run failed",
-                    extra={"task": task_name, "prover": prover_name},
-                    exc_info=exc,
-                )
+                # A missing credential already logged itself, naming the source and
+                # what to run for one. Re-reporting it here would repeat that once
+                # per task x prover pair, and its traceback -- identical every time,
+                # from a run that never started -- buries the line worth reading.
+                if not isinstance(exc, MissingCredentials):
+                    log.exception(
+                        "run failed",
+                        extra={"task": task_name, "prover": prover_name},
+                        exc_info=exc,
+                    )
                 # prover.prove() only raises exceptions that prevent the run from
                 # starting (e.g., missing credentials), so synthesize a minimal
                 # failed ProofResult to keep every run's results.json uniform.

@@ -366,6 +366,22 @@ def test_prove_rejects_an_absent_credential_before_starting(tmp_path: Path) -> N
     assert not output.exists()
 
 
+def test_missing_credential_is_logged_once_with_its_remedy(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The one record has to carry the fix -- nothing downstream logs a second."""
+    absent = AuthStatus(
+        AuthKind.OAUTH, "~/.codex/auth.json", present=False, remedy="codex login"
+    )
+
+    with caplog.at_level(logging.ERROR, logger="open_atp"):
+        with pytest.raises(MissingCredentials):
+            FakeProver("codex", auth=absent).prove(_task(), tmp_path / "run")
+
+    (record,) = [r for r in caplog.records if r.message == "missing credential"]
+    assert record.remedy == "codex login"
+
+
 def test_expired_credential_message_says_how_to_renew_it(tmp_path: Path) -> None:
     refreshable = AuthStatus(
         AuthKind.OAUTH,

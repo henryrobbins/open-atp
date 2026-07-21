@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import tempfile
 import threading
 from datetime import UTC, datetime
@@ -17,6 +18,8 @@ from open_atp.harness.base import (
     MissingCredentials,
     _provider_env_var,
 )
+
+log = logging.getLogger("open_atp")
 
 #: The authentication strategies :class:`OpenCodeHarness` supports.
 _AUTH_MODES = ("api_key", "login")
@@ -174,6 +177,13 @@ class OpenCodeHarness(Harness):
         # the launch script points XDG_DATA_HOME at the mount.
         entry = self._stored_login()
         if not entry:
+            log.error(
+                "missing credential",
+                extra={
+                    "harness": self.name,
+                    "remedy": f"opencode auth login; choose {self.provider}",
+                },
+            )
             raise MissingCredentials(
                 f"opencode harness with auth='login' requires a {self.provider!r} "
                 f"login in {self._auth_store()}; run `opencode auth login` and choose "

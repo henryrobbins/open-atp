@@ -47,9 +47,12 @@ from open_atp.config import (
     standard_prover,
     standard_provers,
 )
+from open_atp.harness.base import MissingCredentials
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult, ProofStatus
+
+log = logging.getLogger("open_atp")
 
 #: ax-prover baked into the Modal image (mirrors the images/Dockerfile ARG). Pinned
 #: to a commit on our fork (henryrobbins/ax-prover-base) rather than the 0.1.1 PyPI
@@ -885,18 +888,25 @@ def main(argv: list[str] | None = None) -> int:
         log_file = None
     _configure_logging(console_level=console_level, log_file=log_file)
 
-    if args.command == "prove":
-        return _prove(args)
-    if args.command == "download":
-        return _download(args)
-    if args.command == "benchmark":
-        return _benchmark(args)
-    if args.command == "auth-status":
-        return _auth_status(args)
-    if args.command == "build-docker-image":
-        return _build_image(args)
-    if args.command == "build-modal-image":
-        return _build_modal_image(args)
+    try:
+        if args.command == "prove":
+            return _prove(args)
+        if args.command == "download":
+            return _download(args)
+        if args.command == "benchmark":
+            return _benchmark(args)
+        if args.command == "auth-status":
+            return _auth_status(args)
+        if args.command == "build-docker-image":
+            return _build_image(args)
+        if args.command == "build-modal-image":
+            return _build_modal_image(args)
+    except MissingCredentials:
+        # Already logged where it was raised, with the credential's source and what
+        # to run for one, so there is nothing to add -- and nothing to act on in a
+        # stack from a run that never started. `auth-status` reports the same thing
+        # without having to trigger it.
+        return 1
     parser.error(f"unknown command: {args.command}")
     return 2
 

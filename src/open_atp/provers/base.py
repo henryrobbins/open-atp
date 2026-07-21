@@ -322,7 +322,12 @@ class AutomatedProver(abc.ABC):
                 result.status = (
                     ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
                 )
-            except (MissingCredentials, ProvisionError):
+            except MissingCredentials:
+                # The run never started, and the message names the credential and
+                # what to run for one, so a stack adds nothing to act on. The CLI
+                # reports it; a caller holding the exception has it either way.
+                raise
+            except ProvisionError:
                 # The run never started; no partial results to return.
                 log.exception("prove could not start")
                 raise
@@ -362,10 +367,11 @@ class AutomatedProver(abc.ABC):
             return
 
         remaining = status.time_remaining()
+        # `remedy` rides along so this one record says what to run about it; the CLI
+        # reports the state it is given rather than logging a second line.
         detail = {
-            "source": status.source,
             "expires_in_s": int(remaining.total_seconds()) if remaining else None,
-            "refreshable": status.refreshable,
+            "remedy": status.remedy or None,
         }
         if state is AuthState.EXPIRING:
             log.warning("credential expires soon; it may not survive run", extra=detail)
