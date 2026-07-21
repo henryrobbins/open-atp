@@ -452,6 +452,128 @@ def test_missing_credentials_raises_out_of_prove(
     assert not (out / "logs" / "result.json").exists()
 
 
+# One real auth-failure line per agent CLI, captured from
+# tests/harness/test_auth_failure.py, as ``(stdout_lines, stderr)``: each CLI phrases
+# a 401 differently, and Vibe and Kimi report it on stderr alone.
+REJECTED_OUTPUT = {
+    "claude_code": (
+        [
+            '{"type":"system","subtype":"api_retry","attempt":1,'
+            '"error_status":401,"error":"authentication_failed"}'
+        ],
+        "",
+    ),
+    "codex": (
+        [
+            '{"type":"turn.failed","error":{"message":"unexpected status 401 '
+            'Unauthorized: Incorrect API key provided: sk-***tial."}}'
+        ],
+        "ERROR codex_api: failed to connect: HTTP error: 401 Unauthorized",
+    ),
+    "opencode": (
+        [
+            '{"type":"error","error":{"name":"APIError","data":{"message":'
+            '"Authentication Fails, Your api key: ****tial is invalid",'
+            '"statusCode":401}}}'
+        ],
+        "",
+    ),
+    "vibe": (
+        [],
+        "Error: API error from mistral-testing (model: labs-leanstral-1-5): "
+        "Invalid API key. Please check your API key and try again.",
+    ),
+    "axproverbase": (
+        [
+            "2026-07-21 05:30:02 - ERROR - [agent.py:575 - chat()] - Error: Error "
+            "code: 401 - 'type': 'error', 'error': 'type': 'authentication_error', "
+            "'message': 'invalid x-api-key'"
+        ],
+        "",
+    ),
+    "kimi": (
+        [],
+        "error: failed to run prompt: auth.login_required: OAuth provider "
+        '"managed:kimi-code" requires login before it can be used.',
+    ),
+}
+
+
+def _stub_run_agent(
+    monkeypatch: pytest.MonkeyPatch, lines: list[str], stderr: str
+) -> None:
+    """Stand in a finished agent run that emitted ``lines``/``stderr`` and no edits."""
+
+    def _run(
+        self: AgentProver,
+        workdir: Path,
+        harness: Harness,
+        stdout_path: Path,
+        session: object | None = None,
+        timeout_s: int | None = None,
+    ) -> tuple[list[str], str, bool]:
+        return lines, stderr, False
+
+    monkeypatch.setattr(AgentProver, "_run_agent", _run)
+
+
+@pytest.mark.parametrize("harness_name", sorted(REJECTED_OUTPUT))
+def test_rejected_credential_raises_out_of_prove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, harness_name: str
+) -> None:
+    """Every CLI's real rejection is caught, wherever it reported it.
+
+    The agent exits 0 here -- what ax-prover's launch script returns even when every
+    target failed to authenticate -- so nothing but the output betrays the failure.
+    """
+    lines, stderr = REJECTED_OUTPUT[harness_name]
+    _stub_run_agent(monkeypatch, lines, stderr)
+    prover = AgentProver(backend=_ExitCodeBackend(0, image=DEFAULT_IMAGE))
+
+    with pytest.raises(MissingCredentials, match="rejected"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+
+def test_agent_that_failed_without_an_auth_error_is_a_plain_miss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An agent that changed nothing for other reasons is recorded, not raised."""
+    _stub_run_agent(
+        monkeypatch,
+        ['{"type":"result","subtype":"error_max_turns","result":"unsolved goals"}'],
+        "error: ran out of turns",
+    )
+    prover = AgentProver(backend=_ExitCodeBackend(1, image=DEFAULT_IMAGE))
+
+    result = prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+    assert result.status is ProofStatus.UNVERIFIED
+    assert result.completed_files == {}
+
+
+def test_rejected_credential_ignored_when_the_agent_edited_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_prover: object
+) -> None:
+    """A 401 the agent recovered from is not a credential failure: it wrote a proof."""
+
+    def _recovered_run_agent(
+        self: AgentProver,
+        workdir: Path,
+        harness: Harness,
+        stdout_path: Path,
+        session: object | None = None,
+        timeout_s: int | None = None,
+    ) -> tuple[list[str], str, bool]:
+        (workdir / "MILExample.lean").write_text(SOLVED_FILE)
+        rejected, _ = REJECTED_OUTPUT["claude_code"]
+        return ([*rejected, *STREAM.read_text().splitlines()], "", False)
+
+    monkeypatch.setattr(AgentProver, "_run_agent", _recovered_run_agent)
+
+    result, _ = _run_generate(make_prover(), tmp_path)
+    assert list(result.completed_files) == ["MILExample.lean"]
+
+
 def test_codex_missing_auth_file_raises_out_of_prove(tmp_path: Path) -> None:
     """A codex harness with no auth.json raises MissingCredentials out of prove().
 
