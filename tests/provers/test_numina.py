@@ -125,6 +125,15 @@ def _result_line(reason: str | None, *, subtype: str = "success") -> str:
             "result": text,
             "total_cost_usd": 0.01,
             "usage": {"input_tokens": 100, "output_tokens": 50},
+            "modelUsage": {
+                "claude-opus-4-8": {
+                    "inputTokens": 100,
+                    "outputTokens": 50,
+                    "cacheReadInputTokens": 0,
+                    "cacheCreationInputTokens": 0,
+                    "costUSD": 0.01,
+                }
+            },
         }
     )
 
