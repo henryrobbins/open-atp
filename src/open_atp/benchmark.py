@@ -71,7 +71,7 @@ class RunCeilingExceeded(Exception):
 class BenchmarkRun:
     """One ``(task, prover)`` cell of a benchmark sweep.
 
-    Attributes
+    Parameters
     ----------
     task : str
         The task's key in the benchmark's ``tasks`` mapping.
@@ -95,7 +95,7 @@ class BenchmarkRun:
 class BenchmarkResult:
     """The collected cells of a benchmark sweep.
 
-    Attributes
+    Parameters
     ----------
     output_dir : pathlib.Path
         The benchmark's output root, laid out as ``output_dir/<task>/<prover>/``.
@@ -197,13 +197,13 @@ def run_benchmark(
     max_workers : int, optional
         Total ``prove`` calls in flight at once. ``None`` (default) lets the thread
         pool pick a default; ``1`` runs the sweep serially.
-    max_per_prover : int
-        Most concurrent ``prove`` calls for any single prover. Default ``5``, to stay
+    max_per_prover : int, default 5
+        Most concurrent ``prove`` calls for any single prover. Bounded to stay
         under rate limits.
-    progress : bool
-        Show a :mod:`tqdm` progress bar over the ``(task, prover)`` pairs. Default
-        ``True``. Each completed pair is logged (task, prover, status, duration, cost)
-        on the ``open_atp`` logger regardless.
+    progress : bool, default True
+        Show a :mod:`tqdm` progress bar over the ``(task, prover)`` pairs. Each
+        completed pair is logged (task, prover, status, duration, cost) on the
+        ``open_atp`` logger regardless.
 
     Returns
     -------
@@ -305,12 +305,12 @@ def tasks_from_dir(
     ----------
     directory : pathlib.Path or str
         The benchmark directory: ``.lean`` files and/or per-task subdirectories.
-    skeleton : pathlib.Path
+    skeleton : pathlib.Path, default SKELETON_DIR
         Project skeleton staged around bare files (see
-        :func:`~open_atp.lean.create_project`). Default
-        :data:`~open_atp.images.SKELETON_DIR` -- the baked image's pinned Mathlib
-        skeleton, only present in a source checkout. Pass a checkout of a benchmark's
-        own toolchain to stage against a non-default Lean/Mathlib pin.
+        :func:`~open_atp.lean.create_project`). The default is the baked image's
+        pinned Mathlib skeleton, only present in a source checkout. Pass a checkout
+        of a benchmark's own toolchain to stage against a non-default Lean/Mathlib
+        pin.
 
     Returns
     -------
@@ -404,7 +404,7 @@ def download_dataset(
     dest : pathlib.Path or str
         Parent directory; the dataset lands at ``dest/<dataset>``. Created if missing.
     ref : str, optional
-        Branch or tag to check out. Default ``None`` -- the repo's default branch.
+        Branch or tag to check out. ``None`` uses the repo's default branch.
         Ignored for :attr:`DATASET.EXAMPLES`.
 
     Returns

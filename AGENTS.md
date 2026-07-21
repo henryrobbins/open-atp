@@ -224,39 +224,88 @@ skill/test degrade or skip:
 
 ## Docs: API reference convention
 
+Write **stock numpydoc**. The conventions below are the numpy/scipy/sklearn ones; the
+only project-specific parts are the two `Image` gotchas and the `code-block` rule for
+non-runnable examples.
+
 The API pages (`docs/api/*.md`) are Sphinx `autoclass` directives; **numpydoc** renders
 the class docstring's `Parameters`/`Attributes` sections, and a single
-`autodoc-skip-member` hook in `docs/conf.py` (`_skip_non_methods`) drops every class
-member that isn't a method. So the split is:
+`autodoc-skip-member` hook in `docs/conf.py` (`_skip_data_attributes`) drops class
+members that are plain data. So the split is:
 
-- **Constructor params and attributes** (instance state + `@property`) live **only in
-  the docstring**, in `Parameters`/`Attributes` sections. The hook hides them as
-  members, so they render once, from the prose. Never re-list them with `:members:`.
-- **List each name once — `Parameters` *or* `Attributes`, never both** (the
-  numpy/scipy/sklearn convention). A constructor arg stored verbatim as an attribute is
-  documented only under `Parameters`; readers know `self.<arg>` exists without it being
-  repeated. `Attributes` is reserved for state **not** in the signature: `@property`
-  (e.g. `Harness.command`, `Verifier.image`) and derived/computed fields. If a
-  `@property` shares a name with a param (e.g. `OpenCodeHarness.provider`), document the
-  resolution in the param and leave it out of `Attributes`.
-- **Methods** are the only members `autoclass` enumerates. Document each method **once,
-  on the class that defines it.**
+- **Methods and `@property` are members**, enumerated by `autoclass` and documented in
+  **their own docstring**, in full. Document each **once, on the class that defines it.**
+- **Members render in source order** (`autodoc_member_order = "bysource"`), so **define
+  properties right after `__init__`** and order the methods deliberately — the page reads
+  in the order you write. Don't use `groupwise`: autodoc scores methods (50) ahead of
+  properties (60), which is backwards.
+- **`@property` is documented like a method** — never listed in `Attributes`. numpydoc
+  overwrites an `Attributes` entry naming a property with the first sentence of that
+  property's docstring, so the prose you write there is silently discarded and the
+  summary gets cut at the first `. ` (an `e.g.`/`i.e.`/`etc.` truncates it mid-thought).
+  Writing it on the property renders the whole docstring, and the type comes from the
+  return annotation.
+- **Constructor params and plain instance state** live **only in the class docstring**,
+  under `Parameters`/`Attributes`. The hook hides them as members so they render once,
+  from the prose. Never re-list them with `:members:`.
+- **List each name once — `Parameters` *or* `Attributes`, never both.** A constructor arg
+  stored verbatim as an attribute is documented only under `Parameters`; readers know
+  `self.<arg>` exists without it being repeated. `Attributes` is reserved for plain
+  non-property state that is **not** in the signature.
+- **Dataclasses use `Parameters`**, like any other class — its fields are its
+  constructor signature. Do not put them under `Attributes`.
 - **Inheritance**: numpydoc does *not* walk the MRO, so each leaf class must
   **re-document every constructor param it accepts, including inherited ones** (e.g.
   `backend`/`timeout_s` from `AutomatedProver`) — otherwise they don't render. Pages do
-  **not** use `:inherited-members:`: an inherited method (e.g. `prove`) appears only on
-  its base class, not on each child.
+  **not** use `:inherited-members:`: an inherited method or property (e.g. `prove`)
+  appears only on its base class, not on each child.
 
-Practical rules:
+### Parameter types and defaults
 
-- **Do not** add `:exclude-members:` for attributes, params, or `name` — the hook
-  already handles them. The only legitimate `:exclude-members:` is to hide an
-  **overridden method** from a child page so it stays documented on the base only
-  (current use: `stage` on the harness impls).
-- A new attribute/`@property` only shows up if you add it to the docstring `Attributes`
-  section.
-- `make docs` builds with `-W` (warnings are errors) — a broken xref or duplicate
-  fails the build.
+`numpydoc_xref_param_type = True`, so **every token on a type line is turned into a
+cross-reference**. Write types as real code, not prose:
+
+- Use PEP 585 generics — `tuple[str, ...]`, `Mapping[str, str]`, `dict[str, object]`,
+  `Sequence[tuple[str, str]]` — not `list of float`. Use `X or None` for unions in a
+  `Returns` type.
+- Project names resolve through `numpydoc_xref_aliases` in `docs/conf.py`. **Add new
+  public names there** so they link; unaliased names render as plain text.
+- ⚠️ Bare **`Image` is aliased to `modal.Image`**. Always write
+  `~open_atp.images.Image` for the sandbox image or the link points at Modal's docs.
+
+**Defaults go on the type line, never in the description**: `timeout_s : int, default
+1800`, `effort : str, default "high"`, `image : ~open_atp.images.Image, default
+DEFAULT_IMAGE`. Use `, optional` only when the default is `None`/empty and there is no
+literal worth naming; if that default needs explaining, a short trailing sentence
+(`Defaults to an empty mapping.`) is fine. Never write `Default ``5``.` as prose.
+
+### Examples
+
+`>>>` blocks are **executed twice**: by pytest (`--doctest-modules` over `src/open_atp`)
+and by `make docs-doctest`. Only the Sphinx path gets `doctest_global_setup` (which stubs
+`AutomatedProver.prove`), so a docstring `>>>` must stand on its own.
+
+- Use `>>>` only when the example **genuinely runs offline** — construction, pure
+  computation, cheap properties. No Docker, no network, no credentials, no billing.
+- Otherwise use `.. code-block:: python` (see `ComputeSession`). It is still rendered and
+  read, just not executed. Prefer this over stubbing: a doctest against a mock documents
+  the mock, not the library.
+- `# doctest: +SKIP` is for the **last line or two of an otherwise-live example** — e.g.
+  the prover docstrings, where the setup really runs and only `prove()` is skipped. Don't
+  use it to smuggle a wholly non-runnable example past the runner.
+- Put a blank line after the `--------` underline, and a prose sentence before each block
+  saying what it shows.
+
+### Practical rules
+
+- **Do not** add `:exclude-members:` for attributes, params, or `name` — the hook already
+  handles them. The only legitimate `:exclude-members:` is to hide an **overridden
+  method** from a child page so it stays documented on the base only (current use:
+  `stage` on the harness impls).
+- A new plain attribute only shows up if you add it to the docstring `Attributes`
+  section. A new `@property` shows up automatically, with its own docstring.
+- `make docs` builds with `-W` (warnings are errors) — a broken xref or duplicate fails
+  the build. `make check` also runs `make docs-doctest`.
 
 ## Docs: prover comparison table
 

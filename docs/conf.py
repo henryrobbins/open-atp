@@ -120,18 +120,23 @@ pygments_dark_style = "github-dark"
 
 autodoc_default_options = {"members": True}
 autodoc_typehints = "signature"
+# Render members in definition order rather than alphabetically: classes define
+# their ``@property`` accessors right after ``__init__``, so properties lead and
+# the methods that follow read in a deliberate order. (``groupwise`` would sort
+# methods *before* properties -- autodoc scores them 50 vs. 60.)
+autodoc_member_order = "bysource"
 numpydoc_class_members_toctree = False
 numpydoc_show_class_members = False
 numpydoc_xref_param_type = True
 numpydoc_xref_ignore = {"of", "or", "optional", "default"}
+# Maps a bare name in a numpydoc *type* field to its full path, so
+# ``backend : ComputeBackend`` links. Only type fields are rewritten -- prose uses
+# explicit ``:class:``/``:func:`` roles and never consults this table, so only
+# names that can appear as a *type* belong here (no functions, no constants).
 numpydoc_xref_aliases = {
-    # Build / catalog
-    "standard_prover": "open_atp.config.standard_prover",
-    "standard_provers": "open_atp.config.standard_provers",
-    "build_prover": "open_atp.config.build_prover",
-    "build_harness": "open_atp.config.build_harness",
-    "build_backend": "open_atp.config.build_backend",
-    "create_project": "open_atp.lean.create_project",
+    # Images
+    "DEFAULT_IMAGE": "open_atp.images.DEFAULT_IMAGE",
+    "SKELETON_DIR": "open_atp.images.SKELETON_DIR",
     # Lean input contract
     "LeanProject": "open_atp.lean.LeanProject",
     "ProofTask": "open_atp.lean.ProofTask",
@@ -152,7 +157,6 @@ numpydoc_xref_aliases = {
     "AgentProver": "open_atp.provers.agent_prover.AgentProver",
     "AristotleProver": "open_atp.provers.aristotle.AristotleProver",
     "NuminaProver": "open_atp.provers.numina.NuminaProver",
-    "STANDARD_PROVERS": "open_atp.config.STANDARD_PROVERS",
     # Harnesses
     "Harness": "open_atp.harness.base.Harness",
     "HarnessRunResult": "open_atp.harness.base.HarnessRunResult",
@@ -162,8 +166,6 @@ numpydoc_xref_aliases = {
     "OpenCodeHarness": "open_atp.harness.opencode.OpenCodeHarness",
     "VibeHarness": "open_atp.harness.vibe.VibeHarness",
     "AxProverBaseHarness": "open_atp.harness.axproverbase.AxProverBaseHarness",
-    "COST_PER_MTOK": "open_atp.harness.cost.COST_PER_MTOK",
-    "compute_cost_usd": "open_atp.harness.cost.compute_cost_usd",
     # Modal SDK types referenced in ModalBackend docstrings. Resolved to the Modal
     # docs by the ``missing-reference`` handler in ``setup`` below.
     "Sandbox": "modal.Sandbox",
@@ -200,7 +202,7 @@ def _resolve_modal_xref(
     return ref
 
 
-def _skip_non_methods(
+def _skip_data_attributes(
     app: Sphinx,
     what: str,
     name: str,
@@ -208,17 +210,20 @@ def _skip_non_methods(
     skip: bool,
     options: object,
 ) -> bool | None:
-    """Only enumerate *methods* as class members.
+    """Only enumerate *methods* and *properties* as class members.
 
-    Constructor parameters and attributes (instance state and ``@property``)
-    are documented in the class docstring's ``Parameters``/``Attributes``
-    sections, which numpydoc renders. Letting autodoc also emit them as members
-    duplicates every entry, so skip anything on a class that is not a routine.
-    Methods stay; data attributes, properties, and class vars are dropped.
+    Constructor parameters and plain instance state are documented in the class
+    docstring's ``Parameters``/``Attributes`` sections, which numpydoc renders.
+    Letting autodoc also emit them as members duplicates every entry, so data
+    attributes and class vars are dropped. A ``@property`` is documented in its
+    own docstring, like a method, so it is kept: numpydoc rewrites an
+    ``Attributes`` entry that names a property with the first sentence of that
+    property's docstring, which silently discards whatever prose the class
+    docstring wrote for it.
     """
     if skip:
         return skip
-    if what == "class" and not inspect.isroutine(obj):
+    if what == "class" and not (inspect.isroutine(obj) or isinstance(obj, property)):
         return True
     return None
 
@@ -249,5 +254,5 @@ def _codeify_arg_choices(app: Sphinx, doctree: nodes.document) -> None:
 
 def setup(app: Sphinx) -> None:
     app.connect("missing-reference", _resolve_modal_xref)
-    app.connect("autodoc-skip-member", _skip_non_methods)
+    app.connect("autodoc-skip-member", _skip_data_attributes)
     app.connect("doctree-read", _codeify_arg_choices)

@@ -23,14 +23,14 @@ class ClaudeCodeHarness(Harness):
 
     Parameters
     ----------
-    model : str
-        Model id the agent runs. Default ``"claude-opus-4-8"``.
-    effort : str
-        Reasoning-effort level. Default ``"high"``.
-    plugins : list[str], optional
+    model : str, default "claude-opus-4-8"
+        Model id the agent runs.
+    effort : str, default "high"
+        Reasoning-effort level.
+    plugins : list[str], default ["lean4"]
         Claude Code plugins to load, each a name (resolved from the vendored
         ``lean4-skills`` catalog) or a full path to a ``.claude-plugin/plugin.json``
-        tree. Default ``["lean4"]``; an empty list loads none.
+        tree. An empty list loads none.
     oauth_token : str, optional
         The ``CLAUDE_CODE_OAUTH_TOKEN`` (from ``claude setup-token``) to forward into
         the sandbox. ``None`` (default) reads it from the host

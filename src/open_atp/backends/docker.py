@@ -119,17 +119,16 @@ class DockerBackend(ComputeBackend):
 
     Parameters
     ----------
-    image : Image
+    image : ~open_atp.images.Image, default DEFAULT_IMAGE
         The sandbox image carrying Lean + Mathlib -- its tag plus the toolchain and
-        Mathlib revision the verifier checks projects against. Default
-        :data:`~open_atp.images.DEFAULT_IMAGE`. A mapping is coerced to an
-        :class:`~open_atp.images.Image` (so a parsed config's nested ``image:`` block
-        works).
+        Mathlib revision the verifier checks projects against. A mapping is coerced
+        to an :class:`~open_atp.images.Image` (so a parsed config's nested ``image:``
+        block works).
     env : Mapping[str, str], optional
-        Environment variables baked into every command run in the sandbox. Default
-        empty.
-    volumes : tuple[tuple[str, str], ...]
-        Extra ``-v host:container`` mounts (e.g. agent credential dirs). Default empty.
+        Environment variables baked into every command run in the sandbox. Defaults
+        to no extra variables.
+    volumes : tuple[tuple[str, str], ...], default ()
+        Extra ``-v host:container`` mounts (e.g. agent credential dirs).
 
     Examples
     --------
@@ -226,10 +225,10 @@ class DockerBackend(ComputeBackend):
             Unused by Docker (the container has no built-in cap).
         env : Mapping[str, str], optional
             Environment variables pinned on the container at creation, merged over the
-            backend's :attr:`env`. Default empty.
+            backend's ``env``.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` bind mounts wired at creation (Docker
-            can't add them per-exec). Default empty.
+            can't add them per-exec).
 
         Returns
         -------

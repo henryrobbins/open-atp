@@ -82,13 +82,15 @@ class AgentAuth:
     and validated that required credentials are present. The prover only forwards
     them; it never touches ``os.environ``.
 
-    Attributes
+    Parameters
     ----------
-    env:
-        Environment variables (name -> value) to forward into the sandbox.
-    mounts:
+    env : dict[str, str], optional
+        Environment variables (name -> value) to forward into the sandbox. Defaults
+        to an empty mapping.
+    mounts : list[tuple[Path, str]], optional
         Host directories to expose under the sandbox's ``$HOME``, as
         ``(host_dir, dest_basename)`` pairs (e.g. ``(~/.codex, ".codex")``).
+        Defaults to an empty list.
     """
 
     env: dict[str, str] = field(default_factory=dict)
@@ -99,13 +101,13 @@ class AgentAuth:
 class HarnessRunResult:
     """Token totals and cost parsed from an agent's streamed output.
 
-    Attributes
+    Parameters
     ----------
-    input_tokens : int
+    input_tokens : int, default 0
         Total input (prompt) tokens the run consumed.
-    cached_input_tokens : int
+    cached_input_tokens : int, default 0
         The cache-hit subset of ``input_tokens``, when the agent reports one.
-    output_tokens : int
+    output_tokens : int, default 0
         Total output (completion) tokens the run produced.
     stop_reason : str, optional
         Why the agent stopped, when the stream reports it; ``None`` otherwise.
@@ -134,16 +136,11 @@ class Harness(ABC):
 
     Parameters
     ----------
-    model : str
-        Model id the agent runs. Default ``"claude-opus-4-8"`` (Codex defaults to
-        ``"gpt-5.5"``, Vibe to ``"magistral-medium-latest"``).
-    effort : str
-        Reasoning-effort level passed to harnesses that support it. Default ``"high"``.
-
-    Attributes
-    ----------
-    command : str
-        Bash command the backend runs to launch the agent (read-only property).
+    model : str, default "claude-opus-4-8"
+        Model id the agent runs. Codex defaults to ``"gpt-5.5"`` and Vibe to
+        ``"magistral-medium-latest"``.
+    effort : str, default "high"
+        Reasoning-effort level passed to harnesses that support it.
     """
 
     name: ClassVar[str]

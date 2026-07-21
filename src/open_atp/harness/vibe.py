@@ -39,15 +39,14 @@ class VibeHarness(Harness):
 
     Parameters
     ----------
-    model : str
+    model : str, default "labs-leanstral-1-5"
         Model id recorded in the run metadata. Vibe has no ``--model`` flag and the
         builtin ``lean`` agent pins its own model, so this is *reported only*, not
-        passed to vibe. Default ``"labs-leanstral-1-5"`` (the model the ``lean`` agent
-        pins).
-    effort : str
-        Reasoning-effort level. Default ``"high"``.
-    agent : str, optional
-        Which builtin vibe agent to drive. Default ``"lean"`` (Leanstral).
+        passed to vibe. The default is the model that agent pins.
+    effort : str, default "high"
+        Reasoning-effort level.
+    agent : str, default "lean"
+        Which builtin vibe agent to drive. The default is Leanstral.
     max_turns : int, optional
         ``vibe -p`` turn guard; ``None`` (default) leaves it unset.
     max_price : float, optional

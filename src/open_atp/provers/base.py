@@ -89,42 +89,32 @@ class ProofResult:
     ``stderr.txt``, ``result.json``, and any harness-specific rich logs). This object
     just records where those live, plus the verification verdict and run metadata.
 
-    Attributes
+    Parameters
     ----------
     prover : str
         Name of the prover that produced this result.
     verification : VerificationReport or None
         The shared verification of the completed project, or ``None`` when the run
-        failed before a candidate could be verified (see :attr:`error`).
+        failed before a candidate could be verified (see ``error``).
     output_dir : pathlib.Path
         The run's output directory. Holds the :attr:`wd` (proof project) and
         :attr:`logs_dir` (run record) subdirectories the prover populated.
-    completed_files : dict[str, str]
+    completed_files : dict[str, str], optional
         The completed ``.lean`` sources, keyed by file path relative to the project
-        root.
+        root. Defaults to an empty mapping.
     cost_usd : float, optional
         Estimated USD cost of the run. ``None`` when the prover does not report cost.
     duration_s : float, optional
         Wall-clock duration of the run, in seconds.
-    metadata : dict[str, object]
-        Harness-specific run metadata (token counts, run summaries, ...).
+    metadata : dict[str, object], optional
+        Harness-specific run metadata (token counts, run summaries, ...). Defaults to
+        an empty mapping.
     error : str, optional
         The failing exception's class name; set when status is ERROR or TIMEOUT.
     error_msg : str, optional
         The failing exception's message; set when status is ERROR or TIMEOUT.
-    status : ProofStatus
+    status : ProofStatus, default ProofStatus.ERROR
         Status of the proof generation run.
-    wd : pathlib.Path
-        The completed working directory (``output_dir/wd``) -- a complete lake project
-        with the completed ``.lean`` files. The proof output.
-    logs_dir : pathlib.Path
-        The run's logs directory (``output_dir/logs``) -- the captured agent stream
-        (``stdout.txt``), ``stderr.txt``, ``result.json``, and any harness-specific
-        rich record (Vibe's session log, ax-prover's per-target logs, Aristotle's
-        events).
-    success : bool
-        True iff :attr:`verification` exists and is
-        :attr:`~open_atp.verify.VerificationReport.verified`.
     """
 
     prover: str
@@ -140,16 +130,30 @@ class ProofResult:
 
     @property
     def wd(self) -> Path:
-        """The completed proof project (``output_dir/wd``)."""
+        """The completed working directory, ``output_dir/wd``.
+
+        A complete lake project holding the completed ``.lean`` files -- the proof
+        output.
+        """
         return self.output_dir / "wd"
 
     @property
     def logs_dir(self) -> Path:
-        """The run's logs directory (``output_dir/logs``)."""
+        """The run's logs directory, ``output_dir/logs``.
+
+        Holds the captured agent stream (``stdout.txt``), ``stderr.txt``,
+        ``result.json``, and any harness-specific rich record (Vibe's session log,
+        ax-prover's per-target logs, Aristotle's events).
+        """
         return self.output_dir / "logs"
 
     @property
     def success(self) -> bool:
+        """Whether the run produced a verified proof.
+
+        True iff :attr:`verification` exists and is
+        :attr:`~open_atp.verify.VerificationReport.verified`.
+        """
         return bool(self.verification and self.verification.verified)
 
     def to_dict(self) -> dict[str, object]:
@@ -184,13 +188,8 @@ class AutomatedProver(abc.ABC):
         The one backend for this prover. Agentic provers reuse it (via a live session)
         for generation, then verify in that hot sandbox; Aristotle uses it only for the
         final check.
-    timeout_s : int
-        Wall-clock budget for the generation run, in seconds. Default ``1800``.
-
-    Attributes
-    ----------
-    max_duration_s : int
-        Maximum wall-clock duration of a healthy :meth:`prove` run, in seconds.
+    timeout_s : int, default 1800
+        Wall-clock budget for the generation run, in seconds.
     """
 
     name: str = "base"

@@ -29,20 +29,19 @@ class OpenCodeHarness(Harness):
 
     Parameters
     ----------
-    provider : str
-        opencode provider name (e.g. ``"deepseek"``). Any OpenCode provider is accepted.
-        Default ``"deepseek"``.
-    model : str
+    provider : str, default "deepseek"
+        opencode provider name (e.g. ``"deepseek"``). Any OpenCode provider is
+        accepted.
+    model : str, default "deepseek-v4-pro"
         Model id the agent runs. Must be supported by the chosen provider.
-        Default ``"deepseek-v4-pro"``.
-    effort : str
-        Reasoning-effort level. Default ``"high"``.
+    effort : str, default "high"
+        Reasoning-effort level.
     auth : str
         Authentication strategy, ``"api_key"`` (default) or ``"login"``.
         See :ref:`opencode-authentication` for details.
     api_key : str, optional
-        For ``auth="api_key"``, the provider's API key.
-        Default ``None`` reads the host environment.
+        For ``auth="api_key"``, the provider's API key. ``None`` reads the host
+        environment.
 
     Examples
     --------

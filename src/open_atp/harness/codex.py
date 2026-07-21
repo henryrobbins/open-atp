@@ -23,10 +23,10 @@ class CodexHarness(Harness):
 
     Parameters
     ----------
-    model : str
-        Model id the agent runs; must be an OpenAI model. Default ``"gpt-5.5"``.
-    effort : str
-        Reasoning-effort level. Default ``"high"``.
+    model : str, default "gpt-5.5"
+        Model id the agent runs; must be an OpenAI model.
+    effort : str, default "high"
+        Reasoning-effort level.
     auth_file : Path, optional
         The Codex ``auth.json`` to mount. ``None`` (default) uses ``~/.codex/auth.json``
         (from ``codex login``); resolution fails if the file is absent.
