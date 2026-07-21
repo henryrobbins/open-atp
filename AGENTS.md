@@ -189,7 +189,7 @@ open-atp benchmark <dataset> <output> [options]     # directory of proof tasks
 
 open-atp download <dataset> <output>                # lands at <output>/<dataset>
 
-open-atp auth-status [--json]                       # per-prover credential + expiry
+open-atp auth-status [prover] [--json]              # per-prover credential + expiry
 
 open-atp build-docker-image       [-t/--tag TAG] [-C/--no-cache]
 open-atp build-modal-image        [-n/--name N] [-a/--app A] [-f/--force]

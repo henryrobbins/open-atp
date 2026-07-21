@@ -14,6 +14,12 @@ Claude Code is included with every paid Claude plan. [Choose a Claude plan](http
 claude setup-token
 ```
 
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status claude
+```
+
 By default, the harness will read `CLAUDE_CODE_OAUTH_TOKEN` from the host environment. It is recommended to define this in a `.env` file in your project root.
 
 ```

@@ -14,6 +14,12 @@ Codex is available on paid ChatGPT plans. [Choose a plan](https://chatgpt.com/pr
 codex login
 ```
 
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status codex
+```
+
 This writes credentials to `~/.codex/auth.json`. By default the harness reads that file; pass it explicitly to override:
 
 ```{testcode}

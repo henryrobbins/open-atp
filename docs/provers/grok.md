@@ -24,7 +24,7 @@ Create an xAI account at [xAI Console](https://console.x.ai/) and generate an AP
 export XAI_API_KEY=...
 ```
 
-It is recommended to define this in a `.env` file in your project root. Alternatively, pass the key to the harness explicitly:
+Alternatively, pass the key to the harness explicitly:
 
 ```{testcode}
 from open_atp.harness import OpenCodeHarness
@@ -45,6 +45,12 @@ You can then use the harness with the `auth="login"` argument to forward the xAI
 from open_atp.harness import OpenCodeHarness
 
 OpenCodeHarness(provider="xai", model="grok-4.5", auth="login")
+```
+
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status grok
 ```
 
 :::{warning}

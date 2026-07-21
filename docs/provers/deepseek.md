@@ -14,7 +14,13 @@ DeepSeek bills against an API account. Sign up at the [DeepSeek platform](https:
 export DEEPSEEK_API_KEY=...
 ```
 
-It is recommended to define this in a `.env` file in your project root. Alternatively, pass the key to the harness explicitly:
+Check if the key is in your environment with:
+
+```bash
+open-atp auth-status deepseek
+```
+
+Alternatively, pass the key to the harness explicitly:
 
 ```{testcode}
 from open_atp.harness import OpenCodeHarness

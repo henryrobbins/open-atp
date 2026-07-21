@@ -224,13 +224,38 @@ def test_auth_status_json_reports_every_standard_prover(
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-    rc = cli._auth_status(argparse.Namespace(json=True))
+    rc = cli._auth_status(argparse.Namespace(json=True, prover=None))
 
     assert rc == 0
     statuses = json.loads(capsys.readouterr().out)
     assert sorted(statuses) == sorted(standard_provers())
     assert all(s["state"] == "missing" for s in statuses.values())
     assert {s["kind"] for s in statuses.values()} == {"api_key", "oauth"}
+
+
+def test_auth_status_reports_only_the_named_prover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    rc = cli._auth_status(argparse.Namespace(json=True, prover="codex"))
+
+    assert rc == 0
+    assert list(json.loads(capsys.readouterr().out)) == ["codex"]
+
+
+def test_auth_status_transposes_the_table_for_a_single_prover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    rc = cli._auth_status(argparse.Namespace(json=False, prover="codex"))
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    # A row per field, so the labels run down the page rather than across it.
+    assert out.index("prover") < out.index("credential") < out.index("expires in")
+    assert "codex login" in out  # an empty $HOME has nothing to read
 
 
 def test_auth_status_table_leaves_an_elapsed_window_blank(
@@ -243,7 +268,7 @@ def test_auth_status_table_leaves_an_elapsed_window_blank(
         json.dumps({"xai": {"access": "a", "refresh": "r", "expires": 1_000}})
     )
 
-    rc = cli._auth_status(argparse.Namespace(json=False))
+    rc = cli._auth_status(argparse.Namespace(json=False, prover=None))
 
     out = capsys.readouterr().out
     assert rc == 0

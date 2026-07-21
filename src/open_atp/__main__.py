@@ -267,8 +267,30 @@ def _abbreviate_home(source: str) -> str:
     return f"~{source[len(home) :]}" if source.startswith(home) else source
 
 
+def _auth_fields(name: str, status: AuthStatus) -> dict[str, str]:
+    """One prover's credential rendered field by field, shared by both layouts.
+
+    A remedy is reported only for a credential that won't authenticate; a valid one
+    needs no instructions for obtaining it, so it reads as ``—``.
+    """
+    state = status.state()
+    return {
+        "prover": name,
+        "auth": status.kind.value,
+        "credential": _abbreviate_home(status.source),
+        "status": f"[{_AUTH_STYLES[state]}]{state.value}[/]",
+        "expires in": _format_remaining(status.time_remaining()),
+        "remedy": status.remedy if state is not AuthState.OK and status.remedy else "—",
+    }
+
+
 def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
-    """A per-prover credential table: kind, where it lives, how long it lasts, fix."""
+    """A prover-per-row credential table: kind, where it lives, how long it lasts."""
+    rows = {name: _auth_fields(name, s) for name, s in statuses.items()}
+    # A sixth column costs width every other column needs, so earn it: nothing to
+    # fix means nothing to say, and an all-valid host sees the narrow table.
+    show_remedy = any(row["remedy"] != "—" for row in rows.values())
+
     table = Table(box=ROUNDED)
     table.add_column("prover")
     table.add_column("auth")
@@ -277,39 +299,38 @@ def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
     table.add_column("credential", overflow="fold")
     table.add_column("status", justify="center")
     table.add_column("expires in", justify="right")
-    # A sixth column costs width every other column needs, so earn it: nothing to
-    # fix means nothing to say, and an all-valid host sees the narrow table.
-    remedies = {
-        name: s.remedy
-        for name, s in statuses.items()
-        if s.state() is not AuthState.OK and s.remedy
-    }
-    if remedies:
+    if show_remedy:
         table.add_column("remedy", overflow="fold")
-    for name, status in statuses.items():
-        state = status.state()
-        style = _AUTH_STYLES[state]
-        row = [
-            name,
-            status.kind.value,
-            _abbreviate_home(status.source),
-            f"[{style}]{state.value}[/]",
-            _format_remaining(status.time_remaining()),
-        ]
-        if remedies:
-            row.append(remedies.get(name, "—"))
-        table.add_row(*row)
+    for row in rows.values():
+        if not show_remedy:
+            del row["remedy"]
+        table.add_row(*row.values())
+    return table
+
+
+def _auth_detail(name: str, status: AuthStatus) -> Table:
+    """One prover's credential transposed: a row per field, with its value.
+
+    Reporting a single prover leaves the columns of :func:`_auth_table` mostly
+    empty, so the same fields are turned on their side instead.
+    """
+    table = Table(box=ROUNDED, show_header=False)
+    table.add_column()
+    table.add_column(overflow="fold")
+    for label, value in _auth_fields(name, status).items():
+        if label == "remedy" and value == "—":
+            continue
+        table.add_row(label, value)
     return table
 
 
 def _auth_status(args: argparse.Namespace) -> int:
     # Every prover needs a backend, but none is contacted here: reading a credential
     # is a host-side operation, so the default backend stands in for all of them.
+    backend = _build_backend({"type": "docker"})
+    names = [args.prover] if args.prover else standard_provers()
     statuses = {
-        name: prover.auth_status()
-        for name, prover in _all_standard_provers(
-            _build_backend({"type": "docker"})
-        ).items()
+        name: standard_prover(name, backend=backend).auth_status() for name in names
     }
 
     if args.json:
@@ -333,7 +354,10 @@ def _auth_status(args: argparse.Namespace) -> int:
         )
         return 0
 
-    Console().print(_auth_table(statuses))
+    if args.prover:
+        Console().print(_auth_detail(args.prover, statuses[args.prover]))
+    else:
+        Console().print(_auth_table(statuses))
     return 0
 
 
@@ -790,6 +814,12 @@ def build_parser() -> argparse.ArgumentParser:
     auth = sub.add_parser(
         "auth-status",
         help="Show each standard prover's credential and how long it stays valid.",
+    )
+    auth.add_argument(
+        "prover",
+        nargs="?",
+        choices=standard_provers(),
+        help="Report only this prover; every standard prover by default.",
     )
     auth.add_argument(
         "--json",

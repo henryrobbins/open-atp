@@ -14,6 +14,12 @@ Kimi Code is included with every paid Kimi Code plan. [Choose a plan](https://ww
 kimi login
 ```
 
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status kimi
+```
+
 This writes OAuth credentials to `~/.kimi-code`. By default the harness reads that file; pass it explicitly to override:
 
 ```{testcode}
