@@ -101,7 +101,7 @@ def _build_prover(
 
     ``name`` (the standard-catalog key) is injected only for provers that accept it
     (``AgentProver``), so the reported name matches the user-facing registry key
-    rather than the harness name; ``numina``/``aristotle`` take their own name.
+    rather than the harness name. Provers that don't accept it report their own.
     """
     cls, kwargs = _split(_PROVERS, spec, "prover")
     if "harness" in kwargs:
@@ -125,11 +125,11 @@ def build_prover(config: Mapping[str, object]) -> AutomatedProver:
 
 
 #: The standard catalog: a friendly name -> the canonical ``prover`` spec for that
-#: ready-to-run default. The agentic entries (``claude``, ``codex``, ...) are all the
-#: shared :class:`~open_atp.provers.agent_prover.AgentProver` on a different harness;
-#: ``deepseek`` and ``grok`` are both the ``opencode`` harness on different providers
-#: and auth strategies. ``numina`` and ``aristotle`` are the standalone provers. Build
-#: one with :func:`standard_prover`.
+#: ready-to-run default, and the source of truth for which names the CLI accepts.
+#: Most entries are the shared :class:`~open_atp.provers.agent_prover.AgentProver`
+#: on a different harness -- several share the ``opencode`` harness, differing only
+#: in provider and auth strategy -- and the rest are standalone provers. Build one
+#: with :func:`standard_prover`.
 STANDARD_PROVERS: dict[str, dict[str, object]] = {
     "claude": {"type": "agent", "harness": {"type": "claude_code"}},
     "codex": {"type": "agent", "harness": {"type": "codex"}},
@@ -162,11 +162,10 @@ STANDARD_PROVERS: dict[str, dict[str, object]] = {
 def standard_prover(name: str, *, backend: ComputeBackend) -> AutomatedProver:
     """Construct a standard default prover ``name`` against ``backend``.
 
-    ``name`` is a :data:`STANDARD_PROVERS` key -- an agentic default
-    (``"claude"``, ``"codex"``, ``"deepseek"``, ``"grok"``, ``"leanstral"``,
-    ``"axproverbase"``) or a standalone prover (``"numina"``, ``"aristotle"``). The
-    prover is built with its class's baked-in defaults; to customize any knob (model,
-    effort, skills, ...), use :func:`build_prover` with a full config dict instead.
+    ``name`` is a :data:`STANDARD_PROVERS` key, as listed by
+    :func:`standard_provers`. The prover is built with its class's baked-in defaults;
+    to customize any knob (model, effort, skills, ...), use :func:`build_prover` with
+    a full config dict instead.
 
     The sandbox image (and the toolchain + Mathlib pins projects are checked against)
     comes from ``backend``, not a parameter here.

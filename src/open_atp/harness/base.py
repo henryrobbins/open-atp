@@ -1,6 +1,6 @@
 """The harness contract: the *agent* concern of :class:`~...agent_prover.AgentProver`.
 
-A :class:`Harness` knows, for one agent CLI (Claude Code / Codex / OpenCode):
+A :class:`Harness` knows, for one agent CLI:
 
 * how to populate the working directory from its assets (launch script, MCP
   config, skills) -- :meth:`Harness.stage_wd` -- and where to write the prompt the
@@ -137,8 +137,8 @@ class Harness(ABC):
     Parameters
     ----------
     model : str, default "claude-opus-4-8"
-        Model id the agent runs. Codex defaults to ``"gpt-5.5"`` and Vibe to
-        ``"magistral-medium-latest"``.
+        Model id the agent runs. Subclasses override the default with the model
+        their CLI drives.
     effort : str, default "high"
         Reasoning-effort level passed to harnesses that support it.
     """

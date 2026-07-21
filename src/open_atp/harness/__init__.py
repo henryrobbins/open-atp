@@ -1,9 +1,9 @@
 """Agent harnesses: the *agent* concern composed by ``AgentProver``.
 
-Each harness adapts one agent CLI (Claude Code / Codex / OpenCode / Vibe /
-ax-prover) to the sandbox: launch script, credential forwarding, and token/cost
-parsing. The *compute* concern (where the command runs, with Lean+Mathlib) lives
-in the injected :class:`~open_atp.backends.base.ComputeBackend`.
+Each harness adapts one agent CLI to the sandbox: launch script, credential
+forwarding, and token/cost parsing. The *compute* concern (where the command runs,
+with Lean+Mathlib) lives in the injected
+:class:`~open_atp.backends.base.ComputeBackend`.
 """
 
 from open_atp.harness.axproverbase import AxProverBaseHarness

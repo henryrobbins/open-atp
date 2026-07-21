@@ -2,8 +2,8 @@
 
 An ``AgentProver`` composes:
 
-* a :class:`~open_atp.harness.Harness` (claude_code / codex / opencode) -- the
-  *agent* concern: launch script, auth forwarding, output parsing; and
+* a :class:`~open_atp.harness.Harness` -- the *agent* concern: launch script,
+  auth forwarding, output parsing; and
 * a :class:`~open_atp.backends.base.ComputeBackend` -- the *compute* concern:
   where the agent runs, with Lean+Mathlib and the lean-lsp MCP server.
 
@@ -108,7 +108,7 @@ class AgentProver(AutomatedProver):
     :class:`~open_atp.backends.base.ComputeBackend` (the *compute* concern): the
     harness edits the staged ``.lean`` files in place, then the shared
     :class:`~open_atp.verify.Verifier` does the final compile/sorry/axiom check.
-    ``codex``, ``opencode``, ``axproverbase``, and ``vibe`` are this prover on a
+    Most entries in :data:`~open_atp.config.STANDARD_PROVERS` are this prover on a
     different harness.
 
     Parameters
@@ -122,13 +122,8 @@ class AgentProver(AutomatedProver):
         key so ``claude``/``leanstral`` report their user-facing name rather than
         the harness name (``claude_code``/``vibe``).
     harness : Harness, optional
-        The harness to drive and its knobs:
-        :class:`~open_atp.harness.ClaudeCodeHarness` (default),
-        :class:`~open_atp.harness.CodexHarness`,
-        :class:`~open_atp.harness.OpenCodeHarness`,
-        :class:`~open_atp.harness.VibeHarness`, or
-        :class:`~open_atp.harness.AxProverBaseHarness`. Carries ``model``/``effort``
-        plus any harness-specific knobs. Plugins are Claude-only and live on
+        The harness to drive, carrying ``model``/``effort`` plus any
+        harness-specific knobs. Defaults to
         :class:`~open_atp.harness.ClaudeCodeHarness`.
     skills : list[str], default ["lean-proof"]
         Skills to mount into the agent workdir, each a name (resolved from the
