@@ -18,6 +18,7 @@ import os
 import shutil
 import tarfile
 import tempfile
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
@@ -56,16 +57,14 @@ _IGNORE = shutil.ignore_patterns(".lake", ".git", "*.tar.gz")
 
 
 class _AristotleNoiseFilter(logging.Filter):
-    """Drop the two expected-noise records aristotlelib logs on our headless path.
+    """Drop the expected-noise record aristotlelib logs on our headless path.
 
     We deliberately upload without ``.lake`` (the sandbox already has the warm
-    Mathlib cache) and resume across dropped event streams ourselves, so
-    aristotlelib's ".lake folder" warning and its "Connection to server was
-    interrupted" error are both expected and redundant -- the full run record still
-    syncs to the logs dir regardless.
+    Mathlib cache), so aristotlelib's ".lake folder" warning is expected and
+    redundant.
     """
 
-    _DROP = ("no .lake folder", "Connection to server was interrupted")
+    _DROP = ("no .lake folder",)
 
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
@@ -84,9 +83,9 @@ def _is_transient(exc: BaseException) -> bool:
 
     aristotlelib turns httpx transport failures during a plain request into an
     ``AristotleAPIError`` with no status code (its ``RequestError`` wrapper) and
-    leaves HTTP status errors with their code; a streamed run instead surfaces the
-    raw ``httpx`` error. We treat transport-level failures and server-side 5xx as
-    transient, but let real 4xx (bad key, missing project) fail fast.
+    leaves HTTP status errors with their code. We treat transport-level failures and
+    server-side 5xx as transient, but let real 4xx (bad key, missing project) fail
+    fast.
     """
     import httpx
     from aristotlelib.api_request import AristotleAPIError
@@ -122,14 +121,12 @@ class AristotleProver(AutomatedProver):
         Bounds per-call retries (list/refresh/download) when a connection drops.
         The hosted run lives server-side, so a dropped connection is recoverable:
         re-fetch rather than reporting the run failed. Default ``5``.
-    max_resume_attempts : int
-        Bounds *consecutive* event-stream reconnects that see no server-side progress
-        before we stop waiting. Any progress (``percent_complete`` or
-        ``last_updated_at`` advancing) resets it, so a healthy but long run reconnects
-        without limit; this only caps a genuinely stuck task. Default ``10``.
-    resume_backoff_seconds : float
-        Initial sleep between retries/resumes, doubling (capped) between tries.
-        Default ``5.0``.
+    retry_backoff_seconds : float
+        Initial sleep between retries of a failed call, doubling (capped) between
+        tries. Default ``5.0``.
+    poll_interval_s : float
+        Seconds between polls of the task's status while waiting for generation.
+        Default ``15.0``.
     timeout_s : int
         Hard wall-clock cap on the generation wait, in seconds. When it elapses we
         stop waiting and proceed with whatever Aristotle has produced so far (the run
@@ -184,16 +181,16 @@ class AristotleProver(AutomatedProver):
         api_key: str | None = None,
         allow_agent_questions: bool = False,
         max_connection_retries: int = 5,
-        max_resume_attempts: int = 10,
-        resume_backoff_seconds: float = 5.0,
+        retry_backoff_seconds: float = 5.0,
+        poll_interval_s: float = 15.0,
         timeout_s: int = 1800,
     ) -> None:
         super().__init__(backend=backend, timeout_s=timeout_s)
         self._api_key = api_key
         self.allow_agent_questions = allow_agent_questions
         self.max_connection_retries = max_connection_retries
-        self.max_resume_attempts = max_resume_attempts
-        self.resume_backoff_seconds = resume_backoff_seconds
+        self.retry_backoff_seconds = retry_backoff_seconds
+        self.poll_interval_s = poll_interval_s
 
     @property
     def prover_prompt(self) -> str:
@@ -216,8 +213,8 @@ class AristotleProver(AutomatedProver):
         # The raw result archive and the full run record both belong with the run's
         # logs, not the proof project. The hosted agent has no live stdout stream, so
         # its record (events, transcript, summary) is downloaded here rather than teed.
-        # aristotlelib prints a live progress display to stdout; capture it to
-        # ``stdout.txt`` so a concurrent benchmark sweep stays readable.
+        # Anything aristotlelib prints to stdout is captured to ``stdout.txt`` so a
+        # concurrent benchmark sweep stays readable.
         result_tar = logs_dir / "aristotle_result.tar.gz"
         with capture_stdout(logs_dir / "stdout.txt"):
             downloaded, metadata = asyncio.run(
@@ -268,8 +265,8 @@ class AristotleProver(AutomatedProver):
         import aristotlelib
         from aristotlelib import AgentQuestionsSetting, Project
 
-        # We strip ``.lake`` before upload and resume dropped event streams ourselves;
-        # silence aristotlelib's resulting expected-noise records on the console.
+        # We strip ``.lake`` before upload; silence aristotlelib's resulting
+        # expected-noise record on the console.
         _quiet_aristotle_logger()
 
         key = self._api_key or os.environ.get("ARISTOTLE_API_KEY")
@@ -297,25 +294,8 @@ class AristotleProver(AutomatedProver):
             return None, metadata
 
         agent_task = tasks[0]
-        # Resume across dropped connections until the task truly settles server-side,
-        # but never past the wall-clock budget: on timeout, stop waiting and fall
-        # through to download whatever Aristotle has produced so far.
-        try:
-            await asyncio.wait_for(
-                self._wait_until_terminal(agent_task), timeout=self.timeout_s
-            )
-        except TimeoutError:
-            log.warning(
-                "aristotle: generation exceeded timeout_s=%ss; proceeding with "
-                "whatever output is available",
-                self.timeout_s,
-            )
-            metadata_timed_out = True
-            # wait_for cancelled the wait mid-flight; re-fetch the true task state so
-            # the recorded status/summary reflect where the run actually got to.
-            await self._with_retry(agent_task.refresh, "refresh task status")
-        else:
-            metadata_timed_out = False
+        # On timeout, fall through and download whatever Aristotle produced so far.
+        metadata_timed_out = await self._wait_until_terminal(agent_task)
         await self._with_retry(project.refresh, "refresh project")
 
         metadata.update(
@@ -349,7 +329,7 @@ class AristotleProver(AutomatedProver):
         Backs off exponentially (capped) and re-raises once the retry budget is spent
         or the error is not transient, so a genuine bad key/4xx still fails fast.
         """
-        delay = self.resume_backoff_seconds
+        delay = self.retry_backoff_seconds
         for attempt in range(1, self.max_connection_retries + 1):
             try:
                 return await op()
@@ -367,24 +347,15 @@ class AristotleProver(AutomatedProver):
                 delay = min(delay * 2, 60.0)
         raise AssertionError("unreachable")  # loop either returns or raises
 
-    async def _wait_until_terminal(self, agent_task: AgentTask) -> None:
-        """Wait for the task to reach a terminal state, resuming across dropped links.
+    async def _wait_until_terminal(self, agent_task: AgentTask) -> bool:
+        """Poll the task until it settles server-side or ``timeout_s`` elapses.
 
-        aristotlelib's ``wait_for_completion`` swallows a dropped event stream and
-        returns with a stale, still-running status while the task keeps going on the
-        server. Treat any non-terminal status after it returns as a dropped connection,
-        re-fetch the true state, and re-attach to the stream until the task actually
-        settles.
+        Returns ``True`` if we gave up at the deadline with the task still running.
 
-        The stream has no client timeout (aristotlelib opens it with ``timeout=None``),
-        so drops are server/proxy-side -- and Aristotle can work for many minutes
-        without emitting an event, leaving the connection idle and prone to being cut.
-        So ``max_resume_attempts`` bounds *consecutive resumes without progress*, not
-        the run's lifetime: any forward progress (``percent_complete`` or
-        ``last_updated_at`` advancing) resets the budget and the backoff. A healthy but
-        long run thus reconnects indefinitely; we only give up once the task is
-        genuinely stuck, and proceed with whatever output exists (the run dashboard is
-        the source of truth).
+        We deliberately do not consume aristotlelib's event stream: it is opened with
+        ``timeout=None``, so a silently half-open connection blocks forever and cannot
+        even be cancelled out of. Polling keeps every network call individually
+        bounded, which is what makes the wall-clock deadline enforceable.
         """
         from aristotlelib.agent_task import TaskStatus
 
@@ -396,49 +367,28 @@ class AristotleProver(AutomatedProver):
             TaskStatus.CANCELED,
         }
 
-        def progress() -> tuple[object, object]:
-            return (agent_task.percent_complete, agent_task.last_updated_at)
-
-        delay = self.resume_backoff_seconds
-        last_progress = progress()
-        stalls = 0
-        while stalls < self.max_resume_attempts:
-            try:
-                await agent_task.wait_for_completion()
-            except Exception as exc:  # noqa: BLE001 -- re-raised unless transient
-                if not _is_transient(exc):
-                    raise
-                log.debug("aristotle: wait interrupted (%s); resuming", exc)
+        deadline = time.monotonic() + self.timeout_s
+        while True:
             await self._with_retry(agent_task.refresh, "refresh task status")
             if agent_task.status in terminal:
-                return
-
-            if progress() != last_progress:
-                # The run advanced server-side, so this drop is not a stall: reset the
-                # budget and backoff and keep reconnecting for as long as it progresses.
-                last_progress = progress()
-                stalls = 0
-                delay = self.resume_backoff_seconds
-            else:
-                stalls += 1
-            # Expected: long-lived SSE streams get severed and we re-attach. Debug, not
-            # warning, so a normal run with many reconnects stays quiet.
+                return False
+            if time.monotonic() >= deadline:
+                log.warning(
+                    "aristotle: task %s still %s after timeout_s=%ss; proceeding with "
+                    "whatever output is available",
+                    agent_task.agent_task_id,
+                    agent_task.status.name,
+                    self.timeout_s,
+                )
+                return True
+            # A concurrent sweep runs many of these at once; keep the poll quiet.
             log.debug(
-                "aristotle: connection dropped with task still %s; resuming "
-                "(stall %d/%d)",
+                "aristotle: task %s %s at %s%%",
+                agent_task.agent_task_id,
                 agent_task.status.name,
-                stalls,
-                self.max_resume_attempts,
+                agent_task.percent_complete,
             )
-            await asyncio.sleep(delay)
-            delay = min(delay * 2, 60.0)
-        log.warning(
-            "aristotle: task %s still %s after %d resumes with no progress; proceeding "
-            "with whatever output is available",
-            agent_task.agent_task_id,
-            agent_task.status.name,
-            self.max_resume_attempts,
-        )
+            await asyncio.sleep(self.poll_interval_s)
 
     async def _sync_run_info(
         self, project: Project, agent_task: AgentTask, logs_dir: Path

@@ -100,11 +100,11 @@ def test_build_prover_aristotle() -> None:
     prover = build_prover(
         {
             "compute": {"type": "docker"},
-            "prover": {"type": "aristotle", "max_resume_attempts": 3},
+            "prover": {"type": "aristotle", "poll_interval_s": 3},
         }
     )
     assert isinstance(prover, AristotleProver)
-    assert prover.max_resume_attempts == 3
+    assert prover.poll_interval_s == 3
 
 
 # --- loud on bad input -----------------------------------------------------
