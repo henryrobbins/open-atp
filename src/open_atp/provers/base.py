@@ -30,7 +30,7 @@ from pathlib import Path
 
 import structlog
 
-from open_atp.auth import AuthStatus
+from open_atp.auth import AuthState, AuthStatus
 from open_atp.backends.base import ComputeBackend, ProvisionError
 from open_atp.harness.base import MissingCredentials
 from open_atp.lean import ProofTask
@@ -254,6 +254,10 @@ class AutomatedProver(abc.ABC):
     def prove(self, task: ProofTask, output_dir: Path | str) -> ProofResult:
         """Full lifecycle: reject-on-mismatch, generate, verify, write the result.
 
+        A credential with less than :data:`~open_atp.auth.EXPIRY_WARNING` left is
+        logged as a warning up front -- a run outlives that window -- but does not
+        stop the run.
+
         Parameters
         ----------
         task : ~open_atp.lean.ProofTask
@@ -299,6 +303,7 @@ class AutomatedProver(abc.ABC):
             binding["task"] = task.name
         with structlog.contextvars.bound_contextvars(**binding):
             self.verifier.check_compatible(task.project)
+            self._warn_if_credential_expiring()
 
             output_dir = Path(output_dir)
             wd = output_dir / "wd"
@@ -350,3 +355,31 @@ class AutomatedProver(abc.ABC):
                 },
             )
             return result
+
+    def _warn_if_credential_expiring(self) -> None:
+        """Warn when the credential has less than ``EXPIRY_WARNING`` left to run on.
+
+        A run outlives that window, and nothing renews the credential mid-run: the
+        sandbox holds a *copy*, so even a refreshable token refreshed in there is
+        discarded with the container. The run still proceeds -- the provider is the
+        authority on whether a credential works, not our reading of its expiry.
+        """
+        try:
+            status = self.auth_status()
+        except Exception:
+            # Reading the credential is best-effort here: whatever went wrong will
+            # resurface as a real failure when the run resolves it for real, and a
+            # pre-flight warning must never be what breaks a run.
+            log.debug("could not read credential before run", exc_info=True)
+            return
+        if status.state() is not AuthState.EXPIRING:
+            return
+        remaining = status.time_remaining()
+        log.warning(
+            "credential expires soon; it will not survive this run",
+            extra={
+                "source": status.source,
+                "expires_in_s": int(remaining.total_seconds()) if remaining else None,
+                "refreshable": status.refreshable,
+            },
+        )
