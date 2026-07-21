@@ -59,7 +59,7 @@ def test_missing_api_key_raises_out_of_prove(
     assert not (out / "logs" / "result.json").exists()
 
 
-def _fake_result(*, solved: bool) -> object:
+def _fake_result(*, solved: bool, timed_out: bool = False) -> object:
     """An async stand-in for ``_submit_and_download`` that writes a result archive."""
     body = SOLVED_FILE if solved else open(FIXTURE / "MILExample.lean").read()
 
@@ -86,7 +86,8 @@ def _fake_result(*, solved: bool) -> object:
         (logs_dir / "events.json").write_text("[]")
         return dest_tar, {
             "project_id": "test-123",
-            "task_status": "COMPLETE",
+            "task_status": "IN_PROGRESS" if timed_out else "COMPLETE",
+            "timed_out": timed_out,
             "logs_dir": str(logs_dir),
         }
 
@@ -131,6 +132,60 @@ def test_generate_extracts_result_and_reports_changed_files(
     # The hosted agent's summary and the run record landed in the logs dir.
     assert "Summary" in (logs_dir / "summary.md").read_text()
     assert (logs_dir / "events.json").is_file()
+
+
+def _unverified_verify(
+    prover: AristotleProver, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stub the shared verify with a failing report so no Docker is needed."""
+    monkeypatch.setattr(
+        prover.verifier,
+        "verify",
+        lambda project, session=None: VerificationReport(
+            compiles=True, sorry_free=False
+        ),
+    )
+
+
+def test_prove_reports_timeout_when_the_wait_was_abandoned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A partial candidate that doesn't verify is a TIMEOUT, not a plain miss."""
+    from open_atp.provers.base import ProofStatus
+
+    monkeypatch.setattr(
+        AristotleProver,
+        "_submit_and_download",
+        _fake_result(solved=False, timed_out=True),
+    )
+    prover = _make_prover()
+    _unverified_verify(prover, monkeypatch)
+
+    result = prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+    assert result.status is ProofStatus.TIMEOUT
+    assert result.error == "GenerationTimeout"
+    # The partial run's record survives the timeout.
+    assert result.verification is not None and not result.verification.sorry_free
+    assert result.metadata["project_id"] == "test-123"
+
+
+def test_prove_reports_unverified_when_the_task_finished(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A task that settled server-side and still didn't verify is not a timeout."""
+    from open_atp.provers.base import ProofStatus
+
+    monkeypatch.setattr(
+        AristotleProver, "_submit_and_download", _fake_result(solved=False)
+    )
+    prover = _make_prover()
+    _unverified_verify(prover, monkeypatch)
+
+    result = prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+    assert result.status is ProofStatus.UNVERIFIED
+    assert result.error is None
 
 
 def _fake_no_output(reason: str) -> object:

@@ -30,6 +30,7 @@ from open_atp.harness.base import MissingCredentials
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
+    GenerationTimeout,
     ProofResult,
     _compose_prompt,
 )
@@ -129,9 +130,9 @@ class AristotleProver(AutomatedProver):
         Seconds between polls of the task's status while waiting for generation.
     timeout_s : int, default 1800
         Hard wall-clock cap on the generation wait, in seconds. When it elapses we
-        stop waiting and proceed with whatever Aristotle has produced so far (the run
-        keeps going and billing server-side regardless -- this only bounds the
-        client).
+        stop waiting and verify whatever Aristotle has produced so far; if that does
+        not verify the run's status is ``TIMEOUT``. The run keeps going and billing
+        server-side regardless -- this only bounds the client.
 
     Examples
     --------
@@ -261,6 +262,15 @@ class AristotleProver(AutomatedProver):
 
         # Generation was network-only, so there is no live session to reuse
         result.verification = self.verifier.verify(LeanProject(wd))
+
+        # A wait abandoned at its deadline whose partial output still didn't verify is
+        # a timeout, not a plain miss -- but only after the candidate, its logs, and
+        # the verification report are on the result.
+        if metadata.get("timed_out") and not result.success:
+            raise GenerationTimeout(
+                f"aristotle generation used its full {self.timeout_s}s budget without "
+                "a verifying proof"
+            )
 
     async def _submit_and_download(
         self, project_dir: Path, prompt: str, dest_tar: Path, logs_dir: Path
