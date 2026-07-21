@@ -37,7 +37,7 @@ import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, NoReturn, cast
+from typing import TYPE_CHECKING, NoReturn, TypeVar, cast
 
 import modal
 
@@ -81,19 +81,21 @@ DRAIN_GRACE_S = 15
 #: Poll interval for Sandbox liveness check while blocked.
 LIVENESS_POLL_INTERVAL_S = 5
 
+_T = TypeVar("_T")
+
 
 def _is_dead(sb: modal.Sandbox) -> bool:
     """Return if the Modal Sandbox is dead."""
     return sb.poll() is not None
 
 
-def _safe_run[T](
-    fn: Callable[[], T],
+def _safe_run(
+    fn: Callable[[], _T],
     *,
     timeout_s: float,
     sb: modal.Sandbox,
     label: str,
-) -> T:
+) -> _T:
     """Run function with blocking Modal calls, bounded by liveness and a wall-clock.
 
     Modal's ``proc.wait``, ``proc.stdout``, ``filesystem.copy_*``, etc... are
@@ -114,7 +116,7 @@ def _safe_run[T](
 
     Parameters
     ----------
-    fn : Callable[[], T]
+    fn : Callable[[], _T]
         The blocking function to run.
     timeout_s : float
         Wall-clock time budget for ``fn`` to complete, in seconds.
@@ -125,7 +127,7 @@ def _safe_run[T](
 
     Returns
     -------
-    T
+    _T
         The return value of ``fn`` if it completes before the deadline.
 
     Raises
@@ -135,7 +137,7 @@ def _safe_run[T](
     ExecTimeout
         If ``fn`` does not complete before ``timeout_s``.
     """
-    result: list[T] = []
+    result: list[_T] = []
     error: list[BaseException] = []
     ctx = contextvars.copy_context()
 
