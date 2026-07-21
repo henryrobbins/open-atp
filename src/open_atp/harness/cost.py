@@ -38,6 +38,10 @@ COST_PER_MTOK: dict[str, tuple[float, float]] = {
     "grok-4.5": (2.0, 6.0),
     "grok-build-0.1": (1.0, 2.0),
     "grok-4.3": (1.25, 2.5),
+    # Moonshot Kimi Code (https://platform.kimi.ai/docs/pricing/chat)
+    "kimi-code/kimi-for-coding": (0.95, 4.0),
+    "kimi-code/kimi-for-coding-highspeed": (1.90, 8.0),
+    "kimi-code/k3": (3.0, 15.0),
 }
 
 

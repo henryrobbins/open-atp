@@ -475,11 +475,13 @@ def _build_modal_image(args: argparse.Namespace) -> int:
             "pipx ripgrep procps && rm -rf /var/lib/apt/lists/*",
             force_build=args.force,
         )
-        # Node 20 + agent CLIs (Claude Code, Codex, OpenCode), installed globally.
+        # Node 20 + agent CLIs (Claude Code, Codex, OpenCode, Kimi Code), installed
+        # globally. @moonshot-ai/kimi-code provides the `kimi` CLI the KimiHarness uses.
         .run_commands(
             "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - "
             "&& apt-get install -y --no-install-recommends nodejs "
             "&& npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai "
+            "@moonshot-ai/kimi-code "
             "&& rm -rf /var/lib/apt/lists/*"
         )
         # elan + Lean toolchain in a global ELAN_HOME so `lake`/`lean` are on root's

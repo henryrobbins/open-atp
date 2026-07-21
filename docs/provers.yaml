@@ -77,6 +77,16 @@ provers:
     cite: mistral2026leanstral
     source: { label: HuggingFace, url: https://huggingface.co/mistralai/Leanstral-2603 }
 
+  - name: Kimi Code
+    page: kimi
+    id:   kimi
+    skills: [leanprover]
+    mcp: true
+    company: { label: Moonshot AI, url: https://www.moonshot.ai }
+    paper: null
+    cite: null
+    source: { label: GitHub, url: https://github.com/MoonshotAI/kimi-code }
+
   - name: Numina
     page: numina
     id:   numina

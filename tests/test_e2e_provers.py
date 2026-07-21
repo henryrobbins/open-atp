@@ -69,6 +69,12 @@ def _need_codex() -> str | None:
     return None if (Path.home() / ".codex").exists() else "no ~/.codex (codex login)"
 
 
+def _need_kimi() -> str | None:
+    """Kimi authenticates via a ``~/.kimi-code`` dir (``kimi login``), not env."""
+    home = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
+    return None if (home / "credentials").is_dir() else "no ~/.kimi-code (kimi login)"
+
+
 def _need_grok() -> str | None:
     """Grok runs via opencode's xai provider (``opencode auth login`` -> xAI)."""
     store = Path.home() / ".local" / "share" / "opencode" / "auth.json"
@@ -147,6 +153,12 @@ PROVER_SPECS = [
         _need_env("MISTRAL_API_KEY"),
         marks=pytest.mark.agent_api,
         id="agent-leanstral",
+    ),
+    pytest.param(
+        "kimi",
+        _need_kimi,
+        marks=pytest.mark.agent_api,
+        id="agent-kimi",
     ),
 ]
 

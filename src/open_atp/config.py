@@ -151,6 +151,7 @@ STANDARD_PROVERS: dict[str, dict[str, object]] = {
     },
     "leanstral": {"type": "agent", "harness": {"type": "vibe"}},
     "axproverbase": {"type": "agent", "harness": {"type": "axproverbase"}},
+    "kimi": {"type": "agent", "harness": {"type": "kimi"}},
     "numina": {"type": "numina"},
     "aristotle": {"type": "aristotle"},
 }
