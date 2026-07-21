@@ -43,7 +43,8 @@ verifier **rejects** projects whose toolchain doesn't match the sandbox image's 
 ```
 src/open_atp/
   config.py         standard_prover + STANDARD_PROVERS registry (build provers by name)
-  __main__.py       `open-atp prove | benchmark | download | build-docker-image | build-modal-image` CLI
+  __main__.py       `open-atp prove | benchmark | download | auth-status | build-docker-image | build-modal-image` CLI
+  auth.py           AuthStatus: a prover's credential, its expiry, and its state
   images/           image name + toolchain pins (DEFAULT_IMAGE, DEFAULT_TOOLCHAIN)
   lean.py           LeanProject, ProofTask, create_project (the Lean input contract)
   verify.py         VerificationReport, Verifier (the shared final check)
@@ -188,6 +189,8 @@ open-atp benchmark <dataset> <output> [options]     # directory of proof tasks
 
 open-atp download <dataset> <output>                # lands at <output>/<dataset>
 
+open-atp auth-status [--json]                       # per-prover credential + expiry
+
 open-atp build-docker-image       [-t/--tag TAG] [-C/--no-cache]
 open-atp build-modal-image        [-n/--name N] [-a/--app A] [-f/--force]
 ```
@@ -204,7 +207,10 @@ print(report.verified, report.sorry_free, report.axioms)
 
 Copy `.env.example` → `.env` (gitignored, never committed). All keys are needed only
 for the corresponding **live** test or harness; absent keys make the dependent
-skill/test degrade or skip:
+skill/test degrade or skip. `open-atp auth-status` tabulates what this host actually
+has, per prover — including how long the file-backed OAuth logins (codex, grok, kimi)
+stay valid. Those refresh only when their CLI runs **on the host**: a sandbox gets a
+copy, so a token it refreshes there dies with the container.
 
 - `ARISTOTLE_API_KEY` — `pytest -m aristotle_api`
 - `CLAUDE_CODE_OAUTH_TOKEN` — `agent_api` test with default claude_code harness

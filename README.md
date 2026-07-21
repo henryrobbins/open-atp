@@ -29,7 +29,11 @@ Docker container. The image must be built before running any prover:
 open-atp build-docker-image
 ```
 
-Each prover has its own authentication requirements. See each [prover](https://open-atp.readthedocs.io/en/latest/provers/index.html) page for its authentication instructions.
+Each prover has its own authentication requirements. See each [prover](https://open-atp.readthedocs.io/en/latest/provers/index.html) page for its authentication instructions, and check what the host currently has with:
+
+```bash
+open-atp auth-status
+```
 
 ## Quickstart
 

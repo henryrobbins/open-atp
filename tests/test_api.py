@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+from open_atp.auth import AuthKind, AuthStatus
 from open_atp.backends.base import (
     ComputeError,
     ExecTimeout,
@@ -89,6 +90,9 @@ class FakeProver(AutomatedProver):
         self._verified = verified
         self._cost = cost_usd
         self._raises = raises
+
+    def auth_status(self) -> AuthStatus:
+        return AuthStatus(AuthKind.API_KEY, "FAKE_API_KEY", present=True)
 
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult

@@ -6,8 +6,10 @@ import json
 import logging
 import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
+from open_atp.auth import AuthKind, AuthStatus
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult, MissingCredentials
 
@@ -60,6 +62,32 @@ class KimiHarness(Harness):
     ) -> None:
         super().__init__(model=model, effort=effort)
         self._home_dir = home_dir
+
+    def auth_status(self) -> AuthStatus:
+        # `kimi login` writes one credential file per account; the CLI reads whichever
+        # matches its configured provider, so report the kimi-code one it ships with.
+        path = self._source_home() / "credentials" / "kimi-code.json"
+        status = AuthStatus(kind=AuthKind.OAUTH, source=str(path), present=False)
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return status
+        if not data.get("access_token"):
+            return status
+        # `expires_at` is in epoch seconds; the access token is short-lived (~15min)
+        # and the CLI trades the refresh token for a new one on the host.
+        expires = data.get("expires_at")
+        return AuthStatus(
+            kind=AuthKind.OAUTH,
+            source=str(path),
+            present=True,
+            expires_at=(
+                datetime.fromtimestamp(expires, UTC)
+                if isinstance(expires, int | float)
+                else None
+            ),
+            refreshable=bool(data.get("refresh_token")),
+        )
 
     def _source_home(self) -> Path:
         """The host Kimi Code data dir to stage credentials from."""

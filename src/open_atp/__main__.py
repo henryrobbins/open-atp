@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -30,6 +31,7 @@ from rich.table import Table
 from structlog.typing import Processor
 from tqdm import tqdm
 
+from open_atp.auth import AuthState, AuthStatus
 from open_atp.backends import _BACKENDS
 from open_atp.backends.base import ComputeBackend
 from open_atp.benchmark import (
@@ -231,6 +233,110 @@ def _benchmark_table(result: BenchmarkResult) -> Table:
         time = f"{r.duration_s:.0f}s" if r.duration_s is not None else "—"
         table.add_row(run.task, run.prover, status, cost, time)
     return table
+
+
+#: Row style per credential state: valid is green, nearly-expired yellow, and both
+#: "won't authenticate" states red.
+_AUTH_STYLES = {
+    AuthState.OK: "green",
+    AuthState.EXPIRING: "yellow",
+    AuthState.EXPIRED: "red",
+    AuthState.MISSING: "red",
+}
+
+
+def _format_remaining(remaining: timedelta | None) -> str:
+    """A credential's time left, coarsened to its two largest units.
+
+    An elapsed window reads as how long ago it lapsed (``"9h 50m ago"``); the status
+    column already says *that* it expired.
+    """
+    if remaining is None:
+        return "—"
+    hours, seconds = divmod(int(abs(remaining).total_seconds()), 3600)
+    days, hours = divmod(hours, 24)
+    minutes = seconds // 60
+    if days:
+        text = f"{days}d {hours}h"
+    elif hours:
+        text = f"{hours}h {minutes}m"
+    else:
+        text = f"{minutes}m"
+    return f"{text} ago" if remaining <= timedelta(0) else text
+
+
+def _abbreviate_home(source: str) -> str:
+    """A credential path shortened against ``$HOME``; env var names pass through."""
+    home = str(Path.home())
+    return f"~{source[len(home) :]}" if source.startswith(home) else source
+
+
+def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
+    """A per-prover credential table: kind, where it lives, and how long it lasts."""
+    table = Table(box=ROUNDED)
+    table.add_column("prover")
+    table.add_column("auth")
+    # Fold rather than truncate: a narrow terminal must not hide which env var or
+    # file to go fix.
+    table.add_column("credential", overflow="fold")
+    table.add_column("status", justify="center")
+    table.add_column("expires in", justify="right")
+    table.add_column("refreshable", justify="center")
+    for name, status in statuses.items():
+        state = status.state()
+        style = _AUTH_STYLES[state]
+        table.add_row(
+            name,
+            status.kind.value,
+            _abbreviate_home(status.source),
+            f"[{style}]{state.value}[/]",
+            _format_remaining(status.time_remaining()),
+            "✓" if status.refreshable else "—",
+        )
+    return table
+
+
+def _auth_status(args: argparse.Namespace) -> int:
+    # Every prover needs a backend, but none is contacted here: reading a credential
+    # is a host-side operation, so the default backend stands in for all of them.
+    statuses = {
+        name: prover.auth_status()
+        for name, prover in _all_standard_provers(
+            _build_backend({"type": "docker"})
+        ).items()
+    }
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    name: {
+                        "kind": s.kind.value,
+                        "source": s.source,
+                        "present": s.present,
+                        "state": s.state().value,
+                        "expires_at": s.expires_at.isoformat()
+                        if s.expires_at
+                        else None,
+                        "refreshable": s.refreshable,
+                    }
+                    for name, s in statuses.items()
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    Console().print(_auth_table(statuses))
+    # A refreshable token is renewed by its CLI on the host, never in a sandbox: the
+    # credential is copied in, so a refresh there dies with the container.
+    stale = {AuthState.EXPIRING, AuthState.EXPIRED}
+    if any(s.refreshable and s.state() in stale for s in statuses.values()):
+        print(
+            "note: a sandboxed run cannot refresh its own credential — re-run the "
+            "prover's CLI on this host (or log in again) to renew it first."
+        )
+    return 0
 
 
 def _prove(args: argparse.Namespace) -> int:
@@ -683,6 +789,16 @@ def build_parser() -> argparse.ArgumentParser:
         "output", help="Parent directory; the dataset lands at <output>/<dataset>."
     )
 
+    auth = sub.add_parser(
+        "auth-status",
+        help="Show each standard prover's credential and how long it stays valid.",
+    )
+    auth.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the statuses as JSON.",
+    )
+
     build = sub.add_parser(
         "build-docker-image",
         help="Build the sandbox Docker image from images/Dockerfile.",
@@ -747,6 +863,8 @@ def main(argv: list[str] | None = None) -> int:
         return _download(args)
     if args.command == "benchmark":
         return _benchmark(args)
+    if args.command == "auth-status":
+        return _auth_status(args)
     if args.command == "build-docker-image":
         return _build_image(args)
     if args.command == "build-modal-image":

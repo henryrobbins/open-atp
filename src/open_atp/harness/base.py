@@ -33,6 +33,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar
 
+from open_atp.auth import AuthKind, AuthStatus
+
 log = logging.getLogger("open_atp")
 
 
@@ -234,6 +236,51 @@ class Harness(ABC):
             },
         )
         return auth
+
+    @abstractmethod
+    def auth_status(self) -> AuthStatus:
+        """Report this harness's credential without resolving or staging it.
+
+        Unlike :meth:`agent_auth`, this never raises on an absent credential and
+        never touches the workdir -- an unauthenticated host gets a
+        :attr:`~open_atp.auth.AuthState.MISSING` status back, not an exception.
+
+        Returns
+        -------
+        ~open_atp.auth.AuthStatus
+            Where the credential lives, whether it is there, and when it expires.
+        """
+
+    def _env_auth_status(
+        self,
+        env_name: str,
+        explicit: str | None,
+        kind: AuthKind = AuthKind.API_KEY,
+    ) -> AuthStatus:
+        """An :class:`~open_atp.auth.AuthStatus` for a credential read from the env.
+
+        The non-raising counterpart to :meth:`_key_env`, resolving the same way: an
+        explicit constructor override wins, else the host environment.
+
+        Parameters
+        ----------
+        env_name : str
+            The env var the credential is read from.
+        explicit : str, optional
+            A constructor override taking precedence over the host environment.
+        kind : ~open_atp.auth.AuthKind, default AuthKind.API_KEY
+            What sort of credential the env var carries.
+
+        Returns
+        -------
+        ~open_atp.auth.AuthStatus
+            A status with no expiry -- an env-borne credential carries none.
+        """
+        return AuthStatus(
+            kind=kind,
+            source=env_name,
+            present=bool(explicit or os.environ.get(env_name)),
+        )
 
     def _static_env(self) -> dict[str, str]:
         """Non-secret env vars to set for this harness (e.g. ``IS_SANDBOX``).

@@ -30,6 +30,7 @@ from pathlib import Path
 
 import structlog
 
+from open_atp.auth import AuthStatus
 from open_atp.backends.base import ComputeBackend, ProvisionError
 from open_atp.harness.base import MissingCredentials
 from open_atp.lean import ProofTask
@@ -219,6 +220,22 @@ class AutomatedProver(abc.ABC):
             + self.verifier.timeout_s
             + self.verifier.backend.wallclock_overhead_s
         )
+
+    @abc.abstractmethod
+    def auth_status(self) -> AuthStatus:
+        """Report the credential this prover runs on, without attempting a run.
+
+        Reads only the host (an env var, or the CLI credential file a ``login``
+        wrote); an unauthenticated host yields a
+        :attr:`~open_atp.auth.AuthState.MISSING` status rather than an exception.
+        The credential is never checked against its provider, so a present,
+        unexpired one can still be revoked.
+
+        Returns
+        -------
+        ~open_atp.auth.AuthStatus
+            Where the credential lives, whether it is there, and when it expires.
+        """
 
     @abc.abstractmethod
     def _generate(

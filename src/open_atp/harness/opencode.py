@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import tempfile
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from open_atp.auth import AuthKind, AuthStatus
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import (
     Harness,
@@ -18,6 +20,9 @@ from open_atp.harness.base import (
 
 #: The authentication strategies :class:`OpenCodeHarness` supports.
 _AUTH_MODES = ("api_key", "login")
+
+#: Where opencode stores per-provider logins, under ``$XDG_DATA_HOME``'s default.
+_AUTH_STORE = (".local", "share", "opencode", "auth.json")
 
 #: opencode's data dir under the sandbox ``$HOME``; the launch script points
 #: ``XDG_DATA_HOME`` here so opencode reads ``<dir>/opencode/auth.json``.
@@ -125,24 +130,50 @@ class OpenCodeHarness(Harness):
             return {}
         return self._key_env(_provider_env_var(self.provider), self._api_key)
 
+    def auth_status(self) -> AuthStatus:
+        if self.auth != "login":
+            return self._env_auth_status(
+                _provider_env_var(self.provider), self._api_key
+            )
+        entry = self._stored_login() or {}
+        # opencode stamps `expires` in epoch milliseconds.
+        expires = entry.get("expires")
+        return AuthStatus(
+            kind=AuthKind.OAUTH,
+            source=str(self._auth_store()),
+            present=bool(entry),
+            expires_at=(
+                datetime.fromtimestamp(expires / 1000, UTC)
+                if isinstance(expires, int | float)
+                else None
+            ),
+            refreshable=bool(entry.get("refresh")),
+        )
+
+    def _auth_store(self) -> Path:
+        """opencode's credential store, holding one entry per logged-in provider."""
+        return Path.home().joinpath(*_AUTH_STORE)
+
+    def _stored_login(self) -> dict[str, Any] | None:
+        """This provider's entry in opencode's credential store, if it has one."""
+        try:
+            entry = json.loads(self._auth_store().read_text()).get(self.provider)
+        except (OSError, json.JSONDecodeError):
+            return None
+        return entry if isinstance(entry, dict) else None
+
     def _home_dirs(self) -> list[tuple[Path, str]]:
         # Only "login" needs a mount; "api_key" forwards an env var instead.
         if self.auth != "login":
             return []
-        # opencode stores credentials in $XDG_DATA_HOME/opencode/auth.json (default
-        # ~/.local/share/opencode/auth.json). Stage a minimal data dir holding only
-        # this provider's entry -- never the whole auth.json, which also carries other
-        # providers' keys -- and mount it; the launch script points XDG_DATA_HOME at
-        # the mount.
-        store = Path.home() / ".local" / "share" / "opencode" / "auth.json"
-        try:
-            entry = json.loads(store.read_text()).get(self.provider)
-        except FileNotFoundError:
-            entry = None
+        # Stage a minimal data dir holding only this provider's entry -- never the
+        # whole auth.json, which also carries other providers' keys -- and mount it;
+        # the launch script points XDG_DATA_HOME at the mount.
+        entry = self._stored_login()
         if not entry:
             raise MissingCredentials(
                 f"opencode harness with auth='login' requires a {self.provider!r} "
-                f"login in {store}; run `opencode auth login` and choose "
+                f"login in {self._auth_store()}; run `opencode auth login` and choose "
                 f"{self.provider}"
             )
         # Lock the check-then-create: without it two concurrent runs on a shared

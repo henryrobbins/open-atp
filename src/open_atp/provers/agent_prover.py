@@ -21,6 +21,7 @@ import shutil
 from pathlib import Path
 from typing import TextIO
 
+from open_atp.auth import AuthStatus
 from open_atp.backends.base import (
     CommandHandle,
     CommandResult,
@@ -187,6 +188,17 @@ class AgentProver(AutomatedProver):
     def prover_prompt(self) -> str:
         """The prover's own prompt handed to the agent, before any user prompt."""
         return PROVER_PROMPT
+
+    def auth_status(self) -> AuthStatus:
+        """Report the credential the agent CLI runs on.
+
+        Returns
+        -------
+        ~open_atp.auth.AuthStatus
+            The harness's own status -- an agent prover authenticates as whatever
+            CLI backs it.
+        """
+        return self.harness.auth_status()
 
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult

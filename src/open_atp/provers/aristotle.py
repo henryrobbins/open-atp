@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 from open_atp._capture import capture_stdout
+from open_atp.auth import AuthKind, AuthStatus
 from open_atp.backends.base import ComputeBackend
 from open_atp.harness.base import MissingCredentials
 from open_atp.lean import LeanProject, ProofTask
@@ -190,6 +191,21 @@ class AristotleProver(AutomatedProver):
     def prover_prompt(self) -> str:
         """The prover's own prompt handed to Aristotle, before any user prompt."""
         return PROVER_PROMPT
+
+    def auth_status(self) -> AuthStatus:
+        """Report the ``ARISTOTLE_API_KEY`` the hosted API is called with.
+
+        Returns
+        -------
+        ~open_atp.auth.AuthStatus
+            A non-expiring API-key status, read from the constructor override or
+            the host environment.
+        """
+        return AuthStatus(
+            kind=AuthKind.API_KEY,
+            source="ARISTOTLE_API_KEY",
+            present=bool(self._api_key or os.environ.get("ARISTOTLE_API_KEY")),
+        )
 
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult

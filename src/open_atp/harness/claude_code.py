@@ -8,6 +8,7 @@ import os
 import shutil
 from pathlib import Path
 
+from open_atp.auth import AuthKind, AuthStatus
 from open_atp.harness._catalog import resolve_plugin
 from open_atp.harness._paths import _MCP_JSON, _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult, MissingCredentials
@@ -117,6 +118,14 @@ class ClaudeCodeHarness(Harness):
         if self.plugins:
             env["CLAUDE_CODE_FORK_SUBAGENT"] = "1"
         return env
+
+    def auth_status(self) -> AuthStatus:
+        # `claude setup-token` mints a long-lived opaque token: it carries no
+        # readable expiry and nothing refreshes it in place, so presence is the
+        # whole story.
+        return self._env_auth_status(
+            "CLAUDE_CODE_OAUTH_TOKEN", self._oauth_token, kind=AuthKind.OAUTH
+        )
 
     def _required_env(self) -> dict[str, str]:
         # A long-lived token (from `claude setup-token`) bills against a Claude

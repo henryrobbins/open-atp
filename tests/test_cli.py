@@ -11,6 +11,7 @@ it, so no backend is exercised.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 
@@ -212,3 +213,39 @@ def test_download_dispatches_to_download_dataset(
     assert rc == 0
     assert seen["dataset"] is cli.DATASET.FATE_M
     assert seen["dest"] == tmp_path
+
+
+def test_auth_status_json_reports_every_standard_prover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An unauthenticated host: no credential env vars, and an empty $HOME for the
+    # file-backed CLIs. Reading them must report, never raise.
+    for var in [v for v in os.environ if v.endswith(("_API_KEY", "_OAUTH_TOKEN"))]:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    rc = cli._auth_status(argparse.Namespace(json=True))
+
+    assert rc == 0
+    statuses = json.loads(capsys.readouterr().out)
+    assert sorted(statuses) == sorted(standard_provers())
+    assert all(s["state"] == "missing" for s in statuses.values())
+    assert {s["kind"] for s in statuses.values()} == {"api key", "oauth"}
+
+
+def test_auth_status_table_flags_a_credential_that_cannot_self_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    store = tmp_path / ".local" / "share" / "opencode"
+    store.mkdir(parents=True)
+    # An expired-but-refreshable login: valid on the host once its CLI renews it,
+    # but a sandbox copy can never do so itself.
+    store.joinpath("auth.json").write_text(
+        json.dumps({"xai": {"access": "a", "refresh": "r", "expires": 1_000}})
+    )
+
+    rc = cli._auth_status(argparse.Namespace(json=False))
+
+    assert rc == 0
+    assert "sandboxed run cannot refresh" in capsys.readouterr().out
