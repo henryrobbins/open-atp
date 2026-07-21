@@ -72,7 +72,7 @@ WIRE_LINES = [
     json.dumps(
         {
             "type": "usage.record",
-            "model": "kimi-code/kimi-for-coding",
+            "model": "kimi-code/k3",
             "usage": {
                 "inputOther": 2646,
                 "output": 27,
@@ -281,11 +281,9 @@ def test_generate_reports_changes_and_relocates_session(
     assert list((logs_dir / "kimi-session").rglob("wire.jsonl"))
     # Tokens flow from the wire log; kimi never self-reports USD, so the prover
     # estimates the cost from those tokens at the model's rate.
-    assert result.cost_usd == compute_cost_usd(
-        "kimi-code/kimi-for-coding", 2646 + 17920, 27
-    )
+    assert result.cost_usd == compute_cost_usd("kimi-code/k3", 2646 + 17920, 27)
     assert result.metadata["harness"] == "kimi"
-    assert result.metadata["model"] == "kimi-code/kimi-for-coding"
+    assert result.metadata["model"] == "kimi-code/k3"
     assert result.metadata["input_tokens"] == 2646 + 17920
     assert result.metadata["output_tokens"] == 27
     assert result.metadata["stop_reason"] == "end_turn"

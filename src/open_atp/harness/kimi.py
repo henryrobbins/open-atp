@@ -20,7 +20,8 @@ class KimiHarness(Harness):
     Parameters
     ----------
     model : str
-        Model alias the agent runs (a ``config.toml`` alias). Default ``"k3"`` (K3).
+        Model alias the agent runs (a ``config.toml`` alias). Default
+        ``"kimi-code/k3"`` (K3).
     effort : str
         Reasoning-effort level, one of ``"low"``, ``"high"`` (default), or ``"max"``.
     home_dir : Path, optional
@@ -35,7 +36,7 @@ class KimiHarness(Harness):
     >>> harness.name
     'kimi'
     >>> harness.model
-    'k3'
+    'kimi-code/k3'
     """
 
     name = "kimi"
@@ -51,7 +52,7 @@ class KimiHarness(Harness):
     def __init__(
         self,
         *,
-        model: str = "k3",
+        model: str = "kimi-code/k3",
         effort: str = "high",
         home_dir: Path | None = None,
     ) -> None:
