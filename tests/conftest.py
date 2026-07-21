@@ -48,6 +48,8 @@ for _placeholder_env in (
     "CLAUDE_CODE_OAUTH_TOKEN",
     "ANTHROPIC_API_KEY",
     "MISTRAL_API_KEY",
+    # AristotleProver's preflight requires the key before its (stubbed) remote runs.
+    "ARISTOTLE_API_KEY",
 ):
     os.environ.setdefault(_placeholder_env, "test-placeholder")
 

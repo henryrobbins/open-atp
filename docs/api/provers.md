@@ -20,6 +20,11 @@ generate, then verify in the sandbox) so subclasses only implement `_generate`.
 .. autoclass:: open_atp.provers.base.AutomatedProver
 
 .. autoclass:: open_atp.provers.base.ProofResult
+
+.. autoclass:: open_atp.provers.base.ProofStatus
+   :members:
+
+.. autoexception:: open_atp.provers.base.GenerationTimeout
 ```
 
 ## Provers
@@ -39,6 +44,8 @@ The concrete candidate generators.
 ```{eval-rst}
 .. autoclass:: open_atp.provers.aristotle.AristotleProver
    :show-inheritance:
+
+.. autoexception:: open_atp.provers.aristotle.ServiceError
 ```
 
 ## Standard catalog

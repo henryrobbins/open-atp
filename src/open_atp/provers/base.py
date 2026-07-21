@@ -20,6 +20,7 @@ and ``logs`` is the run record.
 from __future__ import annotations
 
 import abc
+import enum
 import json
 import logging
 import time
@@ -29,14 +30,39 @@ from pathlib import Path
 
 import structlog
 
-from open_atp.backends.base import ComputeBackend
-from open_atp.lean import LeanProject, ProofTask
+from open_atp.backends.base import ComputeBackend, ProvisionError
+from open_atp.harness.base import MissingCredentials
+from open_atp.lean import ProofTask
 from open_atp.verify import VerificationReport, Verifier
 
 log = logging.getLogger("open_atp")
 
 #: Heading the optional per-task ``user_prompt`` is appended under.
 _ADDITIONAL_INSTRUCTIONS = "\n\n# Additional instructions\n\n{user_prompt}"
+
+
+class GenerationTimeout(Exception):
+    """The proof generation consumed its wall-clock budget before finishing."""
+
+
+class ProofStatus(enum.Enum):
+    """Coarse status for a :class:`ProofResult`."""
+
+    #: Verified proof: compiles, ``sorry``-free, no foreign axioms.
+    VERIFIED = "verified"
+    #: Ran to completion but the candidate did not verify -- a genuine miss.
+    UNVERIFIED = "unverified"
+    #: The proof generation phase consumed its wall-clock budget before finishing.
+    TIMEOUT = "timeout"
+    #: There was an error during proof generation or verification.
+    ERROR = "error"
+
+
+def _status_for_exception(exc: BaseException) -> ProofStatus:
+    """Classify an exception onto a :class:`ProofStatus`."""
+    return (
+        ProofStatus.TIMEOUT if isinstance(exc, GenerationTimeout) else ProofStatus.ERROR
+    )
 
 
 def compose_prompt(prover_prompt: str, user_prompt: str | None) -> str:
@@ -83,9 +109,11 @@ class ProofResult:
     metadata : dict[str, object]
         Harness-specific run metadata (token counts, run summaries, ...).
     error : str, optional
-        Set when the prover raised before producing a result (Docker down, API error,
-        toolchain mismatch). :attr:`verification` is ``None`` and :attr:`success` is
-        ``False``.
+        The failing exception's class name; set when status is ERROR or TIMEOUT.
+    error_msg : str, optional
+        The failing exception's message; set when status is ERROR or TIMEOUT.
+    status : ProofStatus
+        Status of the proof generation run.
     wd : pathlib.Path
         The completed working directory (``output_dir/wd``) -- a complete lake project
         with the completed ``.lean`` files. The proof output.
@@ -107,6 +135,8 @@ class ProofResult:
     duration_s: float | None = None
     metadata: dict[str, object] = field(default_factory=dict)
     error: str | None = None
+    error_msg: str | None = None
+    status: ProofStatus = ProofStatus.ERROR
 
     @property
     def wd(self) -> Path:
@@ -127,7 +157,9 @@ class ProofResult:
         return {
             "prover": self.prover,
             "success": self.success,
+            "status": self.status.value,
             "error": self.error,
+            "error_msg": self.error_msg,
             "verification": self.verification.to_dict() if self.verification else None,
             "completed_files": dict(self.completed_files),
             "cost_usd": self.cost_usd,
@@ -195,11 +227,12 @@ class AutomatedProver(abc.ABC):
     ) -> None:
         """Generate the completed project in ``wd`` and record the run in ``result``.
 
-        Implementations must leave ``wd`` containing the full completed project so the
-        verifier can compile it in place, write the run's logs into ``logs_dir``, and
-        fill ``result`` (``completed_files``, ``cost_usd``, ``metadata``). A prover that
-        already verified the candidate in its own live sandbox sets
-        ``result.verification`` itself; otherwise :meth:`prove` runs the shared check.
+        Implementations must leave ``wd`` containing the full completed project, write
+        the run's logs into ``logs_dir``, fill ``result`` (``completed_files``,
+        ``cost_usd``, ``metadata``), and run the shared check to set
+        ``result.verification`` -- in their own live sandbox when they have one
+        (``verify(..., session=session)``), else standalone
+        (``self.verifier.verify(LeanProject(wd))``).
         """
 
     def prove(self, task: ProofTask, output_dir: Path | str) -> ProofResult:
@@ -220,17 +253,24 @@ class AutomatedProver(abc.ABC):
         Returns
         -------
         ProofResult
-            The verification verdict and run metadata, pointing at the populated
-            :attr:`~ProofResult.wd` and :attr:`~ProofResult.logs_dir`.
+            The outcome of the run, pointing at the populated :attr:`~ProofResult.wd`
+            and :attr:`~ProofResult.logs_dir`.
 
         Raises
         ------
         ~open_atp.lean.ToolchainMismatch
             If the project's toolchain differs from the backend image's. Checked up
-            front, before any generation compute is spent.
+            front, before any run starts -- so this raises rather than returning an
+            empty result.
         ~open_atp.lean.MathlibRevMismatch
             If the project records a Mathlib revision that differs from the backend
-            image's. Checked up front, before any generation compute is spent.
+            image's. Checked up front, before any run starts.
+        ~open_atp.harness.MissingCredentials
+            If a credential the run needs is absent. Surfaced while the run is coming
+            up, so it raises rather than returning an empty result.
+        ~open_atp.backends.base.ProvisionError
+            If the compute sandbox fails to come up (daemon down, image missing,
+            capacity). Raised before generation, so the run never started.
         """
         # Bind task (when named) + prover + a per-run id onto the context so every
         # downstream event -- including backend/verify records that never see ``self``
@@ -263,17 +303,21 @@ class AutomatedProver(abc.ABC):
             start = time.monotonic()
             try:
                 self._generate(task, wd, logs_dir, result)
-            except Exception:
-                log.exception("generation failed")
+                result.status = (
+                    ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
+                )
+            except (MissingCredentials, ProvisionError):
+                # The run never started; no partial results to return.
+                log.exception("prove could not start")
                 raise
+            except Exception as exc:
+                # All other exceptions are from a started run with partial results
+                # so we return a result with the error status instead of raising.
+                log.exception("prove failed")
+                result.status = _status_for_exception(exc)
+                result.error = type(exc).__name__
+                result.error_msg = str(exc)
             result.duration_s = time.monotonic() - start
-
-            # An agentic prover ran generation and the final check in one live session
-            # and set ``result.verification`` itself; reuse it rather than spinning a
-            # second sandbox. Only Aristotle (network generation, no session) lands here
-            # and gets the standalone check.
-            if result.verification is None:
-                result.verification = self.verifier.verify(LeanProject(wd))
 
             # A self-describing summary so a downloaded logs dir stands on its own.
             (logs_dir / "result.json").write_text(
@@ -282,6 +326,7 @@ class AutomatedProver(abc.ABC):
             log.info(
                 "prove complete",
                 extra={
+                    "status": result.status.value,
                     "success": result.success,
                     "cost_usd": result.cost_usd,
                     "duration_s": round(result.duration_s, 1),

@@ -35,7 +35,7 @@ from open_atp.config import (
 )
 from open_atp.images import DEFAULT_IMAGE, Image
 from open_atp.lean import LeanProject, ProofTask, create_project
-from open_atp.provers.base import AutomatedProver, ProofResult
+from open_atp.provers.base import AutomatedProver, ProofResult, ProofStatus
 from open_atp.verify import VerificationReport
 
 # Well-behaved library: emit to the ``open_atp`` logger, but leave all output
@@ -50,6 +50,7 @@ __all__ = [
     "DEFAULT_IMAGE",
     "Image",
     "ProofResult",
+    "ProofStatus",
     "VerificationReport",
     "LeanProject",
     "ProofTask",

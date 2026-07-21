@@ -12,15 +12,26 @@ parametrized ``test_e2e_provers.py`` suite, alongside every other prover/backend
 
 from __future__ import annotations
 
+import json
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 import pytest
 
+from open_atp.backends.base import (
+    TIMEOUT_EXIT_CODE,
+    CommandHandle,
+    CommandResult,
+    CommandTimeout,
+    ComputeSession,
+)
 from open_atp.backends.docker import DockerBackend
 from open_atp.harness import (
     _HARNESSES,
     ClaudeCodeHarness,
+    CodexHarness,
     Harness,
+    MissingCredentials,
     compute_cost_usd,
 )
 from open_atp.harness._catalog import resolve_plugin, resolve_skill
@@ -28,7 +39,8 @@ from open_atp.harness._numina import NuminaHarness
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver
-from open_atp.provers.base import ProofResult
+from open_atp.provers.base import ProofResult, ProofStatus
+from open_atp.verify import VerificationReport
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 STREAM = Path(__file__).parents[1] / "fixtures" / "agent_streams" / "claude_code.jsonl"
@@ -184,7 +196,7 @@ def test_claude_agent_auth_resolves_oauth_token(
 ) -> None:
     # Missing on the host and not passed explicitly -> hard failure.
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    with pytest.raises(RuntimeError, match="CLAUDE_CODE_OAUTH_TOKEN"):
+    with pytest.raises(MissingCredentials, match="CLAUDE_CODE_OAUTH_TOKEN"):
         ClaudeCodeHarness(plugins=[]).agent_auth()
     # Host env var is forwarded with its value, alongside the static IS_SANDBOX.
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok-host")
@@ -248,10 +260,10 @@ def test_generate_reports_files_the_agent_changed(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         # The real agent would edit files in place; emulate that.
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
-        return STREAM.read_text().splitlines(), ""
+        return STREAM.read_text().splitlines(), "", False
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     # No creds needed: the agent run is stubbed and the in-session verify is a no-op.
@@ -282,8 +294,8 @@ def test_generate_reports_no_changes_when_agent_does_nothing(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
-        return [], ""
+    ) -> tuple[list[str], str, bool]:
+        return [], "", False
 
     monkeypatch.setattr(AgentProver, "_run_agent", _noop_run_agent)
     prover = make_prover()
@@ -292,6 +304,152 @@ def test_generate_reports_no_changes_when_agent_does_nothing(
     assert result.completed_files == {}
     # No stream -> zero tokens -> estimated $0.00 for the known model.
     assert result.cost_usd == pytest.approx(0.0)
+
+
+# --- generation timeout + credential preflight (real classes, no Docker) -----
+
+
+class _ExitCodeHandle(CommandHandle):
+    """A finished command reporting a fixed exit code and no output.
+
+    Models the real backend handles: a command that exited with the
+    coreutils-``timeout`` code makes ``wait`` raise :class:`CommandTimeout`.
+    """
+
+    def __init__(self, exit_code: int) -> None:
+        self._exit_code = exit_code
+
+    def stream(self) -> Iterator[str]:
+        return iter(())
+
+    def wait(self) -> CommandResult:
+        result = CommandResult(
+            exit_code=self._exit_code, stdout="", stderr="", duration_s=0.0
+        )
+        if self._exit_code == TIMEOUT_EXIT_CODE:
+            raise CommandTimeout("command exceeded its budget", result=result)
+        return result
+
+
+class _ExitCodeSession(ComputeSession):
+    """A real session whose first exec (the agent) reports ``agent_exit``; rest 0.
+
+    Models a backend that caps the agent command: the generation exec comes back with
+    a coreutils-``timeout`` exit code (raising :class:`CommandTimeout`), then the
+    in-session verify exec runs normally (empty compile log -> the candidate does not
+    verify).
+    """
+
+    def __init__(self, agent_exit: int) -> None:
+        self._agent_exit = agent_exit
+        self._execs = 0
+
+    def exec(
+        self,
+        command: str,
+        *,
+        env: Mapping[str, str] | None = None,
+        timeout_s: int,
+    ) -> CommandHandle:
+        first, self._execs = self._execs == 0, self._execs + 1
+        return _ExitCodeHandle(self._agent_exit if first else 0)
+
+    def sync_out(self) -> None:
+        pass
+
+    def sync_in(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+
+class _ExitCodeBackend(DockerBackend):
+    """A DockerBackend whose session reports a chosen exit code for the agent exec."""
+
+    def __init__(self, agent_exit: int, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._agent_exit = agent_exit
+
+    def session(
+        self,
+        workdir: Path,
+        *,
+        timeout_s: int,
+        env: Mapping[str, str] | None = None,
+        mounts: Sequence[tuple[str, str]] | None = None,
+    ) -> ComputeSession:
+        return _ExitCodeSession(self._agent_exit)
+
+
+def test_generation_timeout_becomes_timeout_status(tmp_path: Path) -> None:
+    """An agent killed at its deadline that then fails to verify is TIMEOUT, recorded.
+
+    Drives the real ``prove`` lifecycle (real ``_run_agent`` + verify) over a session
+    that hands back coreutils-``timeout`` exit 124 for the agent exec; no monkeypatch.
+    """
+    prover = AgentProver(backend=_ExitCodeBackend(124, image=DEFAULT_IMAGE))
+
+    result = prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+    assert result.status is ProofStatus.TIMEOUT
+    assert result.error == "GenerationTimeout"
+    assert result.error_msg is not None and "budget" in result.error_msg
+    assert not result.success
+    # It is a record, not a raise: the run's artifacts still land.
+    payload = json.loads((result.logs_dir / "result.json").read_text())
+    assert payload["status"] == "timeout" and payload["error"] == "GenerationTimeout"
+
+
+def test_generation_timeout_that_still_verifies_is_not_a_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deadline-killed agent whose salvaged proof verifies is VERIFIED, not TIMEOUT.
+
+    The timeout only reclassifies a run that also failed to verify -- a killed agent
+    that happened to leave a complete proof still wins.
+    """
+    prover = AgentProver(backend=_ExitCodeBackend(124, image=DEFAULT_IMAGE))
+    # The agent exec still times out (124); force the verify verdict to pass so the
+    # salvaged candidate verifies despite the deadline kill.
+    report = VerificationReport(compiles=True, sorry_free=True)
+    monkeypatch.setattr(prover.verifier, "verify", lambda project, session=None: report)
+
+    result = prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+    assert result.success and result.status is ProofStatus.VERIFIED
+    assert result.error is None
+
+
+def test_missing_credentials_raises_out_of_prove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An absent credential raises out of prove() rather than becoming a record."""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    prover = AgentProver(backend=DockerBackend(image=DEFAULT_IMAGE))
+    out = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="CLAUDE_CODE_OAUTH_TOKEN"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), out)
+
+    # The run never completed, so no result record was written.
+    assert not (out / "logs" / "result.json").exists()
+
+
+def test_codex_missing_auth_file_raises_out_of_prove(tmp_path: Path) -> None:
+    """A codex harness with no auth.json raises MissingCredentials out of prove().
+
+    The codex CLI authenticates from a mounted ``auth.json``; resolving mounts is a
+    pre-run credential step, so its absence raises rather than becoming a record.
+    """
+    harness = CodexHarness(auth_file=tmp_path / "nonexistent" / "auth.json")
+    prover = AgentProver(backend=DockerBackend(image=DEFAULT_IMAGE), harness=harness)
+    out = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="auth.json"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), out)
+
+    assert not (out / "logs" / "result.json").exists()
 
 
 # --- mocked agent + real Docker verify --------------------------------------
@@ -315,11 +473,11 @@ def test_prove_reuses_one_sandbox_for_generation_and_verify(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         # Generation hands the live session through to the agent run.
         assert session is not None
         (workdir / "MILExample.lean").write_text(SOLVED_FILE)
-        return STREAM.read_text().splitlines(), ""
+        return STREAM.read_text().splitlines(), "", False
 
     monkeypatch.setattr(AgentProver, "_run_agent", _fake_run_agent)
     # No real credential resolution/mounts -- keeps the session sandbox dependency-free.

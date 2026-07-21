@@ -13,6 +13,7 @@ from open_atp.harness.base import (
     AgentAuth,
     Harness,
     HarnessRunResult,
+    MissingCredentials,
 )
 from open_atp.harness.claude_code import ClaudeCodeHarness
 from open_atp.harness.codex import CodexHarness
@@ -39,6 +40,7 @@ __all__ = [
     "Harness",
     "HarnessRunResult",
     "AgentAuth",
+    "MissingCredentials",
     "SCRIPT_FILE",
     "PROMPT_FILE",
     "ClaudeCodeHarness",

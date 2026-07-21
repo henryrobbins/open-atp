@@ -16,9 +16,12 @@ from pathlib import Path
 import pytest
 
 from open_atp.backends.docker import DockerBackend
+from open_atp.harness import MissingCredentials
 from open_atp.images import DEFAULT_IMAGE
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.aristotle import AristotleProver
 from open_atp.provers.base import ProofResult
+from open_atp.verify import VerificationReport
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 
@@ -39,6 +42,21 @@ async def _noop_sleep(_seconds: float) -> None:
 def _make_prover() -> AristotleProver:
     backend = DockerBackend(image=DEFAULT_IMAGE)
     return AristotleProver(backend=backend)
+
+
+def test_missing_api_key_raises_out_of_prove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No API key raises out of prove() before any network call -- not a record."""
+    monkeypatch.delenv("ARISTOTLE_API_KEY", raising=False)
+    prover = AristotleProver(backend=DockerBackend(image=DEFAULT_IMAGE))
+    out = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="ARISTOTLE_API_KEY"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), out)
+
+    # The run never completed, so no result record was written.
+    assert not (out / "logs" / "result.json").exists()
 
 
 def _fake_result(*, solved: bool) -> object:
@@ -80,8 +98,8 @@ def test_generate_extracts_result_and_reports_changed_files(
 ) -> None:
     """_generate alone: stage -> (stub) submit -> extract -> diff. No Docker needed.
 
-    The public ``prove`` runs the shared Docker verify, so the no-Docker unit test
-    drives the generation half directly and asserts on the filled result.
+    ``_generate`` ends with the shared verify; that half is stubbed here so the
+    no-Docker unit test can assert on the extracted/reported files in isolation.
     """
     from open_atp.lean import LeanProject, ProofTask
 
@@ -89,6 +107,14 @@ def test_generate_extracts_result_and_reports_changed_files(
         AristotleProver, "_submit_and_download", _fake_result(solved=True)
     )
     prover = _make_prover()
+    # Isolate the generation half: stub the shared verify so it doesn't hit Docker.
+    monkeypatch.setattr(
+        prover.verifier,
+        "verify",
+        lambda project, session=None: VerificationReport(
+            compiles=True, sorry_free=True
+        ),
+    )
     wd = tmp_path / "wd"
     logs_dir = tmp_path / "logs"
     wd.mkdir()
@@ -105,6 +131,45 @@ def test_generate_extracts_result_and_reports_changed_files(
     # The hosted agent's summary and the run record landed in the logs dir.
     assert "Summary" in (logs_dir / "summary.md").read_text()
     assert (logs_dir / "events.json").is_file()
+
+
+def _fake_no_output(reason: str) -> object:
+    """An async stand-in for ``_submit_and_download`` that produced no candidate."""
+
+    async def _stub(
+        self: AristotleProver,
+        project_dir: Path,
+        prompt: str,
+        dest_tar: Path,
+        logs_dir: Path,
+    ) -> tuple[None, dict[str, object]]:
+        return None, {"project_id": "test-123", "error": reason}
+
+    return _stub
+
+
+def test_generate_raises_when_aristotle_produces_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No candidate archive is an error, not a silent verify of the original project."""
+    from open_atp.provers.aristotle import ServiceError
+
+    reason = "Aristotle produced no output files."
+    monkeypatch.setattr(
+        AristotleProver, "_submit_and_download", _fake_no_output(reason)
+    )
+    prover = _make_prover()
+    wd = tmp_path / "wd"
+    logs_dir = tmp_path / "logs"
+    wd.mkdir()
+    logs_dir.mkdir()
+    result = ProofResult(prover="aristotle", verification=None, output_dir=tmp_path)
+
+    with pytest.raises(ServiceError, match=reason):
+        prover._generate(ProofTask(LeanProject(FIXTURE)), wd, logs_dir, result)
+
+    # The reason and run metadata survive on the result for the caller to inspect.
+    assert result.metadata["error"] == reason
 
 
 def test_is_transient_distinguishes_dropped_links_from_real_errors() -> None:

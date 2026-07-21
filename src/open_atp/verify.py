@@ -19,7 +19,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from open_atp.backends.base import ComputeBackend, ComputeSession
+from open_atp.backends.base import CommandTimeout, ComputeBackend, ComputeSession
 from open_atp.backends.docker import DockerBackend
 from open_atp.backends.modal import ModalBackend
 from open_atp.images import DEFAULT_IMAGE, Image
@@ -231,7 +231,7 @@ class Verifier:
 
     def verify(
         self, project: LeanProject, *, session: ComputeSession | None = None
-    ) -> VerificationReport:
+    ) -> VerificationReport | None:
         """Compile ``project`` and return a :class:`VerificationReport`.
 
         With no ``session`` the compile spins up its own sandbox via ``backend.run``.
@@ -248,9 +248,10 @@ class Verifier:
 
         Returns
         -------
-        VerificationReport
-            The compile/``sorry``/axiom verdict. A project with no ``.lean`` files
-            short-circuits to a trivial passing report without touching the sandbox.
+        VerificationReport or None
+            The compile/``sorry``/axiom verdict or None if the compile exceeds
+            the verifier's wall-clock timeout. A project with no ``.lean`` files
+            automatically passes.
 
         Raises
         ------
@@ -298,10 +299,19 @@ class Verifier:
         # The compile/axiom check is the post-generation step: cap it with the
         # verifier's own timeout, not the prover's (larger) generation budget.
         script = self._compile_script(rel)
-        if session is None:
-            result = self.backend.run(project.root, script, timeout_s=self.timeout_s)
-        else:
-            result = session.exec(script, timeout_s=self.timeout_s).wait()
+        try:
+            if session is None:
+                result = self.backend.run(
+                    project.root, script, timeout_s=self.timeout_s
+                )
+            else:
+                result = session.exec(script, timeout_s=self.timeout_s).wait()
+        except CommandTimeout:
+            log.warning(
+                "verification compile exceeded its budget; no verdict",
+                extra={"timeout_s": self.timeout_s, "backend": self.backend.name},
+            )
+            return None
         compile_log = result.stdout + ("\n" + result.stderr if result.stderr else "")
 
         per_file = self._parse_per_file(compile_log, rel)
