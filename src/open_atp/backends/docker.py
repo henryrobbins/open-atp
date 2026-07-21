@@ -2,7 +2,7 @@
 
 Runs an arbitrary command over a workdir in a Lean+Mathlib container. Mechanics:
 
-* ``docker run --rm --name afps-<uuid>`` with the workdir bind-mounted at
+* ``docker run --rm --name open-atp-<uuid>`` with the workdir bind-mounted at
   ``/workspace/wd`` (so file mutations land on the host with no copy-out step).
 * A unique container name so a run can be cancelled with ``docker kill``.
 * The image bakes a warm Mathlib olean cache at ``/workspace/.lake``; every command
@@ -237,7 +237,7 @@ class DockerBackend(ComputeBackend):
             A live :class:`DockerSession` over the workdir.
         """
         self._require_image()
-        container = f"afps-{uuid.uuid4().hex[:12]}"
+        container = f"open-atp-{uuid.uuid4().hex[:12]}"
         argv = self._build_cmd(workdir, container, env or {}, mounts or ())
         argv += ["sleep", "infinity"]
         log.debug(

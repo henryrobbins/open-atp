@@ -1,4 +1,4 @@
-name = "afps"
+name = "OpenATP"
 version = "0.1.0"
 
 [[require]]

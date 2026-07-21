@@ -18,16 +18,16 @@ _SCRIPTS = _ASSETS / "scripts"
 _MCP_JSON = _ASSETS / "configs" / "mcp.json"
 
 #: Root of the ``open_atp`` package, used to locate the vendored bundles.
-_OPEN_AFPS_DIR = Path(open_atp.__file__).parent
+_PACKAGE_DIR = Path(open_atp.__file__).parent
 
 
 def _vendor_dir(name: str) -> Path:
     """Locate a vendored bundle ``vendor/<name>`` in both wheel and source layouts."""
     candidates = [
         # Built wheel: force-included at open_atp/vendor/<name> (see pyproject).
-        _OPEN_AFPS_DIR / "vendor" / name,
+        _PACKAGE_DIR / "vendor" / name,
         # Source checkout / editable install: vendor/ at the repo root.
-        _OPEN_AFPS_DIR.parent.parent / "vendor" / name,
+        _PACKAGE_DIR.parent.parent / "vendor" / name,
     ]
     for c in candidates:
         if c.exists():
