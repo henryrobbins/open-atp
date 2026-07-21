@@ -205,6 +205,22 @@ def test_table_has_a_row_per_pair(tmp_path: Path) -> None:
     assert "✓" in rendered and "✗" in rendered
 
 
+def test_table_shows_error_status_for_failed_cell(tmp_path: Path) -> None:
+    """A cell whose run errored renders its status label, not the ✓/✗ verdict."""
+    provers = {"boom": FakeProver("agent", raises=RuntimeError("docker down"))}
+
+    from open_atp.__main__ import _benchmark_table
+
+    result = run_benchmark({"alpha": _tasks()["alpha"]}, provers, tmp_path)
+    table = _benchmark_table(result)
+
+    console = Console(
+        file=io.StringIO(), width=200, force_terminal=False, color_system=None
+    )
+    console.print(table)
+    assert "error" in console.file.getvalue()
+
+
 def test_only_restricts_and_orders_tasks(tmp_path: Path) -> None:
     tasks = _many_tasks(4)  # t0, t1, t2, t3
     provers = {"p": FakeProver("agent")}

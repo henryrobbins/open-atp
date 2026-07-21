@@ -315,6 +315,35 @@ def test_prove_verified_candidate_sets_status(tmp_path: Path) -> None:
     assert result.error is None and result.error_msg is None
 
 
+def _render(table: object) -> str:
+    """Render a rich table through a non-tty console: markup collapses to glyphs."""
+    from rich.console import Console
+
+    console = Console(
+        file=io.StringIO(), width=200, force_terminal=False, color_system=None
+    )
+    console.print(table)
+    return console.file.getvalue()  # type: ignore[attr-defined]
+
+
+def test_proof_table_status_cell_reflects_the_outcome(tmp_path: Path) -> None:
+    """The CLI summary table shows verified / unverified / errored status per run."""
+    from open_atp.__main__ import _proof_table
+
+    verified = FakeProver("agent", verified=True).prove(_task(), tmp_path / "ok")
+    assert "verified" in _render(_proof_table(verified))
+
+    unverified = FakeProver("agent", verified=False).prove(_task(), tmp_path / "miss")
+    assert "unverified" in _render(_proof_table(unverified))
+
+    errored = FakeProver("agent", raises=RuntimeError("docker down")).prove(
+        _task(), tmp_path / "boom"
+    )
+    rendered = _render(_proof_table(errored))
+    # The non-terminal status prints its label and names the failing exception class.
+    assert "error" in rendered and "RuntimeError" in rendered
+
+
 # --- serialization ---------------------------------------------------------
 
 

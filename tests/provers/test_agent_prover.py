@@ -29,6 +29,7 @@ from open_atp.backends.docker import DockerBackend
 from open_atp.harness import (
     _HARNESSES,
     ClaudeCodeHarness,
+    CodexHarness,
     Harness,
     MissingCredentials,
     compute_cost_usd,
@@ -432,6 +433,22 @@ def test_missing_credentials_raises_out_of_prove(
         prover.prove(ProofTask(LeanProject(FIXTURE)), out)
 
     # The run never completed, so no result record was written.
+    assert not (out / "logs" / "result.json").exists()
+
+
+def test_codex_missing_auth_file_raises_out_of_prove(tmp_path: Path) -> None:
+    """A codex harness with no auth.json raises MissingCredentials out of prove().
+
+    The codex CLI authenticates from a mounted ``auth.json``; resolving mounts is a
+    pre-run credential step, so its absence raises rather than becoming a record.
+    """
+    harness = CodexHarness(auth_file=tmp_path / "nonexistent" / "auth.json")
+    prover = AgentProver(backend=DockerBackend(image=DEFAULT_IMAGE), harness=harness)
+    out = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="auth.json"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), out)
+
     assert not (out / "logs" / "result.json").exists()
 
 
