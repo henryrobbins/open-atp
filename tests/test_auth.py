@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from open_atp.auth import EXPIRY_WARNING, AuthKind, AuthState, AuthStatus
+from open_atp.auth import EXPIRY_WARNING_THRESHOLD, AuthKind, AuthState, AuthStatus
 from open_atp.backends.docker import DockerBackend
 from open_atp.config import standard_prover, standard_provers
 
@@ -85,8 +85,11 @@ def test_present_credential_without_expiry_stays_ok() -> None:
     ("offset", "expected"),
     [
         (timedelta(days=9), AuthState.OK),
-        (EXPIRY_WARNING, AuthState.OK),  # the threshold itself is not yet a warning
-        (EXPIRY_WARNING - timedelta(seconds=1), AuthState.EXPIRING),
+        (
+            EXPIRY_WARNING_THRESHOLD,
+            AuthState.OK,
+        ),  # the threshold itself is not yet a warning
+        (EXPIRY_WARNING_THRESHOLD - timedelta(seconds=1), AuthState.EXPIRING),
         (timedelta(minutes=1), AuthState.EXPIRING),
         (timedelta(0), AuthState.EXPIRED),
         (timedelta(minutes=-1), AuthState.EXPIRED),

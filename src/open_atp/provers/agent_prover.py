@@ -195,8 +195,7 @@ class AgentProver(AutomatedProver):
         Returns
         -------
         ~open_atp.auth.AuthStatus
-            The harness's own status -- an agent prover authenticates as whatever
-            CLI backs it.
+            The agent harness's own credential status.
         """
         return self.harness.auth_status()
 

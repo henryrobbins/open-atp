@@ -104,10 +104,10 @@ class VibeHarness(Harness):
         self._mistral_api_key = mistral_api_key
 
     def auth_status(self) -> AuthStatus:
-        return self._env_auth_status(
+        return AuthStatus.from_env(
             "MISTRAL_API_KEY",
             self._mistral_api_key,
-            remedy="a Mistral La Plateforme key",
+            remedy="set MISTRAL_API_KEY or pass api_key",
         )
 
     def _required_env(self) -> dict[str, str]:

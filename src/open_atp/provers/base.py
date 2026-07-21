@@ -223,13 +223,7 @@ class AutomatedProver(abc.ABC):
 
     @abc.abstractmethod
     def auth_status(self) -> AuthStatus:
-        """Report the credential this prover runs on, without attempting a run.
-
-        Reads only the host (an env var, or the CLI credential file a ``login``
-        wrote); an unauthenticated host yields a
-        :attr:`~open_atp.auth.AuthState.MISSING` status rather than an exception.
-        The credential is never checked against its provider, so a present,
-        unexpired one can still be revoked.
+        """Report the status of the credential required by this prover.
 
         Returns
         -------
@@ -357,29 +351,11 @@ class AutomatedProver(abc.ABC):
             return result
 
     def _check_credential(self) -> None:
-        """Reject an unusable credential, and warn about one that expires mid-run.
-
-        A credential that is absent or expired has no path to working -- nothing
-        renews one mid-run, since the sandbox holds a *copy* and a token refreshed
-        in there is discarded with the container. Both are rejected before the
-        sandbox comes up rather than failing a billed run partway through.
-
-        Anything still valid only warns -- the provider, not our reading of an
-        expiry, is the authority on whether a credential works.
-
-        Raises
-        ------
-        ~open_atp.harness.MissingCredentials
-            If the credential is absent, or its validity window has passed.
-        """
+        """Reject an unusable credential, and warn about one that expires mid-run."""
         try:
             status = self.auth_status()
         except Exception:
-            # Reading the credential is best-effort here: whatever went wrong will
-            # resurface as a real failure when the run resolves it for real, and a
-            # pre-flight check must never be what breaks an otherwise-fine run.
-            log.debug("could not read credential before run", exc_info=True)
-            return
+            raise MissingCredentials("failed to read credential for prover")
 
         state = status.state()
         if state is AuthState.OK:
@@ -392,27 +368,24 @@ class AutomatedProver(abc.ABC):
             "refreshable": status.refreshable,
         }
         if state is AuthState.EXPIRING:
-            log.warning(
-                "credential expires soon; it will not survive this run", extra=detail
-            )
+            log.warning("credential expires soon; it may not survive run", extra=detail)
             return
 
         if state is AuthState.MISSING:
             log.error("missing credential", extra=detail)
-            hint = f"; get one with {status.remedy}" if status.remedy else ""
+            hint = f"; {status.remedy}" if status.remedy else ""
             raise MissingCredentials(
-                f"the {self.name} prover has no credential at {status.source}{hint}"
+                f"the prover has no credential at {status.source}{hint}"
             )
 
         log.error("credential expired", extra=detail)
         renew = (
             "run its CLI on this host to refresh it"
             if status.refreshable
-            else f"renew it with {status.remedy}"
+            else status.remedy
             if status.remedy
             else "log in again"
         )
         raise MissingCredentials(
-            f"the {self.name} prover's credential ({status.source}) expired; "
-            f"a sandboxed run cannot refresh it -- {renew}"
+            f"the prover's credential ({status.source}) expired; {renew}"
         )

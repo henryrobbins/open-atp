@@ -123,11 +123,11 @@ class ClaudeCodeHarness(Harness):
         # `claude setup-token` mints a long-lived opaque token: it carries no
         # readable expiry and nothing refreshes it in place, so presence is the
         # whole story.
-        return self._env_auth_status(
+        return AuthStatus.from_env(
             "CLAUDE_CODE_OAUTH_TOKEN",
             self._oauth_token,
             kind=AuthKind.OAUTH,
-            remedy="`claude setup-token`",
+            remedy="claude setup-token",
         )
 
     def _required_env(self) -> dict[str, str]:

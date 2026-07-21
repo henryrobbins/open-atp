@@ -95,7 +95,7 @@ class CodexHarness(Harness):
             kind=AuthKind.OAUTH,
             source=str(path),
             present=False,
-            remedy="`codex login`",
+            remedy="codex login",
         )
         try:
             data = json.loads(path.read_text())

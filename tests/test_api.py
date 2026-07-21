@@ -356,11 +356,11 @@ def test_prove_rejects_an_expired_credential_before_starting(tmp_path: Path) -> 
 
 def test_prove_rejects_an_absent_credential_before_starting(tmp_path: Path) -> None:
     absent = AuthStatus(
-        AuthKind.OAUTH, "~/.codex/auth.json", present=False, remedy="`codex login`"
+        AuthKind.OAUTH, "~/.codex/auth.json", present=False, remedy="codex login"
     )
     output = tmp_path / "run"
 
-    with pytest.raises(MissingCredentials, match="get one with `codex login`"):
+    with pytest.raises(MissingCredentials, match=r"no credential at .*; codex login"):
         FakeProver("codex", auth=absent).prove(_task(), output)
 
     assert not output.exists()
@@ -390,18 +390,22 @@ def test_prove_stays_quiet_for_a_credential_that_outlasts_the_run(
     assert not [r for r in caplog.records if "expires soon" in r.message]
 
 
-def test_prove_survives_an_unreadable_credential(
+def test_prove_rejects_an_unreadable_credential(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A pre-flight read that blows up must not be what fails the run."""
+    """A credential that cannot be read is not one the run can authenticate with."""
 
     def boom() -> AuthStatus:
         raise OSError("credential registry unreachable")
 
     prover = FakeProver("agent")
     monkeypatch.setattr(prover, "auth_status", boom)
+    output = tmp_path / "run"
 
-    assert prover.prove(_task(), tmp_path / "run").success
+    with pytest.raises(MissingCredentials, match="failed to read credential"):
+        prover.prove(_task(), output)
+
+    assert not output.exists()
 
 
 def _render(table: object) -> str:

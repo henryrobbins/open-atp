@@ -27,7 +27,7 @@ KimiHarness(home_dir=Path("~/.kimi-code").expanduser())
 The harness mounts the credential into the sandbox at run time so Kimi Code can refresh its access token mid-session, billing against your Kimi Code subscription. See {ref}`tracking-cost-and-usage-kimi` for details.
 
 :::{warning}
-The token in `~/.kimi-code/credentials/kimi-code.json` is valid for only about **15 minutes** — shorter than most proof runs — and it only renews when the Kimi CLI runs *on the host*: the sandbox works from a copy, so a token it refreshes there is discarded with the container. If the token expires mid-run, the agent's API calls start failing and the run is lost. Check the time remaining with `open-atp auth-status`, and run `kimi login` on the host immediately before each run.
+**Token expiration:** The token in `~/.kimi-code/credentials/kimi-code.json` is valid for only about **15 minutes** and it only renews when the Kimi CLI runs *on the host*. A sandboxed run will fail if the token expires mid-run. Check the time remaining with `open-atp auth-status`, and run `kimi login` on the host immediately before each run.
 :::
 
 ## Using the prover

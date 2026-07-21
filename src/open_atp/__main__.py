@@ -268,7 +268,7 @@ def _abbreviate_home(source: str) -> str:
 
 
 def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
-    """A per-prover credential table: kind, where it lives, and how long it lasts."""
+    """A per-prover credential table: kind, where it lives, how long it lasts, fix."""
     table = Table(box=ROUNDED)
     table.add_column("prover")
     table.add_column("auth")
@@ -277,16 +277,28 @@ def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
     table.add_column("credential", overflow="fold")
     table.add_column("status", justify="center")
     table.add_column("expires in", justify="right")
+    # A sixth column costs width every other column needs, so earn it: nothing to
+    # fix means nothing to say, and an all-valid host sees the narrow table.
+    remedies = {
+        name: s.remedy
+        for name, s in statuses.items()
+        if s.state() is not AuthState.OK and s.remedy
+    }
+    if remedies:
+        table.add_column("remedy", overflow="fold")
     for name, status in statuses.items():
         state = status.state()
         style = _AUTH_STYLES[state]
-        table.add_row(
+        row = [
             name,
             status.kind.value,
             _abbreviate_home(status.source),
             f"[{style}]{state.value}[/]",
             _format_remaining(status.time_remaining()),
-        )
+        ]
+        if remedies:
+            row.append(remedies.get(name, "—"))
+        table.add_row(*row)
     return table
 
 

@@ -17,31 +17,29 @@ a host-side refresh (run the CLI, or log in again) before a run will authenticat
 from __future__ import annotations
 
 import enum
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-#: How much validity is left before a credential is reported as
-#: :attr:`AuthState.EXPIRING` rather than :attr:`AuthState.OK`.
-EXPIRY_WARNING = timedelta(minutes=15)
+#: Threshold until expiration for :attr:`AuthState.EXPIRING` status.
+EXPIRY_WARNING_THRESHOLD = timedelta(minutes=15)
 
 
 class AuthKind(enum.Enum):
     """The kind of credential a prover authenticates with."""
 
-    #: A provider API key, read from an environment variable.
-    API_KEY = "api key"
-    #: An OAuth token minted by a ``login`` command, stored in the environment or
-    #: in the CLI's own credential file.
+    #: A provider API key.
+    API_KEY = "api_key"
+    #: An OAuth token minted by a ``login`` command.
     OAUTH = "oauth"
 
 
 class AuthState(enum.Enum):
     """Whether a credential is usable, and if not, why."""
 
-    #: Present, and either non-expiring or valid for more than
-    #: :data:`EXPIRY_WARNING`.
+    #: Present and valid.
     OK = "ok"
-    #: Present and valid, but for less than :data:`EXPIRY_WARNING`.
+    #: Present and valid, but for less than :data:`EXPIRY_WARNING_THRESHOLD`.
     EXPIRING = "expiring"
     #: Present, but its validity window has passed.
     EXPIRED = "expired"
@@ -51,11 +49,11 @@ class AuthState(enum.Enum):
 
 @dataclass(frozen=True)
 class AuthStatus:
-    """The state of one prover's credential, as read from the host.
+    """The state of a prover's credential, as read from the host.
 
     Reported by :meth:`~open_atp.provers.base.AutomatedProver.auth_status`. Reading
-    the host never validates the credential against its provider -- a present,
-    unexpired token can still be revoked or wrong.
+    the host never validates the credential against its provider; a present,
+    unexpired credential can still be revoked or simply wrong.
 
     Parameters
     ----------
@@ -68,15 +66,13 @@ class AuthStatus:
         Whether the credential was found at ``source``.
     expires_at : datetime.datetime, optional
         When the credential stops being valid. ``None`` (the default) when it does
-        not expire or exposes no expiry -- an API key, or an opaque long-lived
-        token.
+        not expire or exposes no expiry.
     refreshable : bool, default False
         Whether the credential ships a refresh token, letting its CLI renew it on
         the host. Sandboxed runs cannot refresh it themselves.
     remedy : str, optional
-        How to obtain the credential, as a fragment naming the command or key to
-        set (``"`codex login`"``). Reported when one is missing. Defaults to no
-        hint beyond :attr:`source`.
+        How to obtain the credential (e.g., command or web page).
+        Defaults to :attr:`source`.
     """
 
     kind: AuthKind
@@ -85,6 +81,47 @@ class AuthStatus:
     expires_at: datetime | None = None
     refreshable: bool = False
     remedy: str = ""
+
+    @classmethod
+    def from_env(
+        cls,
+        env_name: str,
+        explicit: str | None = None,
+        kind: AuthKind = AuthKind.API_KEY,
+        remedy: str = "",
+    ) -> AuthStatus:
+        """Read a credential held in an environment variable.
+
+        Parameters
+        ----------
+        env_name : str
+            The environment variable holding the credential.
+        explicit : str or None, optional
+            A credential passed directly, taking precedence over the environment.
+        kind : AuthKind, default AuthKind.API_KEY
+            What the credential type is.
+        remedy : str, optional
+            How to obtain the credential.
+
+        Returns
+        -------
+        AuthStatus
+            A status that never expires; an environment variable carries no expiry.
+
+        Examples
+        --------
+        An unset variable reads as missing:
+
+        >>> from open_atp.auth import AuthStatus
+        >>> AuthStatus.from_env("NOT_A_REAL_API_KEY").state()
+        <AuthState.MISSING: 'missing'>
+        """
+        return cls(
+            kind=kind,
+            source=env_name,
+            present=bool(explicit or os.environ.get(env_name)),
+            remedy=remedy,
+        )
 
     def time_remaining(self, now: datetime | None = None) -> timedelta | None:
         """How long the credential stays valid, relative to ``now``.
@@ -135,4 +172,6 @@ class AuthStatus:
             return AuthState.OK
         if remaining <= timedelta(0):
             return AuthState.EXPIRED
-        return AuthState.EXPIRING if remaining < EXPIRY_WARNING else AuthState.OK
+        return (
+            AuthState.EXPIRING if remaining < EXPIRY_WARNING_THRESHOLD else AuthState.OK
+        )

@@ -230,7 +230,7 @@ def test_auth_status_json_reports_every_standard_prover(
     statuses = json.loads(capsys.readouterr().out)
     assert sorted(statuses) == sorted(standard_provers())
     assert all(s["state"] == "missing" for s in statuses.values())
-    assert {s["kind"] for s in statuses.values()} == {"api key", "oauth"}
+    assert {s["kind"] for s in statuses.values()} == {"api_key", "oauth"}
 
 
 def test_auth_status_table_leaves_an_elapsed_window_blank(

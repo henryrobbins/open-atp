@@ -73,7 +73,7 @@ class KimiHarness(Harness):
             kind=AuthKind.OAUTH,
             source=str(creds),
             present=False,
-            remedy="`kimi login`",
+            remedy="kimi login",
         )
         if not any(creds.glob("*.json")):
             return status

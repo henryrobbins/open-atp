@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 from open_atp._capture import capture_stdout
-from open_atp.auth import AuthKind, AuthStatus
+from open_atp.auth import AuthStatus
 from open_atp.backends.base import ComputeBackend
 from open_atp.harness.base import MissingCredentials
 from open_atp.lean import LeanProject, ProofTask
@@ -198,14 +198,12 @@ class AristotleProver(AutomatedProver):
         Returns
         -------
         ~open_atp.auth.AuthStatus
-            A non-expiring API-key status, read from the constructor override or
-            the host environment.
+            The API key status, read from api_key constructor or host environment.
         """
-        return AuthStatus(
-            kind=AuthKind.API_KEY,
-            source="ARISTOTLE_API_KEY",
-            present=bool(self._api_key or os.environ.get("ARISTOTLE_API_KEY")),
-            remedy="an Aristotle API key (set it or pass api_key)",
+        return AuthStatus.from_env(
+            "ARISTOTLE_API_KEY",
+            self._api_key,
+            remedy="set ARISTOTLE_API_KEY or pass api_key",
         )
 
     def _generate(
