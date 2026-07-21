@@ -215,6 +215,9 @@ def test_parse_reads_tokens_from_wire_log(tmp_path: Path) -> None:
 
     result = harness.parse_result(STREAM_LINES, wd)
     assert result.input_tokens == 2646 + 17920  # inputOther + inputCacheRead
+    # The cache-hit read is tracked as a subset of the input total, so the prover
+    # can price it at kimi's discounted cached rate.
+    assert result.cached_input_tokens == 17920
     assert result.output_tokens == 27
     assert result.stop_reason == "end_turn"
     assert result.result_text == "Done. Replaced sorry with rw."
@@ -281,9 +284,10 @@ def test_generate_reports_changes_and_relocates_session(
     assert list((logs_dir / "kimi-session").rglob("wire.jsonl"))
     # Tokens flow from the wire log; kimi never self-reports USD, so the prover
     # estimates the cost from those tokens at the model's rate.
-    assert result.cost_usd == compute_cost_usd("kimi-code/k3", 2646 + 17920, 27)
+    assert result.cost_usd == compute_cost_usd("kimi-code/k3", 2646 + 17920, 27, 17920)
     assert result.metadata["harness"] == "kimi"
     assert result.metadata["model"] == "kimi-code/k3"
     assert result.metadata["input_tokens"] == 2646 + 17920
+    assert result.metadata["cached_input_tokens"] == 17920
     assert result.metadata["output_tokens"] == 27
     assert result.metadata["stop_reason"] == "end_turn"

@@ -165,11 +165,15 @@ class KimiHarness(Harness):
             # usage.record aggregates a turn; sum across turns.
             if obj.get("type") == "usage.record":
                 usage = obj.get("usage") or {}
+                cache_read = int(usage.get("inputCacheRead", 0) or 0)
+                # Kimi prices cache *reads* at a discount but has no separate
+                # cache-write rate, so creation stays in the full-rate remainder.
                 result.input_tokens += (
                     int(usage.get("inputOther", 0) or 0)
-                    + int(usage.get("inputCacheRead", 0) or 0)
+                    + cache_read
                     + int(usage.get("inputCacheCreation", 0) or 0)
                 )
+                result.cached_input_tokens += cache_read
                 result.output_tokens += int(usage.get("output", 0) or 0)
             event = obj.get("event")
             if isinstance(event, dict) and event.get("type") == "step.end":

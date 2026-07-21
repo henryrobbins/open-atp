@@ -120,8 +120,13 @@ class CodexHarness(Harness):
                 or usage.get("completion_tokens")
                 or 0
             )
+            # ``cached_input_tokens`` is the cache-hit subset of ``input_tokens``,
+            # not an addend; it bills at the model's discounted cached rate.
+            ct = usage.get("cached_input_tokens") or usage.get("cachedInputTokens") or 0
             if isinstance(it, int):
                 result.input_tokens += it
+            if isinstance(ct, int):
+                result.cached_input_tokens += ct
             if isinstance(ot, int):
                 result.output_tokens += ot
             sr = event.get("stop_reason") or event.get("finish_reason")

@@ -17,7 +17,7 @@ from open_atp.harness.base import (
 )
 from open_atp.harness.claude_code import ClaudeCodeHarness
 from open_atp.harness.codex import CodexHarness
-from open_atp.harness.cost import COST_PER_MTOK, compute_cost_usd
+from open_atp.harness.cost import COST_PER_MTOK, ModelPrice, compute_cost_usd
 from open_atp.harness.kimi import KimiHarness
 from open_atp.harness.opencode import OpenCodeHarness
 from open_atp.harness.vibe import VibeHarness
@@ -51,4 +51,5 @@ __all__ = [
     "KimiHarness",
     "compute_cost_usd",
     "COST_PER_MTOK",
+    "ModelPrice",
 ]
