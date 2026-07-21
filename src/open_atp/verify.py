@@ -41,24 +41,19 @@ class VerificationReport:
 
     Produced by :class:`Verifier` and shared by every prover, including Aristotle.
 
-    Attributes
+    Parameters
     ----------
     compiles : bool
         Whether the whole project built successfully.
     sorry_free : bool
         Whether the build is free of ``sorry`` (no incomplete proofs remain).
-    axioms : tuple[str, ...]
+    axioms : tuple[str, ...], default ()
         Every axiom the compiled project depends on, as reported by Lean.
-    compile_log : str
+    compile_log : str, default ""
         The full build log. Omitted from :meth:`to_dict`.
-    per_file : dict[str, bool]
+    per_file : dict[str, bool], optional
         Per-file compile status, keyed by file path relative to the project root.
-    non_standard_axioms : tuple[str, ...]
-        The axioms outside :data:`STANDARD_AXIOMS` -- notably ``sorryAx``, which
-        means the proof is not actually complete.
-    verified : bool
-        True iff the project compiles, has no ``sorry``, and uses no axioms
-        outside :data:`STANDARD_AXIOMS`.
+        Defaults to an empty mapping.
     """
 
     compiles: bool
@@ -69,12 +64,20 @@ class VerificationReport:
 
     @property
     def non_standard_axioms(self) -> tuple[str, ...]:
-        """The depended-on axioms outside :data:`STANDARD_AXIOMS`."""
+        """The depended-on axioms outside :data:`STANDARD_AXIOMS`.
+
+        Notably ``sorryAx``, whose presence means the proof is not actually
+        complete.
+        """
         return tuple(a for a in self.axioms if a not in STANDARD_AXIOMS)
 
     @property
     def verified(self) -> bool:
-        """True iff the project compiles, has no sorry, and no foreign axioms."""
+        """Whether the project compiles, has no ``sorry``, and no foreign axioms.
+
+        True iff :attr:`compiles` and :attr:`sorry_free` both hold and the project
+        depends on no axioms outside :data:`STANDARD_AXIOMS`.
+        """
         return self.compiles and self.sorry_free and not self.non_standard_axioms
 
     def to_dict(self) -> dict[str, object]:
@@ -101,9 +104,8 @@ def docker_verifier(image: Image = DEFAULT_IMAGE) -> Verifier:
 
     Parameters
     ----------
-    image : ~open_atp.images.Image, optional
+    image : ~open_atp.images.Image, default DEFAULT_IMAGE
         The image whose Lean toolchain + Mathlib pins projects are checked against.
-        Default :data:`~open_atp.images.DEFAULT_IMAGE`.
 
     Returns
     -------
@@ -121,9 +123,9 @@ def modal_verifier(image: Image = DEFAULT_IMAGE) -> Verifier:
 
     Parameters
     ----------
-    image : ~open_atp.images.Image, optional
+    image : ~open_atp.images.Image, default DEFAULT_IMAGE
         The published image whose Lean toolchain + Mathlib pins projects are checked
-        against. Default :data:`~open_atp.images.DEFAULT_IMAGE`.
+        against.
 
     Returns
     -------
@@ -144,15 +146,9 @@ class Verifier:
     backend : ComputeBackend
         The sandbox the candidate project is compiled in. Its image carries the
         Lean toolchain + Mathlib pins every project is checked against.
-    timeout_s : int
+    timeout_s : int, default 600
         Wall-clock cap for the post-generation compile/axiom check, in seconds.
-        Independent of a prover's (larger) generation budget. Default ``600``.
-
-    Attributes
-    ----------
-    image : ~open_atp.images.Image
-        The image ``backend`` runs -- the compatibility contract projects must
-        match (toolchain + locked Mathlib revision).
+        Independent of a prover's (larger) generation budget.
     """
 
     def __init__(self, backend: ComputeBackend, *, timeout_s: int = 600) -> None:
@@ -161,7 +157,11 @@ class Verifier:
 
     @property
     def image(self) -> Image:
-        """The image the backend runs -- the compatibility contract projects match."""
+        """The image ``backend`` runs.
+
+        The compatibility contract every candidate project must match: the Lean
+        toolchain and the locked Mathlib revision.
+        """
         return self.backend.image
 
     def check_compatible(self, project: LeanProject) -> None:

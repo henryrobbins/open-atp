@@ -37,19 +37,20 @@ class NuminaHarness(ClaudeCodeHarness):
 
     Parameters
     ----------
-    model : str
-        Model id the agent runs. Default ``"claude-opus-4-8"``.
-    effort : str
-        Reasoning-effort level. Default ``"high"``.
+    model : str, default "claude-opus-4-8"
+        Model id the agent runs.
+    effort : str, default "high"
+        Reasoning-effort level.
     oauth_token : str, optional
         The ``CLAUDE_CODE_OAUTH_TOKEN`` to forward; ``None`` (default) reads the host
         env var.
     helper_env_keys : tuple[str, ...], optional
         Host credential names forwarded into the sandbox when present, skipped when
-        absent (never a hard failure). Default :data:`_DEFAULT_HELPER_ENV_KEYS`.
+        absent (never a hard failure). Defaults to
+        :data:`_DEFAULT_HELPER_ENV_KEYS`.
     env : dict[str, str], optional
         Literal env vars (name -> value) forwarded verbatim; win over resolved
-        credentials (including helper keys) on a key clash. Default none.
+        credentials (including helper keys) on a key clash. Defaults to none.
     """
 
     name = "numina"

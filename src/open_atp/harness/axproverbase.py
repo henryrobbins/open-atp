@@ -60,11 +60,10 @@ class AxProverBaseHarness(Harness):
 
     Parameters
     ----------
-    model : str
+    model : str, default "claude-opus-4-8"
         Model id the agent runs, mapped to ax-prover's ``provider:model`` string.
-        Default ``"claude-opus-4-8"``.
-    effort : str
-        Reasoning-effort level, mapped to each provider's knob. Default ``"high"``.
+    effort : str, default "high"
+        Reasoning-effort level, mapped to each provider's knob.
     max_iterations : int, optional
         Cap on ax-prover's proposer->builder->reviewer loop. ``None`` (default) keeps
         ax-prover's own default (50).

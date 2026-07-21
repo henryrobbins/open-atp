@@ -130,18 +130,13 @@ class AgentProver(AutomatedProver):
         :class:`~open_atp.harness.AxProverBaseHarness`. Carries ``model``/``effort``
         plus any harness-specific knobs. Plugins are Claude-only and live on
         :class:`~open_atp.harness.ClaudeCodeHarness`.
-    skills : list[str], optional
+    skills : list[str], default ["lean-proof"]
         Skills to mount into the agent workdir, each a name (resolved from the
         vendored ``leanprover/skills`` catalog) or a full path to a ``SKILL.md``
-        tree. Default ``["lean-proof"]``; an empty list mounts none. Staged into
-        every skill-supporting harness's location; ignored by ax-prover.
-    timeout_s : int
-        Wall-clock budget for the generation run, in seconds. Default ``1800``.
-
-    Attributes
-    ----------
-    prover_prompt : str
-        The prover's own prompt handed to the agent, before any user prompt.
+        tree. An empty list mounts none. Staged into every skill-supporting
+        harness's location; ignored by ax-prover.
+    timeout_s : int, default 1800
+        Wall-clock budget for the generation run, in seconds.
 
     Examples
     --------

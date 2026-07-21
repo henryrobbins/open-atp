@@ -498,25 +498,24 @@ class ModalBackend(ComputeBackend):
 
     Parameters
     ----------
-    image : Image
+    image : ~open_atp.images.Image, default DEFAULT_IMAGE
         The sandbox image carrying Lean + Mathlib -- its tag plus the toolchain and
-        Mathlib revision the verifier checks projects against. Default
-        :data:`~open_atp.images.DEFAULT_IMAGE`. A mapping is coerced to an
-        :class:`~open_atp.images.Image` (so a parsed config's nested ``image:`` block
-        works).
+        Mathlib revision the verifier checks projects against. A mapping is coerced
+        to an :class:`~open_atp.images.Image` (so a parsed config's nested ``image:``
+        block works).
     env : Mapping[str, str], optional
-        Environment variables baked into every command run in the sandbox. Default
-        empty.
-    cpu : float
-        CPU cores requested for the Modal Sandbox. Default ``2.0``.
-    memory_mib : int
-        Memory (MiB) requested for the Modal Sandbox. Default ``4096``.
-    app : str
+        Environment variables baked into every command run in the sandbox. Defaults
+        to no extra variables.
+    cpu : float, default 2.0
+        CPU cores requested for the Modal Sandbox.
+    memory_mib : int, default 4096
+        Memory (MiB) requested for the Modal Sandbox.
+    app : str, default "open-atp"
         Modal app the Sandbox is associated with (also the publish target of
-        ``open-atp build-modal-image``). Default ``open-atp``.
-    region : str or Sequence[str], optional
+        ``open-atp build-modal-image``).
+    region : str or Sequence[str], default "us"
         Region(s) to schedule sandboxes in (see Modal region selection docs).
-        Default ``"us"``; ``None`` lets Modal choose freely.
+        ``None`` lets Modal choose freely.
 
     Examples
     --------
@@ -726,10 +725,9 @@ class ModalBackend(ComputeBackend):
             Wall-clock time for the Modal Sandbox session to live, in seconds.
         env : Mapping[str, str], optional
             Environment variables pinned on the Sandbox at creation, merged over the
-            backend's :attr:`env`. Default empty.
+            backend's ``env``.
         mounts : Sequence[tuple[str, str]], optional
-            Extra ``(host_path, container_path)`` dirs pushed in at creation. Default
-            empty.
+            Extra ``(host_path, container_path)`` dirs pushed in at creation.
 
         Returns
         -------

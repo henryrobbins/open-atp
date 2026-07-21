@@ -34,16 +34,11 @@ class MathlibRevMismatch(ValueError):
 class LeanProject:
     """A complete lake project on disk.
 
-    Attributes
+    Parameters
     ----------
     root : Path
         Directory containing ``lakefile.toml`` (or ``lakefile.lean``),
         ``lean-toolchain``, and ``lake-manifest.json``. Resolved to an absolute path.
-    lean_toolchain : str
-        The pinned toolchain read from ``lean-toolchain``, e.g.
-        ``leanprover/lean4:v4.31.0``.
-    mathlib_rev : str | None
-        The pinned Mathlib revision from ``lake-manifest.json``, if present.
 
     Examples
     --------
@@ -85,7 +80,11 @@ class LeanProject:
 
     @property
     def lean_toolchain(self) -> str:
-        """The pinned toolchain, e.g. ``leanprover/lean4:v4.31.0``."""
+        """The pinned toolchain read from ``lean-toolchain``.
+
+        A full toolchain identifier such as ``leanprover/lean4:v4.31.0``, compared
+        against the backend image's pin before any compute is spent.
+        """
         return (self.root / "lean-toolchain").read_text().strip()
 
     @property
@@ -121,23 +120,23 @@ class LeanProject:
 class ProofTask:
     """A unit of work: complete the sorrys in ``project``.
 
-    Attributes
+    Parameters
     ----------
     project : LeanProject
         The lake project to complete.
-    name : str | None
-        Optional task identifier, used to attribute log records to this task. Set by
+    name : str, default None
+        Task identifier, used to attribute log records to this task. Set by
         :func:`~open_atp.benchmark.tasks_from_dir`; ``None`` for a one-off task.
-    targets : tuple[Path, ...]
-        Optional explicit list of files (relative to ``project.root``) to focus on.
-        When empty, every file containing ``sorry`` is fair game.
-    user_prompt : str | None
-        Optional per-task guidance appended below the prover's own prompt under an
+    targets : tuple[Path, ...], default ()
+        Explicit list of files (relative to ``project.root``) to focus on. When
+        empty, every file containing ``sorry`` is fair game.
+    user_prompt : str, default None
+        Per-task guidance appended below the prover's own prompt under an
         ``# Additional instructions`` heading (see
         :func:`~open_atp.provers.base.compose_prompt`). ``None`` (the common case)
         leaves the prover prompt untouched.
-    metadata : dict[str, str]
-        Optional free-form metadata carried alongside the task.
+    metadata : dict[str, str], optional
+        Free-form metadata carried alongside the task. Defaults to an empty mapping.
     """
 
     project: LeanProject
@@ -179,11 +178,10 @@ def create_project(
         non-``.lean`` path raises ``ValueError``.
     dest : Path | str
         Destination directory for the new project. Created if missing.
-    skeleton : Path
+    skeleton : Path, default SKELETON_DIR
         Project skeleton to copy the ``lakefile.toml``/``lean-toolchain`` (and, when
-        present, ``lakefile.lean``/``lake-manifest.json``) from. Default
-        :data:`~open_atp.images.SKELETON_DIR` -- the baked image's skeleton, only
-        present in a source checkout.
+        present, ``lakefile.lean``/``lake-manifest.json``) from. The default is the
+        baked image's skeleton, only present in a source checkout.
 
     Returns
     -------

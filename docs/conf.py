@@ -132,6 +132,9 @@ numpydoc_xref_aliases = {
     "build_harness": "open_atp.config.build_harness",
     "build_backend": "open_atp.config.build_backend",
     "create_project": "open_atp.lean.create_project",
+    # Images
+    "DEFAULT_IMAGE": "open_atp.images.DEFAULT_IMAGE",
+    "SKELETON_DIR": "open_atp.images.SKELETON_DIR",
     # Lean input contract
     "LeanProject": "open_atp.lean.LeanProject",
     "ProofTask": "open_atp.lean.ProofTask",
@@ -200,7 +203,7 @@ def _resolve_modal_xref(
     return ref
 
 
-def _skip_non_methods(
+def _skip_data_attributes(
     app: Sphinx,
     what: str,
     name: str,
@@ -208,17 +211,20 @@ def _skip_non_methods(
     skip: bool,
     options: object,
 ) -> bool | None:
-    """Only enumerate *methods* as class members.
+    """Only enumerate *methods* and *properties* as class members.
 
-    Constructor parameters and attributes (instance state and ``@property``)
-    are documented in the class docstring's ``Parameters``/``Attributes``
-    sections, which numpydoc renders. Letting autodoc also emit them as members
-    duplicates every entry, so skip anything on a class that is not a routine.
-    Methods stay; data attributes, properties, and class vars are dropped.
+    Constructor parameters and plain instance state are documented in the class
+    docstring's ``Parameters``/``Attributes`` sections, which numpydoc renders.
+    Letting autodoc also emit them as members duplicates every entry, so data
+    attributes and class vars are dropped. A ``@property`` is documented in its
+    own docstring, like a method, so it is kept: numpydoc rewrites an
+    ``Attributes`` entry that names a property with the first sentence of that
+    property's docstring, which silently discards whatever prose the class
+    docstring wrote for it.
     """
     if skip:
         return skip
-    if what == "class" and not inspect.isroutine(obj):
+    if what == "class" and not (inspect.isroutine(obj) or isinstance(obj, property)):
         return True
     return None
 
@@ -249,5 +255,5 @@ def _codeify_arg_choices(app: Sphinx, doctree: nodes.document) -> None:
 
 def setup(app: Sphinx) -> None:
     app.connect("missing-reference", _resolve_modal_xref)
-    app.connect("autodoc-skip-member", _skip_non_methods)
+    app.connect("autodoc-skip-member", _skip_data_attributes)
     app.connect("doctree-read", _codeify_arg_choices)

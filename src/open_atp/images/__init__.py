@@ -20,19 +20,17 @@ class Image:
     match :attr:`lean_toolchain` (and, when it locks one, :attr:`mathlib_rev`) or it
     is rejected before any compute is spent.
 
-    Attributes
+    Parameters
     ----------
-    name : str
-        Container image tag carrying Lean + Mathlib that the sandbox runs. Default
-        ``open-atp:latest`` (the tag produced by ``docker build -t open-atp:latest
-        images/``).
-    lean_toolchain : str
+    name : str, default "open-atp:latest"
+        Container image tag carrying Lean + Mathlib that the sandbox runs. The
+        default is the tag produced by ``docker build -t open-atp:latest images/``.
+    lean_toolchain : str, default "leanprover/lean4:v4.28.0"
         Lean toolchain baked into the image (see ``images/lean/lean-toolchain``);
-        projects must pin it or the verifier rejects them. Default
-        ``leanprover/lean4:v4.28.0``.
-    mathlib_rev : str
+        projects must pin it or the verifier rejects them.
+    mathlib_rev : str, default "v4.28.0"
         Mathlib revision whose olean cache is pre-baked, matching the declared pin
-        in ``images/lean/lakefile.toml``. Default ``v4.28.0``.
+        in ``images/lean/lakefile.toml``.
     """
 
     name: str = "open-atp:latest"

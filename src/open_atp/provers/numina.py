@@ -125,39 +125,32 @@ class NuminaProver(AgentProver):
         The sandbox the agent runs in. Generation reuses it via a live session and
         verification runs in that same hot sandbox.
     skills : list[str], optional
-        Extra named/path skills to mount alongside Numina's vendored scaffold. Default
-        empty -- Numina's coordinator skill is staged from ``vendor/numina/skills``, not
-        this list.
-    max_rounds : int
-        Maximum number of coordinator rounds before the run stops. Default ``20``.
-    max_consecutive_limits : int
+        Extra named/path skills to mount alongside Numina's vendored scaffold.
+        Defaults to none -- Numina's coordinator skill is staged from
+        ``vendor/numina/skills``, not this list.
+    max_rounds : int, default 20
+        Maximum number of coordinator rounds before the run stops.
+    max_consecutive_limits : int, default 2
         Reset (start a fresh session) after this many consecutive LIMIT rounds.
-        Default ``2``.
     oauth_token : str, optional
         The ``CLAUDE_CODE_OAUTH_TOKEN`` to forward into the sandbox; ``None``
         (default) reads it from the host env var.
     helper_env_keys : tuple[str, ...]
         Helper-skill credentials forwarded into the sandbox when present in the host
-        env; skills degrade/skip when their key is absent. Default
+        env; skills degrade/skip when their key is absent. Defaults to
         :data:`_DEFAULT_HELPER_ENV_KEYS`.
-    guard_statements : bool
+    guard_statements : bool, default True
         Whether to snapshot the target theorems and reject runs that weaken or
-        delete them. Default ``True``.
-    on_statement_change : {"error", "warn"}
+        delete them.
+    on_statement_change : {"error", "warn"}, default "error"
         Behavior on a weakened/deleted target theorem: ``error`` stops the run and
-        restores the originals; ``warn`` restores and continues. Default ``error``
-        (rejects; safe).
-    timeout_s : int
-        Wall-clock budget for the generation run, in seconds. Default ``1800``.
+        restores the originals; ``warn`` restores and continues. The default rejects,
+        which is the safe choice.
+    timeout_s : int, default 1800
+        Wall-clock budget for the generation run, in seconds.
     env : dict[str, str], optional
         Extra literal environment variables forwarded into the agent sandbox (Numina
-        pins its harness, so its env knobs live here). Default empty.
-
-    Attributes
-    ----------
-    prover_prompt : str
-        The prover's own prompt -- Numina's coordinator scaffold plus the round
-        protocol -- handed to the agent, before any user prompt.
+        pins its harness, so its env knobs live here). Defaults to no extra variables.
 
     Examples
     --------
@@ -225,7 +218,10 @@ class NuminaProver(AgentProver):
 
     @property
     def prover_prompt(self) -> str:
-        """Numina's coordinator scaffold + round protocol, before any user prompt."""
+        """The prover's own prompt, handed to the agent before any user prompt.
+
+        Numina's coordinator scaffold plus the round protocol.
+        """
         return _coordinator_prompt()
 
     def _generate(

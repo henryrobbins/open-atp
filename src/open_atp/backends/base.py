@@ -71,9 +71,11 @@ class ImageUnavailable(ProvisionError):
 class CommandTimeout(Exception):
     """A sandbox command was killed for exceeding its own wall-clock budget.
 
-    Attributes
+    Parameters
     ----------
-    result : CommandResult or None
+    message : str
+        Description of the command and the budget it blew through.
+    result : CommandResult, default None
         The command's partial output captured before it was killed, when available.
     """
 
@@ -86,7 +88,7 @@ class CommandTimeout(Exception):
 class CommandResult:
     """Outcome of a finished command run inside a backend.
 
-    Attributes
+    Parameters
     ----------
     exit_code : int
         The command's process exit code (``0`` on success).
@@ -185,7 +187,6 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
             :meth:`~CommandHandle.wait`.
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
-            Default empty.
 
         Returns
         -------
@@ -240,22 +241,14 @@ class ComputeBackend(abc.ABC):
 
     Parameters
     ----------
-    image : Image
+    image : ~open_atp.images.Image, default DEFAULT_IMAGE
         The sandbox image carrying Lean + Mathlib -- its tag plus the toolchain and
-        Mathlib revision the verifier checks projects against. Default
-        :data:`~open_atp.images.DEFAULT_IMAGE`. A mapping is coerced to an
-        :class:`~open_atp.images.Image` (so a parsed config's nested ``image:`` block
-        works).
+        Mathlib revision the verifier checks projects against. A mapping is coerced
+        to an :class:`~open_atp.images.Image` (so a parsed config's nested ``image:``
+        block works).
     env : Mapping[str, str], optional
-        Environment variables baked into every command run in the sandbox. Default
-        empty.
-
-    Attributes
-    ----------
-    name : str
-        Short identifier, e.g. ``"docker"`` or ``"modal"``.
-    wallclock_overhead_s : int
-        Wall-clock time budget required beyond a command's timeout, in seconds.
+        Environment variables baked into every command run in the sandbox. Defaults
+        to no extra variables.
     """
 
     #: Absolute ``$HOME`` inside the sandbox; per-run credential dirs (an agent's
@@ -278,7 +271,10 @@ class ComputeBackend(abc.ABC):
     @property
     @abc.abstractmethod
     def name(self) -> str:
-        """Short identifier, e.g. ``"docker"`` or ``"modal"``."""
+        """Short identifier for the backend, such as ``docker`` or ``modal``.
+
+        Used to label log records and benchmark rows.
+        """
 
     @property
     @abc.abstractmethod
@@ -318,10 +314,9 @@ class ComputeBackend(abc.ABC):
             Wall-clock cap for the sandbox, in seconds.
         env : Mapping[str, str], optional
             Environment variables pinned on the sandbox at creation, merged over the
-            backend's :attr:`env`. Default empty.
+            backend's ``env``.
         mounts : Sequence[tuple[str, str]], optional
-            Extra ``(host_path, container_path)`` mounts pinned at creation. Default
-            empty.
+            Extra ``(host_path, container_path)`` mounts pinned at creation.
 
         Returns
         -------
@@ -354,11 +349,9 @@ class ComputeBackend(abc.ABC):
         timeout_s : int
             Wall-clock cap for the command, in seconds.
         env : Mapping[str, str], optional
-            Per-call environment variables, merged over the backend's :attr:`env`.
-            Default empty.
+            Per-call environment variables, merged over the backend's ``env``.
         mounts : Sequence[tuple[str, str]], optional
             Extra ``(host_path, container_path)`` bind mounts beyond the workdir.
-            Default empty.
 
         Returns
         -------

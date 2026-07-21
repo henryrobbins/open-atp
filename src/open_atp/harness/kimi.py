@@ -19,9 +19,8 @@ class KimiHarness(Harness):
 
     Parameters
     ----------
-    model : str
-        Model alias the agent runs (a ``config.toml`` alias). Default
-        ``"kimi-code/k3"`` (K3).
+    model : str, default "kimi-code/k3"
+        Model alias the agent runs (a ``config.toml`` alias). The default is K3.
     effort : str
         Reasoning-effort level, one of ``"low"``, ``"high"`` (default), or ``"max"``.
     home_dir : Path, optional

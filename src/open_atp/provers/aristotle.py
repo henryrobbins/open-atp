@@ -117,26 +117,20 @@ class AristotleProver(AutomatedProver):
     allow_agent_questions : bool
         Whether to let the hosted agent ask clarifying questions. Off by default:
         this is a headless API path and a prompt for stdin would hang the run.
-    max_connection_retries : int
+    max_connection_retries : int, default 5
         Bounds per-call retries (list/refresh/download) when a connection drops.
         The hosted run lives server-side, so a dropped connection is recoverable:
-        re-fetch rather than reporting the run failed. Default ``5``.
-    retry_backoff_seconds : float
+        re-fetch rather than reporting the run failed.
+    retry_backoff_seconds : float, default 5.0
         Initial sleep between retries of a failed call, doubling (capped) between
-        tries. Default ``5.0``.
-    poll_interval_s : float
+        tries.
+    poll_interval_s : float, default 15.0
         Seconds between polls of the task's status while waiting for generation.
-        Default ``15.0``.
-    timeout_s : int
+    timeout_s : int, default 1800
         Hard wall-clock cap on the generation wait, in seconds. When it elapses we
         stop waiting and proceed with whatever Aristotle has produced so far (the run
         keeps going and billing server-side regardless -- this only bounds the
-        client). Default ``1800``.
-
-    Attributes
-    ----------
-    prover_prompt : str
-        The prover's own prompt handed to Aristotle, before any user prompt.
+        client).
 
     Examples
     --------
