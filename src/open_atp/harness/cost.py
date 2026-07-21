@@ -1,8 +1,10 @@
 """Token-cost fallback table.
 
 Estimates a run's USD cost from token counts when the harness does not report
-cost directly (notably Codex and Kimi). This is a fallback and will go stale; see
-the provider pricing pages linked per section below for current numbers.
+cost directly. This is a fallback and will go stale; see the provider pricing
+pages linked per section below for current numbers.
+
+Last Updated: 2026-07-20
 """
 
 from __future__ import annotations
@@ -93,10 +95,8 @@ def compute_cost_usd(
     output_tokens : int
         Total output (completion) tokens.
     cached_input_tokens : int, optional
-        The cache-hit *subset* of ``input_tokens``, priced at the model's
-        discounted cached rate; the remainder bills at the full input rate.
-        Leave it at ``0`` (the default) when the source reports no cache
-        breakdown -- the whole input then bills uncached, an upper bound.
+        The cache-hit *subset* of ``input_tokens``, if the harness reports it.
+        If unreported, the whole input is billed as uncached, an upper bound.
 
     Returns
     -------
