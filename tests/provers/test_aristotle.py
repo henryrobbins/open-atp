@@ -204,151 +204,98 @@ def test_quiet_aristotle_logger_drops_expected_noise() -> None:
         return not all(f.filter(record) for f in logger.filters)
 
     assert _drops("WARNING: Your project contains .lean files but no .lake folder.")
-    assert _drops("Connection to server was interrupted. Use 'aristotle show x'.")
     assert not _drops("Task complete!")
 
 
-def test_wait_until_terminal_resumes_after_dropped_connection(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A dropped stream returns a still-running task; we re-attach until it settles.
+# The next three tests drive the private ``_wait_until_terminal`` directly: it is a
+# liveness primitive whose whole contract (settles / times out) is invisible through
+# the public API, which is the sanctioned exception to testing via the public seam.
 
-    Mirrors the production bug: ``wait_for_completion`` swallows the dropped link and
-    returns IN_PROGRESS, so without resuming we'd report the run failed even though it
-    completes server-side.
-    """
+
+class _PollTask:
+    """Stand in for ``AgentTask`` at the network boundary: status advances per poll."""
+
+    agent_task_id = "t-1"
+    percent_complete = 0
+    last_updated_at = datetime(2024, 1, 1)
+
+    def __init__(self, statuses: list[object]) -> None:
+        from aristotlelib.agent_task import TaskStatus
+
+        self.status = TaskStatus.QUEUED
+        self._statuses = iter(statuses)
+        self.refreshes = 0
+
+    async def refresh(self) -> None:
+        self.refreshes += 1
+        self.status = next(self._statuses, self.status)
+
+
+@pytest.mark.parametrize(
+    "terminal",
+    ["COMPLETE", "COMPLETE_WITH_ERRORS", "OUT_OF_BUDGET", "FAILED", "CANCELED"],
+)
+def test_wait_until_terminal_returns_on_each_terminal_status(
+    terminal: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Polling stops as soon as the task settles, whatever it settled as."""
     import asyncio
 
     from aristotlelib.agent_task import TaskStatus
 
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
 
-    # First wait drops the link (status stays IN_PROGRESS); the second wait completes.
-    statuses = iter([TaskStatus.IN_PROGRESS, TaskStatus.COMPLETE])
+    task = _PollTask([TaskStatus.IN_PROGRESS, getattr(TaskStatus, terminal)])
+    timed_out = asyncio.run(_make_prover()._wait_until_terminal(task))
 
-    class _FakeTask:
-        agent_task_id = "t-1"
-        status = TaskStatus.QUEUED
-        percent_complete = 0
-        last_updated_at = datetime(2024, 1, 1)
-        waits = 0
-
-        async def wait_for_completion(self) -> None:
-            self.waits += 1
-
-        async def refresh(self) -> None:
-            self.status = next(statuses)
-
-    task = _FakeTask()
-    asyncio.run(_make_prover()._wait_until_terminal(task))
-
-    assert task.waits == 2  # resumed exactly once after the drop
-    assert task.status is TaskStatus.COMPLETE
+    assert not timed_out
+    assert task.refreshes == 2
 
 
-def test_wait_until_terminal_reconnects_past_budget_while_progressing(
+def test_wait_until_terminal_gives_up_at_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A long run that keeps advancing reconnects without limit: the budget is a stall
-    counter, not a lifetime cap.
+    """A task that never settles is bounded by ``timeout_s`` and reports timed-out.
 
-    The stream drops on every attempt and the task stays IN_PROGRESS far longer than
-    ``max_resume_attempts`` -- but because ``percent_complete`` advances each refresh,
-    the stall budget keeps resetting, so we never give up before it completes.
+    The regression test for the wedge: the client must stop waiting on its own
+    deadline rather than blocking on a connection that never answers.
     """
     import asyncio
 
     from aristotlelib.agent_task import TaskStatus
 
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
-
-    class _ProgressingTask:
-        agent_task_id = "t-3"
-        status = TaskStatus.IN_PROGRESS
-        last_updated_at = datetime(2024, 1, 1)
-        percent_complete = 0
-        waits = 0
-
-        async def wait_for_completion(self) -> None:
-            self.waits += 1
-
-        async def refresh(self) -> None:
-            # Advance until well past the budget, then settle.
-            if self.percent_complete >= 90:
-                self.status = TaskStatus.COMPLETE
-            else:
-                self.percent_complete += 10
 
     prover = _make_prover()
-    prover.max_resume_attempts = 3
-    task = _ProgressingTask()
-    asyncio.run(prover._wait_until_terminal(task))
+    prover.timeout_s = 0  # deadline has already passed on the first check
+    task = _PollTask([TaskStatus.IN_PROGRESS])
 
-    assert task.status is TaskStatus.COMPLETE
-    assert task.waits > prover.max_resume_attempts  # never gave up despite the cap
-
-
-def test_wait_until_terminal_is_bounded_by_timeout() -> None:
-    """A hung wait is cancellable at the deadline, so ``timeout_s`` can cap it.
-
-    ``_submit_and_download`` wraps the wait in ``asyncio.wait_for(..., timeout_s)``;
-    this checks the wait actually yields at its await points so the cap fires instead
-    of blocking forever.
-    """
-    import asyncio
-
-    from aristotlelib.agent_task import TaskStatus
-
-    class _HangingTask:
-        agent_task_id = "t-4"
-        status = TaskStatus.IN_PROGRESS
-        percent_complete = 0
-        last_updated_at = datetime(2024, 1, 1)
-
-        async def wait_for_completion(self) -> None:
-            await asyncio.sleep(3600)  # never settles within the test
-
-        async def refresh(self) -> None:
-            pass
-
-    async def _run() -> None:
-        with pytest.raises(TimeoutError):
-            await asyncio.wait_for(
-                _make_prover()._wait_until_terminal(_HangingTask()), timeout=0.05
-            )
-
-    asyncio.run(_run())
+    assert asyncio.run(prover._wait_until_terminal(task)) is True
+    assert task.status is TaskStatus.IN_PROGRESS
 
 
-def test_wait_until_terminal_gives_up_after_resume_budget(
+def test_wait_until_terminal_retries_a_transient_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If the stream never settles, stop after the budget instead of looping forever."""
+    """A dropped connection mid-poll is retried; the run still settles."""
     import asyncio
 
+    import httpx
     from aristotlelib.agent_task import TaskStatus
 
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
 
-    class _StuckTask:
-        agent_task_id = "t-2"
-        status = TaskStatus.IN_PROGRESS
-        percent_complete = 50
-        last_updated_at = datetime(2024, 1, 1)
-        waits = 0
-
-        async def wait_for_completion(self) -> None:
-            self.waits += 1
-
+    class _FlakyTask(_PollTask):
         async def refresh(self) -> None:
-            pass  # never progresses, never reaches a terminal state
+            await super().refresh()
+            if self.refreshes == 1:
+                raise httpx.ConnectError("dropped")
 
-    prover = _make_prover()
-    prover.max_resume_attempts = 3
-    task = _StuckTask()
-    asyncio.run(prover._wait_until_terminal(task))
+    task = _FlakyTask([TaskStatus.IN_PROGRESS, TaskStatus.COMPLETE])
+    timed_out = asyncio.run(_make_prover()._wait_until_terminal(task))
 
-    assert task.waits == 3  # bounded by the resume budget; no infinite loop
+    assert not timed_out
+    assert task.status is TaskStatus.COMPLETE
 
 
 @pytest.mark.docker
