@@ -9,6 +9,7 @@ import logging
 import shutil
 import tempfile
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -90,7 +91,12 @@ class CodexHarness(Harness):
 
     def auth_status(self) -> AuthStatus:
         path = self._auth_path()
-        status = AuthStatus(kind=AuthKind.OAUTH, source=str(path), present=False)
+        status = AuthStatus(
+            kind=AuthKind.OAUTH,
+            source=str(path),
+            present=False,
+            remedy="`codex login`",
+        )
         try:
             data = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
@@ -101,9 +107,8 @@ class CodexHarness(Harness):
         # bare key instead, which authenticates just as well and never expires.
         if not (access or data.get("OPENAI_API_KEY")):
             return status
-        return AuthStatus(
-            kind=AuthKind.OAUTH,
-            source=str(path),
+        return replace(
+            status,
             present=True,
             expires_at=_jwt_expiry(access) if access else None,
             refreshable=bool(tokens.get("refresh_token")),

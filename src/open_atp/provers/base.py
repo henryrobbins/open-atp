@@ -357,12 +357,12 @@ class AutomatedProver(abc.ABC):
             return result
 
     def _check_credential(self) -> None:
-        """Reject an expired credential, and warn about one that expires mid-run.
+        """Reject an unusable credential, and warn about one that expires mid-run.
 
-        Nothing renews a credential mid-run: the sandbox holds a *copy*, so even a
-        refreshable token refreshed in there is discarded with the container. An
-        expired one therefore has no path to working, and is rejected before the
-        sandbox comes up rather than 401-ing partway through a billed run.
+        A credential that is absent or expired has no path to working -- nothing
+        renews one mid-run, since the sandbox holds a *copy* and a token refreshed
+        in there is discarded with the container. Both are rejected before the
+        sandbox comes up rather than failing a billed run partway through.
 
         Anything still valid only warns -- the provider, not our reading of an
         expiry, is the authority on whether a credential works.
@@ -370,7 +370,7 @@ class AutomatedProver(abc.ABC):
         Raises
         ------
         ~open_atp.harness.MissingCredentials
-            If the credential's validity window has already passed.
+            If the credential is absent, or its validity window has passed.
         """
         try:
             status = self.auth_status()
@@ -382,8 +382,9 @@ class AutomatedProver(abc.ABC):
             return
 
         state = status.state()
-        if state not in (AuthState.EXPIRED, AuthState.EXPIRING):
+        if state is AuthState.OK:
             return
+
         remaining = status.time_remaining()
         detail = {
             "source": status.source,
@@ -396,10 +397,19 @@ class AutomatedProver(abc.ABC):
             )
             return
 
+        if state is AuthState.MISSING:
+            log.error("missing credential", extra=detail)
+            hint = f"; get one with {status.remedy}" if status.remedy else ""
+            raise MissingCredentials(
+                f"the {self.name} prover has no credential at {status.source}{hint}"
+            )
+
         log.error("credential expired", extra=detail)
         renew = (
             "run its CLI on this host to refresh it"
             if status.refreshable
+            else f"renew it with {status.remedy}"
+            if status.remedy
             else "log in again"
         )
         raise MissingCredentials(

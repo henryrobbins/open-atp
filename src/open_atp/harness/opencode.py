@@ -133,7 +133,9 @@ class OpenCodeHarness(Harness):
     def auth_status(self) -> AuthStatus:
         if self.auth != "login":
             return self._env_auth_status(
-                _provider_env_var(self.provider), self._api_key
+                _provider_env_var(self.provider),
+                self._api_key,
+                remedy=f"a {self.provider} API key",
             )
         entry = self._stored_login() or {}
         # opencode stamps `expires` in epoch milliseconds.
@@ -142,6 +144,7 @@ class OpenCodeHarness(Harness):
             kind=AuthKind.OAUTH,
             source=str(self._auth_store()),
             present=bool(entry),
+            remedy=f"`opencode auth login` and choose {self.provider}",
             expires_at=(
                 datetime.fromtimestamp(expires / 1000, UTC)
                 if isinstance(expires, int | float)

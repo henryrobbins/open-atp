@@ -124,7 +124,10 @@ class ClaudeCodeHarness(Harness):
         # readable expiry and nothing refreshes it in place, so presence is the
         # whole story.
         return self._env_auth_status(
-            "CLAUDE_CODE_OAUTH_TOKEN", self._oauth_token, kind=AuthKind.OAUTH
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            self._oauth_token,
+            kind=AuthKind.OAUTH,
+            remedy="`claude setup-token`",
         )
 
     def _required_env(self) -> dict[str, str]:

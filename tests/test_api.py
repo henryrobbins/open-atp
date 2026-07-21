@@ -354,6 +354,18 @@ def test_prove_rejects_an_expired_credential_before_starting(tmp_path: Path) -> 
     assert not output.exists()  # rejected before any sandbox or output dir
 
 
+def test_prove_rejects_an_absent_credential_before_starting(tmp_path: Path) -> None:
+    absent = AuthStatus(
+        AuthKind.OAUTH, "~/.codex/auth.json", present=False, remedy="`codex login`"
+    )
+    output = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="get one with `codex login`"):
+        FakeProver("codex", auth=absent).prove(_task(), output)
+
+    assert not output.exists()
+
+
 def test_expired_credential_message_says_how_to_renew_it(tmp_path: Path) -> None:
     refreshable = AuthStatus(
         AuthKind.OAUTH,

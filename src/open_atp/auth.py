@@ -73,6 +73,10 @@ class AuthStatus:
     refreshable : bool, default False
         Whether the credential ships a refresh token, letting its CLI renew it on
         the host. Sandboxed runs cannot refresh it themselves.
+    remedy : str, optional
+        How to obtain the credential, as a fragment naming the command or key to
+        set (``"`codex login`"``). Reported when one is missing. Defaults to no
+        hint beyond :attr:`source`.
     """
 
     kind: AuthKind
@@ -80,6 +84,7 @@ class AuthStatus:
     present: bool
     expires_at: datetime | None = None
     refreshable: bool = False
+    remedy: str = ""
 
     def time_remaining(self, now: datetime | None = None) -> timedelta | None:
         """How long the credential stays valid, relative to ``now``.

@@ -263,6 +263,7 @@ class Harness(ABC):
         env_name: str,
         explicit: str | None,
         kind: AuthKind = AuthKind.API_KEY,
+        remedy: str = "",
     ) -> AuthStatus:
         """An :class:`~open_atp.auth.AuthStatus` for a credential read from the env.
 
@@ -277,6 +278,9 @@ class Harness(ABC):
             A constructor override taking precedence over the host environment.
         kind : ~open_atp.auth.AuthKind, default AuthKind.API_KEY
             What sort of credential the env var carries.
+        remedy : str, optional
+            How to obtain the credential, reported when it is absent. Defaults to
+            no hint beyond the env var's name.
 
         Returns
         -------
@@ -287,6 +291,7 @@ class Harness(ABC):
             kind=kind,
             source=env_name,
             present=bool(explicit or os.environ.get(env_name)),
+            remedy=remedy,
         )
 
     def _static_env(self) -> dict[str, str]:

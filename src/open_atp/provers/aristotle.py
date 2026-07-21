@@ -205,6 +205,7 @@ class AristotleProver(AutomatedProver):
             kind=AuthKind.API_KEY,
             source="ARISTOTLE_API_KEY",
             present=bool(self._api_key or os.environ.get("ARISTOTLE_API_KEY")),
+            remedy="an Aristotle API key (set it or pass api_key)",
         )
 
     def _generate(

@@ -35,7 +35,7 @@ SOURCES = {
     "grok": "opencode/auth.json",
     "leanstral": "MISTRAL_API_KEY",
     "axproverbase": "ANTHROPIC_API_KEY",
-    "kimi": "kimi-code.json",
+    "kimi": ".kimi-code/credentials",
     "numina": "CLAUDE_CODE_OAUTH_TOKEN",
     "aristotle": "ARISTOTLE_API_KEY",
 }
@@ -230,6 +230,18 @@ def test_kimi_reads_its_credential_file(host: Path) -> None:
 
     assert status.state() is AuthState.EXPIRED
     assert status.refreshable
+
+
+def test_kimi_counts_a_login_under_another_provider(host: Path) -> None:
+    """The harness mounts the whole credentials dir, so any login in it counts."""
+    creds = host / ".kimi-code" / "credentials"
+    creds.mkdir(parents=True)
+    (creds / "some-other-provider.json").write_text(json.dumps({"access_token": "a"}))
+
+    status = _status("kimi")
+
+    assert status.state() is AuthState.OK
+    assert status.expires_at is None  # no default-provider file to read one from
 
 
 def test_unreadable_credential_file_reports_missing(host: Path) -> None:

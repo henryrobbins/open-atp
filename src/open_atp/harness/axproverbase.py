@@ -120,7 +120,11 @@ class AxProverBaseHarness(Harness):
 
     def auth_status(self) -> AuthStatus:
         env_name = self._PROVIDER_ENV[_infer_provider(self.model)]
-        return self._env_auth_status(env_name, self._provider_api_key)
+        return self._env_auth_status(
+            env_name,
+            self._provider_api_key,
+            remedy=f"a raw {env_name} for {self.model}",
+        )
 
     def _required_env(self) -> dict[str, str]:
         # ax-prover reads the provider key from the process env; forward the selected
