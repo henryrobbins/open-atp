@@ -21,9 +21,8 @@ class ModelPrice:
     output : float
         Output tokens.
     cached_input : float, optional
-        Cache-hit input tokens, typically a large discount on ``input``. ``None``
-        (default) when the provider publishes no cached rate, in which case cached
-        tokens are billed at ``input``.
+        Cache-hit input tokens. ``None`` (default) when the provider publishes no
+        cached rate, in which case cached tokens are billed at ``input``.
     """
 
     input: float
@@ -34,8 +33,7 @@ class ModelPrice:
 #: Price per million tokens, keyed by the model id a harness reports.
 COST_PER_MTOK: dict[str, ModelPrice] = {
     # Anthropic (https://platform.claude.com/docs/en/about-claude/pricing).
-    # Cache reads are 0.1x input; cache writes (1.25x input) are not modeled --
-    # no harness here reports cache-creation tokens separately.
+    # Cache reads are 0.1x input; cache writes (1.25x input) are not modeled.
     "claude-fable-5": ModelPrice(10.0, 50.0, 1.0),
     "claude-opus-4-8": ModelPrice(5.0, 25.0, 0.50),
     "claude-opus-4-7": ModelPrice(5.0, 25.0, 0.50),
@@ -86,12 +84,25 @@ def compute_cost_usd(
 ) -> float | None:
     """Estimate the USD cost of a run from token counts.
 
-    ``cached_input_tokens`` is the cache-hit *subset* of ``input_tokens``, priced at
-    the model's discounted cached rate; the remainder bills at the full input rate.
-    Leave it at ``0`` (the default) when the source reports no cache breakdown --
-    the whole input then bills uncached, an upper bound.
+    Parameters
+    ----------
+    model : str
+        Model id to look up in :data:`COST_PER_MTOK`.
+    input_tokens : int
+        Total input (prompt) tokens.
+    output_tokens : int
+        Total output (completion) tokens.
+    cached_input_tokens : int, optional
+        The cache-hit *subset* of ``input_tokens``, priced at the model's
+        discounted cached rate; the remainder bills at the full input rate.
+        Leave it at ``0`` (the default) when the source reports no cache
+        breakdown -- the whole input then bills uncached, an upper bound.
 
-    Returns ``None`` when ``model`` is absent from :data:`COST_PER_MTOK`.
+    Returns
+    -------
+    float or None
+        Estimated USD cost, or ``None`` when ``model`` is absent from
+        :data:`COST_PER_MTOK`.
     """
     price = COST_PER_MTOK.get(model)
     if price is None:

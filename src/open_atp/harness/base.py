@@ -104,8 +104,7 @@ class HarnessRunResult:
     input_tokens : int
         Total input (prompt) tokens the run consumed.
     cached_input_tokens : int
-        The cache-hit subset of ``input_tokens``, when the agent reports one (Codex,
-        Kimi); ``0`` otherwise, which prices the whole input at the uncached rate.
+        The cache-hit subset of ``input_tokens``, when the agent reports one.
     output_tokens : int
         Total output (completion) tokens the run produced.
     stop_reason : str, optional
