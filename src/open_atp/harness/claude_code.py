@@ -157,13 +157,37 @@ class ClaudeCodeHarness(Harness):
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if obj.get("type") == "result":
-                result.stop_reason = obj.get("stop_reason")
+            if obj.get("type") != "result":
+                continue
+
+            # `modelUsage` is a session-cumulative total, repeated in full on
+            # every result record. It is the only place a forked subagent's
+            # tokens and cost surface -- the sibling `usage` block covers just
+            # the segment that produced its own record. Its `inputTokens`
+            # excludes cache traffic, so fold the cache counters back in to keep
+            # `cached_input_tokens` a subset of `input_tokens`.
+            usage = obj.get("modelUsage") or {}
+            if usage:
+                fresh = sum(int(u.get("inputTokens", 0)) for u in usage.values())
+                created = sum(
+                    int(u.get("cacheCreationInputTokens", 0)) for u in usage.values()
+                )
+                cached = sum(
+                    int(u.get("cacheReadInputTokens", 0)) for u in usage.values()
+                )
+                result.input_tokens = fresh + created + cached
+                result.cached_input_tokens = cached
+                result.output_tokens = sum(
+                    int(u.get("outputTokens", 0)) for u in usage.values()
+                )
+                result.cost_usd = sum(
+                    float(u.get("costUSD", 0.0)) for u in usage.values()
+                )
+            else:
                 result.cost_usd = obj.get("total_cost_usd")
-                result.subtype = obj.get("subtype")
-                rt = obj.get("result")
-                result.result_text = rt if isinstance(rt, str) else None
-                usage = obj.get("usage", {})
-                result.input_tokens = usage.get("input_tokens", result.input_tokens)
-                result.output_tokens = usage.get("output_tokens", result.output_tokens)
+
+            result.stop_reason = obj.get("stop_reason")
+            result.subtype = obj.get("subtype")
+            rt = obj.get("result")
+            result.result_text = rt if isinstance(rt, str) else None
         return result

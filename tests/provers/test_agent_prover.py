@@ -73,7 +73,10 @@ def test_claude_code_parse_lines_tokens_and_cost(tmp_path: Path) -> None:
     harness = ClaudeCodeHarness(model="claude-opus-4-8", effort="high")
     result = harness.parse_result(STREAM.read_text().splitlines(), tmp_path)
 
-    assert result.input_tokens == 18432
+    # `input_tokens` is the whole prompt volume: fresh + cache writes + cache
+    # reads, the last of which is reported again under `cached_input_tokens`.
+    assert result.input_tokens == 18432 + 512 + 12000
+    assert result.cached_input_tokens == 12000
     assert result.output_tokens == 2096
     assert result.stop_reason == "end_turn"
     # Claude Code self-reports USD; we use it verbatim.
@@ -297,7 +300,8 @@ def test_generate_reports_files_the_agent_changed(
     assert result.cost_usd == pytest.approx(0.4231)
     assert result.metadata["harness"] == "claude_code"
     assert result.metadata["model"] == "claude-opus-4-8"
-    assert result.metadata["input_tokens"] == 18432
+    assert result.metadata["input_tokens"] == 18432 + 512 + 12000
+    assert result.metadata["cached_input_tokens"] == 12000
 
 
 def test_generate_reports_no_changes_when_agent_does_nothing(
@@ -495,6 +499,17 @@ REJECTED_OUTPUT = {
         [],
         "error: failed to run prompt: auth.login_required: OAuth provider "
         '"managed:kimi-code" requires login before it can be used.',
+    ),
+    # An `auth="login"` prover whose OAuth refresh is rejected: the CLI fails before
+    # any request is made, so nothing here reads as a rejected key or a 401.
+    "opencode_oauth_refresh": (
+        [
+            '{"type":"error","sessionID":"ses_07ca37daaffezDNMrfwsivh7sR",'
+            '"error":{"name":"UnknownError","data":{"message":'
+            '"xAI token refresh failed (400): {\\"error\\":\\"invalid_grant\\",'
+            '\\"error_description\\":\\"Refresh token has been revoked\\"}"}}}'
+        ],
+        "",
     ),
 }
 

@@ -47,6 +47,10 @@ class MissingCredentials(Exception):
 #: (Codex), ``Authentication Fails`` (OpenCode/DeepSeek), ``Invalid API key`` (Vibe),
 #: ``invalid x-api-key`` (ax-prover/Anthropic), ``auth.login_required`` (Kimi) -- and
 #: the bare status code is too common a substring to match on alone.
+#:
+#: An OAuth login can also fail at the *refresh* step rather than on the request: the
+#: provider answers the refresh with an ``invalid_grant`` error (RFC 6749) and the CLI
+#: never reaches a 401, so none of the rejected-key phrasings appear.
 _AUTH_FAILURE = re.compile(
     "|".join(
         (
@@ -56,6 +60,9 @@ _AUTH_FAILURE = re.compile(
             r"401 unauthorized",
             r"login[ ._]?required",
             r"requires login",
+            r"invalid_grant",
+            r"token[ _]refresh[ _]failed",
+            r"(?:api[ _-]?key|token|credentials?) (?:h(?:as|ave) )?(?:been )?revoked",
         )
     ),
     re.IGNORECASE,

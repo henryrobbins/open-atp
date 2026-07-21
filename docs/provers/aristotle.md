@@ -64,4 +64,4 @@ Since Aristotle is closed-source, no other prover details are known. However, `a
 (tracking-cost-and-usage-aristotle)=
 ## Tracking cost and usage
 
-Aristotle is currently available for **free**! The cost is reported as `None` in {class}`~open_atp.provers.base.ProofResult`.
+Aristotle is currently available for **free**! The cost is reported as `0.0` in {class}`~open_atp.provers.base.ProofResult`.

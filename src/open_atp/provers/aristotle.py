@@ -256,8 +256,9 @@ class AristotleProver(AutomatedProver):
             (logs_dir / "summary.md").write_text(summary_src.read_text())
 
         result.completed_files = completed
-        # The Aristotle API does not expose a per-run cost; leave it unset.
-        result.cost_usd = None
+        # Aristotle is free to use. The API exposes no usage or credit field to
+        # read either way.
+        result.cost_usd = 0.0
 
         # Generation was network-only, so there is no live session to reuse
         result.verification = self.verifier.verify(LeanProject(wd))

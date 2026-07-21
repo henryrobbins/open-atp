@@ -315,7 +315,7 @@ def test_prove_end_to_end_verifies_completed_proof(
     assert result.success, result.verification and result.verification.compile_log
     assert result.verification is not None and result.verification.verified
     assert result.prover == "aristotle"
-    assert result.cost_usd is None  # Aristotle exposes no per-run cost
+    assert result.cost_usd == 0.0  # Aristotle is free
 
 
 @pytest.mark.docker
