@@ -26,6 +26,10 @@ CodexHarness(auth_file=Path("~/.codex/auth.json").expanduser())
 
 The harness mounts the credential into the sandbox at run time so Codex can refresh its access token mid-session, billing against your ChatGPT subscription. See {ref}`tracking-cost-and-usage-codex` for details.
 
+:::{warning}
+The token in `~/.codex/auth.json` expires roughly **10 days** after it is minted, and it only renews when the Codex CLI runs *on the host* — the sandbox works from a copy, so a token it refreshes there is discarded with the container. If the token expires mid-run, the agent's API calls start failing and the run is lost. Check the time remaining with `open-atp auth-status`, and run `codex login` on the host before a long benchmark.
+:::
+
 ## Using the prover
 
 ### Standard prover via Python API

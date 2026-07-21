@@ -47,6 +47,10 @@ from open_atp.harness import OpenCodeHarness
 OpenCodeHarness(provider="xai", model="grok-4.5", auth="login")
 ```
 
+:::{warning}
+The xAI entry in `~/.local/share/opencode/auth.json` expires roughly **6 hours** after it is minted, and it only renews when OpenCode runs *on the host* — the sandbox works from a copy, so a token it refreshes there is discarded with the container. If the token expires mid-run, the agent's API calls start failing and the run is lost. Check the time remaining with `open-atp auth-status`, and log in again on the host before a long benchmark.
+:::
+
 ## Using the prover
 
 ### Standard prover via Python API
