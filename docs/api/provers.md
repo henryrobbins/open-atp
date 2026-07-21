@@ -69,4 +69,12 @@ Each builds its class's baked-in defaults — to customize any knob, use
 .. autofunction:: open_atp.config.standard_provers
 
 .. autodata:: open_atp.config.STANDARD_PROVERS
+
+.. autofunction:: open_atp.config.build_prover
+
+.. autofunction:: open_atp.config.build_backend
+
+.. autofunction:: open_atp.config.build_harness
+
+.. autofunction:: open_atp.provers.base.compose_prompt
 ```

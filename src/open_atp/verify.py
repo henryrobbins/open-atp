@@ -168,10 +168,9 @@ class Verifier:
         """Reject a project whose pins differ from the backend image's.
 
         Matches the project's :attr:`~open_atp.lean.LeanProject.lean_toolchain`
-        against the image's :attr:`~open_atp.images.Image.lean_toolchain`, and its
+        against the image's ``lean_toolchain``, and its
         locked :attr:`~open_atp.lean.LeanProject.mathlib_rev` (when the project
-        records one) against the image's
-        :attr:`~open_atp.images.Image.mathlib_rev`. Raises
+        records one) against the image's ``mathlib_rev``. Raises
         :class:`~open_atp.lean.ToolchainMismatch` or
         :class:`~open_atp.lean.MathlibRevMismatch` on the first mismatch.
 

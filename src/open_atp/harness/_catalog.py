@@ -4,7 +4,8 @@ Two kinds of asset are resolvable **by name** (from a vendored catalog) or **by 
 path**:
 
 * **skills** -- host-agnostic Agent Skills (``<name>/SKILL.md``) listed on
-  ``AgentProver.skills`` and copied by the :class:`~...AgentProver` into each
+  ``AgentProver.skills`` and copied by the
+  :class:`~open_atp.provers.agent_prover.AgentProver` into each
   harness's skill location (``.claude/skills``, ``.agents/skills``,
   ``VIBE_HOME/skills``) via :meth:`~open_atp.harness.base.Harness.stage_skills`. The
   default is ``lean-proof`` from the vendored ``leanprover/skills`` catalog.

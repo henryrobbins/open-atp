@@ -1,4 +1,4 @@
-"""The harness contract: the *agent* concern of :class:`~...agent_prover.AgentProver`.
+"""The harness contract: the *agent* concern of the agent prover.
 
 A :class:`Harness` knows, for one agent CLI:
 
