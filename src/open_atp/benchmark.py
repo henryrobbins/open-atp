@@ -52,15 +52,7 @@ log = logging.getLogger("open_atp")
 
 
 def _errored_result(prover: str, output_dir: Path, exc: BaseException) -> ProofResult:
-    """Synthesize a minimal failed :class:`ProofResult` from an escaped exception.
-
-    For the runs ``prove`` cannot record itself: an input rejected before the run
-    started (a toolchain mismatch, absent credentials, a sandbox that never came up)
-    and a run abandoned past the wall-clock ceiling. The exception is classified onto
-    :attr:`~ProofResult.status`, its class name recorded in
-    :attr:`~ProofResult.error` and its message in :attr:`~ProofResult.error_msg`;
-    :attr:`~ProofResult.verification` stays ``None``.
-    """
+    """Synthesize a minimal failed :class:`ProofResult` from an escaped exception."""
     return ProofResult(
         prover=prover,
         verification=None,
@@ -72,16 +64,7 @@ def _errored_result(prover: str, output_dir: Path, exc: BaseException) -> ProofR
 
 
 class RunCeilingExceeded(Exception):
-    """A whole ``prove()`` run blew the benchmark's hard wall-clock ceiling.
-
-    The ceiling (:attr:`~open_atp.provers.base.AutomatedProver.max_duration_s`) sits
-    above the generation budget, so exceeding it means a run wedged past even its
-    verify + overhead allowance and its worker thread was abandoned -- an infra/stuck
-    signal, not a clean generation-budget timeout. Distinct from
-    :class:`~open_atp.provers.base.GenerationTimeout` (which maps to
-    :attr:`~open_atp.provers.base.ProofStatus.TIMEOUT`): this classifies as
-    :attr:`~open_atp.provers.base.ProofStatus.ERROR`.
-    """
+    """The run exceeded the maximum allowed duration and is in an unhealthy state."""
 
 
 @dataclass(frozen=True)
@@ -246,17 +229,18 @@ def run_benchmark(
     ) -> BenchmarkRun:
         run_dir = output_dir / task_name / prover_name
         run_dir.mkdir(parents=True, exist_ok=True)
-        # ``prove`` binds task/prover/run_id onto the context itself, so backend and
-        # verifier records stay attributed and any failure is already logged (with
-        # traceback) inside that binding. It also returns a record for any run that
-        # starts -- its own failures land as a status on the result. The only escapees
-        # are a run that never started (a toolchain mismatch, absent credentials, a
-        # sandbox that failed to provision) and a run abandoned past the wall-clock
-        # ceiling; neither has a run record, so ``_errored_result`` synthesizes one.
         with gates[prover_name]:
             try:
                 result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
+                log.exception(
+                    "run failed",
+                    extra={"task": task_name, "prover": prover_name},
+                    exc_info=exc,
+                )
+                # prover.prove() only raises exceptions that prevent the run from
+                # starting (e.g., missing credentials). To keep the result JSONL
+                # well-formatted, we synthesize a minimal failed ProofResult.
                 result = _errored_result(prover.name, run_dir, exc)
         (run_dir / "results.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str)

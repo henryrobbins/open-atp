@@ -41,14 +41,7 @@ _T = TypeVar("_T")
 
 
 class ServiceError(Exception):
-    """The hosted Aristotle service produced no candidate to verify.
-
-    No task to wait on, or no output files came back, so there is nothing for the
-    shared verifier to check. Distinct from a candidate that fails to verify
-    (:attr:`~open_atp.provers.base.ProofStatus.UNVERIFIED`): nothing was generated at
-    all, so :meth:`~open_atp.provers.base.AutomatedProver.prove` classifies it as
-    :attr:`~open_atp.provers.base.ProofStatus.ERROR`.
-    """
+    """The hosted Aristotle service produced no candidate to verify."""
 
 
 PROVER_PROMPT = (
@@ -233,9 +226,7 @@ class AristotleProver(AutomatedProver):
 
         result.metadata = metadata
         if downloaded is None:
-            # No archive means no candidate: fail the run rather than verifying the
-            # unchanged project into a misleading UNVERIFIED. The reason (no task / no
-            # output files) was recorded in metadata["error"] by the submit path.
+            # No archive means no candidate: fail the run rather than verifying
             raise ServiceError(
                 str(metadata.get("error", "Aristotle produced no output."))
             )
@@ -261,8 +252,7 @@ class AristotleProver(AutomatedProver):
         # The Aristotle API does not expose a per-run cost; leave it unset.
         result.cost_usd = None
 
-        # Generation was network-only, so there is no live session to reuse: run the
-        # shared check in a fresh sandbox over the extracted workdir.
+        # Generation was network-only, so there is no live session to reuse
         result.verification = self.verifier.verify(LeanProject(wd))
 
     async def _submit_and_download(

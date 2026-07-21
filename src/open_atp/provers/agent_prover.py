@@ -382,9 +382,9 @@ class AgentProver(AutomatedProver):
             try:
                 result = handle.wait()
             except CommandTimeout as exc:
-                # A budget kill: keep the partial output (streamed into ``lines``) so
-                # the salvaged candidate still gets its verify shot. ``result`` carries
-                # the captured stderr when the backend attached it.
+                # A budget kill: keep the partial output so the salvaged candidate
+                # still gets its verify shot. ``result`` carries the captured
+                # stderr when the backend attached it.
                 timed_out = True
                 result = exc.result or CommandResult(124, "", "", 0.0)
             self._log_agent_result(harness, result, lines)

@@ -43,6 +43,7 @@ import modal
 
 from open_atp.backends.base import (
     BAKED_LAKE,
+    EXEC_DEADLINE_MARGIN_S,
     TIMEOUT_EXIT_CODE,
     TIMEOUT_KILL_AFTER_S,
     WORKDIR_MOUNT,
@@ -67,9 +68,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("open_atp")
 
-#: Margin added to ``sb.exec`` client timeout to ensure the command is killed by
-#: coreutils ``timeout`` before the client deadline lapses.
-EXEC_DEADLINE_MARGIN_S = 30
 #: Wall-clock timeout for Modal Sandbox file transfer to complete.
 TRANSFER_TIMEOUT_S = 60
 #: Wall-clock timeout for running ``tar`` inside the Sandbox to push/pull a directory.
@@ -331,8 +329,6 @@ class ModalCommandHandle(CommandHandle):
     started_at: float
     #: Client wall-clock (seconds) the process wait is bounded by.
     deadline_s: float
-    #: Budget the command was given, for the timeout message.
-    budget_s: int = 0
     _stdout_lines: list[str] = field(default_factory=list)
     _buf: str = ""
 
@@ -390,13 +386,12 @@ class ModalCommandHandle(CommandHandle):
 
         A command killed by the in-Sandbox coreutils ``timeout`` for exceeding its
         budget exits ``124``; surfaced as
-        :class:`~open_atp.backends.base.CommandTimeout`, so a budget timeout is told
-        apart from an infra stall (:class:`ExecTimeout`).
+        :class:`~open_atp.backends.base.CommandTimeout`.
         """
         result = self._collect_result()
         if result.exit_code == TIMEOUT_EXIT_CODE:
             raise CommandTimeout(
-                f"command exceeded its {self.budget_s}s budget and was killed",
+                "command exceeded its budget and was killed",
                 result=result,
             )
         return result
@@ -437,8 +432,7 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
     """Tar the Sandbox workdir and extract it over the host ``wd``.
 
     Raises :class:`~open_atp.backends.base.SandboxDead` when the Sandbox is already
-    gone, or :class:`~open_atp.backends.base.TransferError` when the tar copy/extract
-    fails.
+    gone, or :class:`~open_atp.backends.base.TransferError` when the transfer fails.
     """
     if _is_dead(sb):
         raise SandboxDead("pull_wd: Sandbox already dead; cannot pull the workdir")
@@ -609,7 +603,7 @@ class ModalBackend(ComputeBackend):
         from modal.exception import NotFoundError
 
         if not _modal_configured():
-            log.error("modal not configured", extra={"app": self.app})
+            log.error("modal not configured")
             raise MissingCredentials(
                 "modal backend requires credentials: set MODAL_TOKEN_ID / "
                 "MODAL_TOKEN_SECRET or run `modal token set`"
@@ -770,10 +764,8 @@ class ModalSession(ComputeSession):
     ) -> CommandHandle:
         """Exec ``command`` in the live Sandbox; close() owns teardown.
 
-        See :meth:`~open_atp.backends.base.ComputeSession.exec` for the parameters. The
-        command is coreutils-``timeout`` capped inside the Sandbox (see
-        :func:`_sb_exec_args`); the Sandbox outlives it, so the partial workdir can
-        still be pulled back.
+        The command is coreutils-``timeout`` capped inside the Sandbox; the
+        Sandbox outlives it, so the partial workdir can still be pulled back.
         """
         # Per-command env is rare (the agent's creds are pinned at session create), so
         # this is usually an empty secret list.
@@ -801,7 +793,6 @@ class ModalSession(ComputeSession):
             sb=self.sb,
             started_at=started_at,
             deadline_s=_sb_exec_deadline(timeout_s),
-            budget_s=timeout_s,
         )
 
     def sync_out(self) -> None:
@@ -813,9 +804,5 @@ class ModalSession(ComputeSession):
         _push_dir(self.sb, self.workdir, WORKDIR_MOUNT)
 
     def close(self) -> None:
-        """Terminate the Sandbox. Idempotent.
-
-        The result-bearing pull is :meth:`sync_out`, which the provers call explicitly
-        before close, so teardown only reclaims the Sandbox.
-        """
+        """Terminate the Sandbox. Idempotent."""
         _terminate(self.sb)

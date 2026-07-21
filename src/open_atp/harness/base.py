@@ -36,13 +36,7 @@ log = logging.getLogger("open_atp")
 
 
 class MissingCredentials(Exception):
-    """A credential a prover needs to run is absent.
-
-    A fail-fast precondition error, sibling to
-    :class:`~open_atp.lean.ToolchainMismatch`: resolved before a run starts (in the
-    prover's preflight) and raised to the caller rather than turned into a run record.
-    The message names the missing credential.
-    """
+    """A credential a prover needs to run is absent."""
 
 
 #: API key env vars used by providers used in standard provers

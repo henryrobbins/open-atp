@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from open_atp.backends.base import (
+    EXEC_DEADLINE_MARGIN_S,
     TIMEOUT_EXIT_CODE,
     TIMEOUT_KILL_AFTER_S,
     WORKDIR_MOUNT,
@@ -267,13 +268,7 @@ class DockerBackend(ComputeBackend):
         return DockerSession(backend=self, container=container)
 
     def _require_image(self) -> None:
-        """Fail fast if the sandbox image isn't present locally.
-
-        open-atp images are built locally and never published, so ``docker run``
-        can't pull a missing one. ``docker image inspect`` matches ``repo:tag``
-        natively and returns nonzero when absent -- a cheaper, sturdier signal than
-        scraping a failed ``docker run``'s stderr.
-        """
+        """Fail fast if the sandbox image isn't present locally."""
         try:
             proc = subprocess.run(
                 ["docker", "image", "inspect", self.image.name],
@@ -311,8 +306,7 @@ class DockerSession(ComputeSession):
 
         The command is wrapped in coreutils ``timeout`` so it is killed (only the exec,
         not the container) once ``timeout_s`` elapses, leaving the session up for the
-        next command. See :meth:`~open_atp.backends.base.ComputeSession.exec` for the
-        parameters.
+        next command.
         """
         capped = (
             f"timeout --kill-after={TIMEOUT_KILL_AFTER_S} {timeout_s} "
@@ -342,7 +336,7 @@ class DockerSession(ComputeSession):
             container=self.container,
             started_at=time.time(),
             budget_s=timeout_s,
-            deadline_s=timeout_s + TIMEOUT_KILL_AFTER_S + 30,
+            deadline_s=timeout_s + TIMEOUT_KILL_AFTER_S + EXEC_DEADLINE_MARGIN_S,
         )
 
     def sync_out(self) -> None:

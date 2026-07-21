@@ -249,10 +249,9 @@ class Verifier:
         Returns
         -------
         VerificationReport or None
-            The compile/``sorry``/axiom verdict, or ``None`` when the compile is killed
-            for exceeding the verifier's ``timeout_s`` -- a timed-out compile yields no
-            verdict at all, not a failing one. A project with no ``.lean`` files
-            short-circuits to a trivial passing report without touching the sandbox.
+            The compile/``sorry``/axiom verdict or None if the compile exceeds
+            the verifier's wall-clock timeout. A project with no ``.lean`` files
+            automatically passes.
 
         Raises
         ------

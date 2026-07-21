@@ -42,52 +42,24 @@ _ADDITIONAL_INSTRUCTIONS = "\n\n# Additional instructions\n\n{user_prompt}"
 
 
 class GenerationTimeout(Exception):
-    """The generation phase consumed its whole wall-clock budget without finishing.
-
-    The *generation* budget -- distinct from an infra stall
-    (:class:`~open_atp.backends.base.ExecTimeout`) -- is enforced inside the sandbox
-    (the agent command is killed at its deadline) or by a prover's own round-loop
-    accounting. Raised by a prover once it observes that exhaustion and the candidate
-    did not verify; :meth:`AutomatedProver.prove` classifies it as
-    :attr:`ProofStatus.TIMEOUT`.
-    """
+    """The proof generation consumed its wall-clock budget before finishing."""
 
 
 class ProofStatus(enum.Enum):
-    """Coarse outcome bucket for a :class:`ProofResult`.
-
-    Deliberately small: each member is a *distinct caller action* (score it, retry
-    it, retry with more budget, file a bug), not a distinct cause. Same-bucket runs
-    are told apart by :attr:`ProofResult.error` (the failing exception's class name)
-    and :attr:`ProofResult.error_msg` (its message), so the enum stays the index and
-    the strings carry the "which" and the "why".
-
-    Every bucket is an outcome of a run that *started*: :meth:`AutomatedProver.prove`
-    rejects before any run exists -- an incompatible input (toolchain / Mathlib pin
-    mismatch) or absent credentials -- by raising, so there is no ``input_error``
-    bucket.
-    """
+    """Coarse status for a :class:`ProofResult`."""
 
     #: Verified proof: compiles, ``sorry``-free, no foreign axioms.
     VERIFIED = "verified"
     #: Ran to completion but the candidate did not verify -- a genuine miss.
     UNVERIFIED = "unverified"
-    #: Generation used its whole wall-clock budget without a verifying proof.
+    #: The proof generation phase consumed its wall-clock budget before finishing.
     TIMEOUT = "timeout"
-    #: Any other failure of a started run -- an infra failure (sandbox loss, a failed
-    #: transfer or provision), an unexpected prover bug, or an escaped exception. The
-    #: specific kind rides in :attr:`ProofResult.error`.
+    #: There was an error during proof generation or verification.
     ERROR = "error"
 
 
 def _status_for_exception(exc: BaseException) -> ProofStatus:
-    """Classify an exception from a *started* run onto a :class:`ProofStatus`.
-
-    Only a generation-budget exhaustion is its own bucket
-    (:attr:`ProofStatus.TIMEOUT`); every other started-run failure -- infra or
-    unexpected -- is :attr:`ProofStatus.ERROR`, told apart by the recorded exception
-    class name in :attr:`ProofResult.error`.
-    """
+    """Classify an exception onto a :class:`ProofStatus`."""
     return (
         ProofStatus.TIMEOUT if isinstance(exc, GenerationTimeout) else ProofStatus.ERROR
     )
@@ -137,16 +109,11 @@ class ProofResult:
     metadata : dict[str, object]
         Harness-specific run metadata (token counts, run summaries, ...).
     error : str, optional
-        The failing exception's class name (e.g. ``"TransferError"``), set when a
-        started run failed; ``None`` on a clean verify. A small, stable vocabulary
-        (the typed backend/prover exceptions) meant to be grepped and grouped -- the
-        search key beside :attr:`status`. The full traceback goes to the logs.
+        The failing exception's class name; set when status is ERROR or TIMEOUT.
     error_msg : str, optional
-        The failing exception's message -- the human-facing "why" behind
-        :attr:`error`. Leads with the operation label where one applies (e.g.
-        ``"pull_wd: ..."``). ``None`` on a clean verify.
+        The failing exception's message; set when status is ERROR or TIMEOUT.
     status : ProofStatus
-        Coarse outcome bucket (see :class:`ProofStatus`).
+        Status of the proof generation run.
     wd : pathlib.Path
         The completed working directory (``output_dir/wd``) -- a complete lake project
         with the completed ``.lean`` files. The proof output.
@@ -287,11 +254,7 @@ class AutomatedProver(abc.ABC):
         -------
         ProofResult
             The outcome of the run, pointing at the populated :attr:`~ProofResult.wd`
-            and :attr:`~ProofResult.logs_dir`. Once a run starts, its failure is a
-            *record*, not a raise: a timeout, an infra failure, or an unexpected error
-            comes back with the matching :attr:`~ProofResult.status` and a
-            :attr:`~ProofResult.error` summary, keeping the partial workdir, logs, and
-            cost for inspection.
+            and :attr:`~ProofResult.logs_dir`.
 
         Raises
         ------
@@ -344,15 +307,12 @@ class AutomatedProver(abc.ABC):
                     ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
                 )
             except (MissingCredentials, ProvisionError):
-                # The run never got off the ground -- absent credentials or a sandbox
-                # that failed to come up. There is no partial record to keep, so raise
-                # to the caller instead of returning an empty result.
+                # The run never started; no partial results to return.
                 log.exception("prove could not start")
                 raise
             except Exception as exc:
-                # The run started, so its failure is a record, not a raise: the partial
-                # workdir/logs/cost stay on ``result`` for the caller to inspect. The
-                # traceback is logged here; ``error`` carries the one-line summary.
+                # All other exceptions are from a started run with partial results
+                # so we return a result with the error status instead of raising.
                 log.exception("prove failed")
                 result.status = _status_for_exception(exc)
                 result.error = type(exc).__name__

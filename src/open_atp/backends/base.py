@@ -29,6 +29,9 @@ TIMEOUT_EXIT_CODE = 124
 #: Grace before coreutils ``timeout`` escalates SIGTERM to SIGKILL -- a window for a
 #: killed agent to flush its final usage/cost record before it dies.
 TIMEOUT_KILL_AFTER_S = 30
+#: Margin added to ``sb.exec`` client timeout to ensure the command is killed by
+#: coreutils ``timeout`` before the client deadline lapses.
+EXEC_DEADLINE_MARGIN_S = 30
 
 
 class ComputeError(RuntimeError):
