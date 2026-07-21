@@ -10,7 +10,7 @@ import threading
 from pathlib import Path
 
 from open_atp.harness._paths import _SCRIPTS
-from open_atp.harness.base import Harness, HarnessRunResult
+from open_atp.harness.base import Harness, HarnessRunResult, MissingCredentials
 
 log = logging.getLogger("open_atp")
 
@@ -77,7 +77,7 @@ class CodexHarness(Harness):
                 "missing codex auth file",
                 extra={"harness": self.name, "auth_file": str(auth)},
             )
-            raise RuntimeError(
+            raise MissingCredentials(
                 "codex harness requires ~/.codex/auth.json from `codex login`"
             )
         # Lock the check-then-create: without it, two concurrent runs on a shared

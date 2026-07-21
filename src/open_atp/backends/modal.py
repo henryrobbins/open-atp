@@ -27,6 +27,7 @@ from __future__ import annotations
 import contextvars
 import io
 import logging
+import os
 import queue
 import shlex
 import tarfile
@@ -42,16 +43,24 @@ import modal
 
 from open_atp.backends.base import (
     BAKED_LAKE,
+    EXEC_DEADLINE_MARGIN_S,
+    TIMEOUT_EXIT_CODE,
+    TIMEOUT_KILL_AFTER_S,
     WORKDIR_MOUNT,
     CommandHandle,
     CommandResult,
+    CommandTimeout,
     ComputeBackend,
     ComputeError,
     ComputeSession,
     ExecTimeout,
-    SandboxUnreachable,
+    ImageUnavailable,
+    ProvisionError,
+    SandboxDead,
+    TransferError,
     wrap_command,
 )
+from open_atp.harness.base import MissingCredentials
 from open_atp.images import DEFAULT_IMAGE, Image
 
 if TYPE_CHECKING:
@@ -59,11 +68,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("open_atp")
 
-#: Time to wait before sending SIGKILL to coreutils ``timeout``-capped commands.
-TIMEOUT_KILL_AFTER_S = 30
-#: Margin added to ``sb.exec`` client timeout to ensure the command is killed by
-#: coreutils ``timeout`` before the client deadline lapses.
-EXEC_DEADLINE_MARGIN_S = 30
 #: Wall-clock timeout for Modal Sandbox file transfer to complete.
 TRANSFER_TIMEOUT_S = 60
 #: Wall-clock timeout for running ``tar`` inside the Sandbox to push/pull a directory.
@@ -126,7 +130,7 @@ def _safe_run[T](
 
     Raises
     ------
-    SandboxUnreachable
+    SandboxDead
         If the Sandbox is reaped while ``fn`` is in flight.
     ExecTimeout
         If ``fn`` does not complete before ``timeout_s``.
@@ -159,7 +163,7 @@ def _safe_run[T](
                     "elapsed_s": round(time.monotonic() - started, 1),
                 },
             )
-            raise SandboxUnreachable("Sandbox terminated while awaiting a Modal call")
+            raise SandboxDead("Sandbox terminated while awaiting a Modal call")
         if waited >= timeout_s:
             log.warning(
                 "modal call aborted",
@@ -200,7 +204,7 @@ def _safe_stream(stream: Iterable[str], sb: modal.Sandbox) -> Iterator[str]:
 
     Raises
     ------
-    SandboxUnreachable
+    SandboxDead
         If the Sandbox is reaped prior to the timeout.
     ExecTimeout
         If the Sandbox was reaped due to a timeout.
@@ -222,7 +226,7 @@ def _safe_stream(stream: Iterable[str], sb: modal.Sandbox) -> Iterator[str]:
             kind, payload = relay.get(timeout=LIVENESS_POLL_INTERVAL_S)
         except queue.Empty:
             if _is_dead(sb):
-                raise SandboxUnreachable("stdout stream stalled; Sandbox unreachable")
+                raise SandboxDead("stdout stream stalled; Sandbox unreachable")
             continue
         if kind == "chunk":
             yield cast(str, payload)
@@ -239,9 +243,7 @@ def _raise_stream_error(exc: Exception, sb: modal.Sandbox) -> NoReturn:
     if isinstance(exc, ExecTimeoutError):
         raise ExecTimeout("exec exceeded its client deadline while streaming") from exc
     if _is_dead(sb):
-        raise SandboxUnreachable(
-            "stdout stream terminated; Sandbox unreachable"
-        ) from exc
+        raise SandboxDead("stdout stream terminated; Sandbox unreachable") from exc
     raise exc
 
 
@@ -299,6 +301,17 @@ def _modal_image_name(image: str) -> str:
     """Map an image ref to a Modal named-image lookup."""
     # Modal published images are looked up by bare name; strip a trailing tag
     return image.rsplit(":", 1)[0]
+
+
+def _modal_configured() -> bool:
+    """Whether Modal has credentials: env tokens or a ``~/.modal.toml`` profile.
+
+    Modal auth lands in either place (``modal token set`` writes the toml), so a
+    presence check must accept both -- a CLI-authenticated machine has no env tokens.
+    """
+    if os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET"):
+        return True
+    return (Path.home() / ".modal.toml").is_file()
 
 
 @dataclass
@@ -369,8 +382,19 @@ class ModalCommandHandle(CommandHandle):
         )
 
     def wait(self) -> CommandResult:
-        """Collect the result, leaving the Sandbox up for the session."""
-        return self._collect_result()
+        """Collect the result, leaving the Sandbox up for the session.
+
+        A command killed by the in-Sandbox coreutils ``timeout`` for exceeding its
+        budget exits ``124``; surfaced as
+        :class:`~open_atp.backends.base.CommandTimeout`.
+        """
+        result = self._collect_result()
+        if result.exit_code == TIMEOUT_EXIT_CODE:
+            raise CommandTimeout(
+                "command exceeded its budget and was killed",
+                result=result,
+            )
+        return result
 
 
 def _terminate(sb: modal.Sandbox) -> None:
@@ -405,13 +429,13 @@ def _push_dir(sb: modal.Sandbox, src: Path, dest: str) -> None:
 
 
 def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
-    """Tar the Sandbox workdir and extract it over the host ``wd``."""
+    """Tar the Sandbox workdir and extract it over the host ``wd``.
+
+    Raises :class:`~open_atp.backends.base.SandboxDead` when the Sandbox is already
+    gone, or :class:`~open_atp.backends.base.TransferError` when the transfer fails.
+    """
     if _is_dead(sb):
-        log.warning(
-            "pull_wd: Sandbox already terminated; skipping pull",
-            extra={"wd": str(wd)},
-        )
-        return
+        raise SandboxDead("pull_wd: Sandbox already dead; cannot pull the workdir")
 
     def do_pull() -> None:
         # Exclude the image-baked .lake symlink target
@@ -435,9 +459,20 @@ def _pull_wd(sb: modal.Sandbox, wd: Path) -> None:
             with tarfile.open(tmp.name, mode="r:gz") as tf:
                 tf.extractall(wd, filter="data")
 
-    _safe_run(
-        do_pull, timeout_s=_sb_exec_deadline(TRANSFER_TIMEOUT_S), sb=sb, label="pull_wd"
-    )
+    try:
+        _safe_run(
+            do_pull,
+            timeout_s=_sb_exec_deadline(TRANSFER_TIMEOUT_S),
+            sb=sb,
+            label="pull_wd",
+        )
+    except ComputeError:
+        # A stall / mid-pull Sandbox loss is already a typed ComputeError; let it ride.
+        raise
+    except Exception as exc:
+        # The copy_to_local / tar extract failed: retitle it as a transfer failure so
+        # the run records ``TransferError`` rather than a leaked Modal/tar class.
+        raise TransferError(f"pull_wd: {exc}") from exc
 
 
 def _pull_stderr(sb: modal.Sandbox) -> str:
@@ -550,12 +585,43 @@ class ModalBackend(ComputeBackend):
         alive for many commands). On any failure the Sandbox is terminated before
         propagating so a failed provision never leaks compute. The push, warm build,
         and pull steps that follow are each bounded (liveness + wall-clock); the
-        pre-Sandbox ``App.lookup``/``Sandbox.create`` RPCs are not -- no Sandbox
-        exists yet to poll for liveness, and no failures have been observed in
-        practice.
+        pre-Sandbox ``App.lookup``/``Sandbox.create`` RPCs have no Sandbox to poll for
+        liveness, so they are unbounded; a failure there (capacity, a rejected token)
+        is wrapped as a :class:`~open_atp.backends.base.ProvisionError` -- the run never
+        got off the ground -- rather than leaking a raw Modal class.
+
+        Raises
+        ------
+        ~open_atp.harness.MissingCredentials
+            If Modal has no credentials configured (no env tokens, no
+            ``~/.modal.toml``).
+        ~open_atp.backends.base.ImageUnavailable
+            If the sandbox image has not been published to Modal.
+        ~open_atp.backends.base.ProvisionError
+            If the Sandbox otherwise fails to come up (capacity, a rejected token).
         """
-        app = modal.App.lookup(self.app, create_if_missing=True)
-        image = modal.Image.from_name(_modal_image_name(self.image.name))
+        from modal.exception import NotFoundError
+
+        if not _modal_configured():
+            log.error("modal not configured")
+            raise MissingCredentials(
+                "modal backend requires credentials: set MODAL_TOKEN_ID / "
+                "MODAL_TOKEN_SECRET or run `modal token set`"
+            )
+
+        try:
+            app = modal.App.lookup(self.app, create_if_missing=True)
+        except Exception as exc:
+            raise ProvisionError(f"modal app lookup: {exc}") from exc
+        try:
+            image = modal.Image.from_name(_modal_image_name(self.image.name))
+        except NotFoundError as exc:
+            raise ImageUnavailable(
+                f"modal image {self.image.name!r} not published; build it with "
+                f"`open-atp build-modal-image` ({exc})"
+            ) from exc
+        except Exception as exc:
+            raise ProvisionError(f"modal image lookup: {exc}") from exc
 
         cpu = self.cpu
         secret_dict: dict[str, str | None] = {
@@ -583,15 +649,24 @@ class ModalBackend(ComputeBackend):
             },
         )
         started_at = time.time()
-        sb = modal.Sandbox.create(
-            app=app,
-            image=image,
-            secrets=[secret],
-            cpu=cpu,
-            memory=self.memory_mib,
-            timeout=timeout_s + self.wallclock_overhead_s,
-            region=self.region,
-        )
+        try:
+            sb = modal.Sandbox.create(
+                app=app,
+                image=image,
+                secrets=[secret],
+                cpu=cpu,
+                memory=self.memory_mib,
+                timeout=timeout_s + self.wallclock_overhead_s,
+                region=self.region,
+            )
+        except NotFoundError as exc:
+            # from_name is lazy: an unpublished image can surface only here, on create.
+            raise ImageUnavailable(
+                f"modal image {self.image.name!r} not published; build it with "
+                f"`open-atp build-modal-image` ({exc})"
+            ) from exc
+        except Exception as exc:
+            raise ProvisionError(f"modal sandbox create: {exc}") from exc
         try:
             # Push the workdir, then each extra (host, container) mount -- replaces
             # Docker's bind mounts (workdir + credential dirs).
@@ -602,7 +677,7 @@ class ModalBackend(ComputeBackend):
             # Warm the Lean cache (and wire the .lake symlink) before timing real
             # work: Modal pages image layers in lazily, so the first build is slow.
             log.debug("warming lean cache", extra={"workdir": WORKDIR_MOUNT})
-            _safe_run(
+            warm_exit = _safe_run(
                 lambda: _sb_exec(
                     sb,
                     f"ln -sfn {BAKED_LAKE} {WORKDIR_MOUNT}/.lake && lake build",
@@ -613,6 +688,12 @@ class ModalBackend(ComputeBackend):
                 sb=sb,
                 label="warm_build",
             )
+            # A nonzero warm build means the cache/symlink is broken -- the Sandbox is
+            # not usable, so fail provisioning rather than limping on a cold cache.
+            if warm_exit != 0:
+                raise ProvisionError(
+                    f"warm build (lake build) exited {warm_exit}; sandbox cache broken"
+                )
         except BaseException:
             log.error("modal sandbox provisioning failed", exc_info=True)
             _terminate(sb)
@@ -683,21 +764,8 @@ class ModalSession(ComputeSession):
     ) -> CommandHandle:
         """Exec ``command`` in the live Sandbox; close() owns teardown.
 
-        Parameters
-        ----------
-        command : str
-            The shell command to run in the live Sandbox.
-        timeout_s : int
-            Wall-clock cap for this command, in seconds.
-        env : Mapping[str, str], optional
-            Per-command environment variables, forwarded as a one-off Modal secret
-            (usually empty -- credentials pin at session creation). Default empty.
-
-        Returns
-        -------
-        CommandHandle
-            A live :class:`ModalCommandHandle` whose ``wait`` leaves the Sandbox up for
-            the next command.
+        The command is coreutils-``timeout`` capped inside the Sandbox; the
+        Sandbox outlives it, so the partial workdir can still be pulled back.
         """
         # Per-command env is rare (the agent's creds are pinned at session create), so
         # this is usually an empty secret list.
@@ -736,9 +804,5 @@ class ModalSession(ComputeSession):
         _push_dir(self.sb, self.workdir, WORKDIR_MOUNT)
 
     def close(self) -> None:
-        """Pull final artifacts, then terminate the Sandbox. Idempotent."""
-        # A pull failure must not skip termination, so it's its own try/finally.
-        try:
-            _pull_wd(self.sb, self.workdir)
-        finally:
-            _terminate(self.sb)
+        """Terminate the Sandbox. Idempotent."""
+        _terminate(self.sb)

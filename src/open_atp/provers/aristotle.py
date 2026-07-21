@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING, TypeVar
 
 from open_atp._capture import capture_stdout
 from open_atp.backends.base import ComputeBackend
-from open_atp.lean import ProofTask
+from open_atp.harness.base import MissingCredentials
+from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
     ProofResult,
@@ -37,6 +38,11 @@ if TYPE_CHECKING:
 log = logging.getLogger("open_atp")
 
 _T = TypeVar("_T")
+
+
+class ServiceError(Exception):
+    """The hosted Aristotle service produced no candidate to verify."""
+
 
 PROVER_PROMPT = (
     "Complete every `sorry` in this Lean project. Make the project compile and be "
@@ -218,8 +224,13 @@ class AristotleProver(AutomatedProver):
                 self._submit_and_download(wd, prompt, result_tar, logs_dir)
             )
 
-        if downloaded is not None:
-            self._extract_over(downloaded, wd)
+        result.metadata = metadata
+        if downloaded is None:
+            # No archive means no candidate: fail the run rather than verifying
+            raise ServiceError(
+                str(metadata.get("error", "Aristotle produced no output."))
+            )
+        self._extract_over(downloaded, wd)
 
         # Report the .lean files Aristotle changed or added.
         completed: dict[str, str] = {}
@@ -240,7 +251,9 @@ class AristotleProver(AutomatedProver):
         result.completed_files = completed
         # The Aristotle API does not expose a per-run cost; leave it unset.
         result.cost_usd = None
-        result.metadata = metadata
+
+        # Generation was network-only, so there is no live session to reuse
+        result.verification = self.verifier.verify(LeanProject(wd))
 
     async def _submit_and_download(
         self, project_dir: Path, prompt: str, dest_tar: Path, logs_dir: Path
@@ -260,8 +273,11 @@ class AristotleProver(AutomatedProver):
         _quiet_aristotle_logger()
 
         key = self._api_key or os.environ.get("ARISTOTLE_API_KEY")
-        if key:
-            aristotlelib.set_api_key(key)
+        if not key:
+            raise MissingCredentials(
+                "aristotle prover requires ARISTOTLE_API_KEY (set it or pass api_key)"
+            )
+        aristotlelib.set_api_key(key)
 
         questions = (
             AgentQuestionsSetting.TIMEOUT_15_MIN

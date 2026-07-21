@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from open_atp.harness import OpenCodeHarness, base
+from open_atp.harness import MissingCredentials, OpenCodeHarness, base
 
 
 def _write_auth(home: Path, entries: dict[str, object]) -> Path:
@@ -71,7 +71,7 @@ def test_api_key_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     harness = OpenCodeHarness(
         provider="deepseek", model="deepseek-v4-pro", auth="api_key"
     )
-    with pytest.raises(RuntimeError, match="DEEPSEEK_API_KEY"):
+    with pytest.raises(MissingCredentials, match="DEEPSEEK_API_KEY"):
         harness.agent_auth()
 
 
@@ -108,7 +108,7 @@ def test_login_missing_entry_raises(
     harness = OpenCodeHarness(
         model="claude-opus-4-8", provider="anthropic", auth="login"
     )
-    with pytest.raises(RuntimeError, match="requires a 'anthropic' login"):
+    with pytest.raises(MissingCredentials, match="requires a 'anthropic' login"):
         harness.agent_auth()
 
 

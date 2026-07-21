@@ -19,6 +19,8 @@ import pytest
 from open_atp import __main__ as cli
 from open_atp.config import build_backend, standard_provers
 
+from .test_api import FIXTURE, FakeProver
+
 
 def _backend() -> object:
     return build_backend({"type": "docker"})  # constructed, never started
@@ -163,6 +165,28 @@ def test_load_dotenv_seeds_missing_without_overriding(
 
     assert os.environ["NEW_KEY"] == "from-dotenv"
     assert os.environ["EXISTING_KEY"] == "real-env"  # setdefault keeps real env
+
+
+def test_prove_lets_a_pre_run_rejection_raise(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A run that never starts (here a toolchain mismatch) raises out of prove(); the
+    # CLI does not swallow it into a result. (A started run's own failures come back as
+    # a status on the result, so those never raise.)
+    from open_atp.lean import ToolchainMismatch
+
+    bad = FakeProver("agent", toolchain="leanprover/lean4:v9.99.0")
+    monkeypatch.setattr(cli, "standard_prover", lambda name, backend: bad)
+
+    args = argparse.Namespace(
+        path=str(FIXTURE),
+        output=str(tmp_path),
+        compute="docker",
+        prover="agent",
+        json=True,
+    )
+    with pytest.raises(ToolchainMismatch):
+        cli._prove(args)
 
 
 def test_download_dispatches_to_download_dataset(

@@ -24,6 +24,14 @@ from open_atp.images import DEFAULT_IMAGE, Image
 WORKDIR_MOUNT = "/workspace/wd"
 #: Image-baked warm Mathlib olean cache to symlink the workdir's ``.lake`` to.
 BAKED_LAKE = "/workspace/.lake"
+#: Exit code coreutils ``timeout`` reports when it kills a command past its budget.
+TIMEOUT_EXIT_CODE = 124
+#: Grace before coreutils ``timeout`` escalates SIGTERM to SIGKILL -- a window for a
+#: killed agent to flush its final usage/cost record before it dies.
+TIMEOUT_KILL_AFTER_S = 30
+#: Margin added to ``sb.exec`` client timeout to ensure the command is killed by
+#: coreutils ``timeout`` before the client deadline lapses.
+EXEC_DEADLINE_MARGIN_S = 30
 
 
 class ComputeError(RuntimeError):
@@ -31,11 +39,47 @@ class ComputeError(RuntimeError):
 
 
 class ExecTimeout(ComputeError):
-    """A command on backend compute exceeds its timeout deadline."""
+    """A sandbox operation stalled past its client-side wall-clock deadline.
+
+    An *infra* stall -- a backend operation (a push/pull, a warm build, a
+    ``proc.wait``) that did not complete before the client gave up on it, typically an
+    unresponsive worker. Distinct from a command using up its own budget, which the
+    backend surfaces as :class:`CommandTimeout`.
+    """
 
 
-class SandboxUnreachable(ComputeError):
-    """The backend compute sandbox became unreachable mid-run."""
+class SandboxDead(ComputeError):
+    """The backend compute sandbox was terminated or reaped mid-run."""
+
+
+class TransferError(ComputeError):
+    """A file transfer into or out of the sandbox failed."""
+
+
+class ProvisionError(ComputeError):
+    """The sandbox/container failed to come up for a run."""
+
+
+class ImageUnavailable(ProvisionError):
+    """The OpenATP Docker image is not available to the backend.
+
+    The most likely cause is the image has not yet been built. Build with the
+    ``open-atp build-docker-image`` and ``open-atp build-modal-image`` commands.
+    """
+
+
+class CommandTimeout(Exception):
+    """A sandbox command was killed for exceeding its own wall-clock budget.
+
+    Attributes
+    ----------
+    result : CommandResult or None
+        The command's partial output captured before it was killed, when available.
+    """
+
+    def __init__(self, message: str, *, result: CommandResult | None = None) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 @dataclass
@@ -136,7 +180,9 @@ class ComputeSession(AbstractContextManager["ComputeSession"]):
         command : str
             The shell command to run in the live sandbox.
         timeout_s : int
-            Wall-clock cap for the command, in seconds.
+            Wall-clock cap for the command, in seconds. When the command exceeds this
+            budget it is killed, surfaced as :class:`CommandTimeout` from
+            :meth:`~CommandHandle.wait`.
         env : Mapping[str, str], optional
             Per-command environment variables, merged over the backend's ``env``.
             Default empty.
@@ -342,4 +388,5 @@ class ComputeBackend(abc.ABC):
             lean_file = tmp_path / "Trivial.lean"
             lean_file.write_text("theorem trivial_proof : True := trivial\n")
             project = create_project([lean_file], tmp_path / "project")
-            return Verifier(self).verify(project).verified
+            report = Verifier(self).verify(project)
+            return report is not None and report.verified

@@ -22,6 +22,8 @@ See the per-harness prover pages under {doc}`../provers/index` for credential se
 
 .. autoclass:: open_atp.harness.base.AgentAuth
    :no-members:
+
+.. autoexception:: open_atp.harness.base.MissingCredentials
 ```
 
 ## Harnesses

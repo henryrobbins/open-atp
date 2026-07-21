@@ -12,6 +12,7 @@ from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import (
     Harness,
     HarnessRunResult,
+    MissingCredentials,
     _provider_env_var,
 )
 
@@ -138,7 +139,7 @@ class OpenCodeHarness(Harness):
         except FileNotFoundError:
             entry = None
         if not entry:
-            raise RuntimeError(
+            raise MissingCredentials(
                 f"opencode harness with auth='login' requires a {self.provider!r} "
                 f"login in {store}; run `opencode auth login` and choose "
                 f"{self.provider}"

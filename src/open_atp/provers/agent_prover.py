@@ -23,6 +23,7 @@ from typing import TextIO
 from open_atp.backends.base import (
     CommandHandle,
     CommandResult,
+    CommandTimeout,
     ComputeBackend,
     ComputeSession,
 )
@@ -35,6 +36,7 @@ from open_atp.harness._catalog import resolve_skill
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
+    GenerationTimeout,
     ProofResult,
     compose_prompt,
 )
@@ -234,15 +236,24 @@ class AgentProver(AutomatedProver):
         with self.verifier.backend.session(
             wd, mounts=mounts, timeout_s=self.timeout_s + self.verifier.timeout_s
         ) as session:
-            lines, stderr = self._run_agent(
+            lines, stderr, timed_out = self._run_agent(
                 wd, harness, stdout_path, session, timeout_s=self.timeout_s
             )
             self._download_wd(wd, session)
             # Parse (which reads harness usage files still in wd) before
             # _download_logs relocates them out.
-            self._fill_result(result, harness, wd, original, lines)
+            self._fill_result(result, harness, wd, original, lines, timed_out=timed_out)
             self._download_logs(harness, wd, logs_dir, stderr)
             result.verification = self.verifier.verify(LeanProject(wd), session=session)
+
+        # A generation killed at its deadline that still didn't verify is a timeout,
+        # not a plain miss -- but only after the partial workdir/logs/cost are on the
+        # result and the salvaged candidate had its shot at verifying.
+        if timed_out and not result.success:
+            raise GenerationTimeout(
+                f"agent generation used its full {self.timeout_s}s budget without a "
+                "verifying proof"
+            )
 
     def _download_wd(self, wd: Path, session: ComputeSession) -> None:
         """Bring the agent's edits onto the host at ``wd``.
@@ -272,11 +283,21 @@ class AgentProver(AutomatedProver):
         wd: Path,
         original: dict[str, str],
         lines: list[str],
+        *,
+        timed_out: bool = False,
     ) -> None:
-        """Token totals -> cost, then diff the workdir against the staged originals."""
+        """Token totals -> cost, then diff the workdir against the staged originals.
+
+        An agent killed at its deadline may never emit its final usage/cost record
+        (most CLIs total only on clean exit), so a timed-out run leaves ``cost_usd``
+        ``None`` -- an honest "unknown" -- rather than fabricating ``$0`` from the
+        absent totals, and marks ``stop_reason`` as ``"timeout"``.
+        """
         parsed = harness.parse_result(lines, wd)
         cost = parsed.cost_usd
-        if cost is None:
+        # A timed-out run's totals are unknown when the harness didn't report a cost;
+        # leave it None rather than estimating $0 from the absent token counts.
+        if cost is None and not timed_out:
             cost = compute_cost_usd(
                 self.harness.model, parsed.input_tokens, parsed.output_tokens
             )
@@ -290,6 +311,10 @@ class AgentProver(AutomatedProver):
             if original.get(rel) != content:
                 completed[rel] = content
 
+        stop_reason = parsed.stop_reason
+        if timed_out and stop_reason is None:
+            stop_reason = "timeout"
+
         result.completed_files = completed
         result.cost_usd = cost
         result.metadata = {
@@ -298,7 +323,7 @@ class AgentProver(AutomatedProver):
             "effort": self.harness.effort,
             "input_tokens": parsed.input_tokens,
             "output_tokens": parsed.output_tokens,
-            "stop_reason": parsed.stop_reason,
+            "stop_reason": stop_reason,
         }
 
     def _auth(self, harness: Harness) -> tuple[dict[str, str], list[tuple[str, str]]]:
@@ -316,23 +341,26 @@ class AgentProver(AutomatedProver):
         session: ComputeSession,
         *,
         timeout_s: int,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         """Resolve auth, launch the agent in the live ``session``, and tee its stdout.
 
         Each streamed event line is written to ``stdout_path`` (opened in append mode,
         so a multi-round caller accumulates one transcript) as it arrives -- the live
         run log -- and collected to return for token/cost parsing. Returns
-        ``(stdout_lines, stderr)``: the lines plus the run's captured stderr (e.g.
-        Modal's ``modal_stderr.txt``), which the prover writes to ``logs/stderr.txt``.
+        ``(stdout_lines, stderr, timed_out)``: the lines, the run's captured stderr
+        (e.g. Modal's ``modal_stderr.txt``, which the prover writes to
+        ``logs/stderr.txt``), and whether the agent command was killed for exceeding
+        its budget. The backend classifies a budget kill and raises
+        :class:`~open_atp.backends.base.CommandTimeout` (which we catch here); the lines
+        already streamed before the kill are retained for a salvage verify.
 
         The agent execs in the persistent ``session`` -- the same hot sandbox that
         stays up for the verifier afterwards. Mounts (credential dirs) were pinned when
         the session was created; only per-command env is forwarded here.
 
-        ``timeout_s`` is the agent's wall-clock budget: on Modal it is enforced by the
-        Sandbox exec (killed with Sandbox slack left to pull the workdir), and a
-        multi-round caller passes the *remaining* budget so successive rounds share one
-        Sandbox lifetime. Docker ignores it (bind-mounted, no self-terminate).
+        ``timeout_s`` is the agent's wall-clock budget, enforced by the backend killing
+        the command when it is exceeded. A multi-round caller passes the *remaining*
+        budget so successive rounds share one sandbox lifetime.
 
         Isolated (it owns credential resolution + the backend call) so tests can
         stand in a fake run -- write a solved file, return a captured stream --
@@ -340,6 +368,7 @@ class AgentProver(AutomatedProver):
         """
         env, _ = self._auth(harness)
         lines: list[str] = []
+        timed_out = False
 
         def drain(handle: CommandHandle, sink: TextIO) -> None:
             for line in handle.stream():
@@ -350,9 +379,16 @@ class AgentProver(AutomatedProver):
         with stdout_path.open("a", encoding="utf-8") as sink:
             handle = session.exec(harness.command, timeout_s=timeout_s, env=env)
             drain(handle, sink)
-            result = handle.wait()
+            try:
+                result = handle.wait()
+            except CommandTimeout as exc:
+                # A budget kill: keep the partial output so the salvaged candidate
+                # still gets its verify shot. ``result`` carries the captured
+                # stderr when the backend attached it.
+                timed_out = True
+                result = exc.result or CommandResult(124, "", "", 0.0)
             self._log_agent_result(harness, result, lines)
-        return lines, result.stderr
+        return lines, result.stderr, timed_out
 
     def _log_agent_result(
         self, harness: Harness, result: CommandResult, lines: list[str]

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from open_atp.harness._paths import _SCRIPTS
-from open_atp.harness.base import Harness, HarnessRunResult
+from open_atp.harness.base import Harness, HarnessRunResult, MissingCredentials
 
 log = logging.getLogger("open_atp")
 
@@ -109,7 +109,7 @@ class VibeHarness(Harness):
                 "missing credential",
                 extra={"harness": self.name, "env": "MISTRAL_API_KEY"},
             )
-            raise RuntimeError(
+            raise MissingCredentials(
                 "vibe harness requires MISTRAL_API_KEY (a Mistral La Plateforme key)"
             )
         return {"MISTRAL_API_KEY": key}

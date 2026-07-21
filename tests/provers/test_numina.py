@@ -25,7 +25,7 @@ from open_atp.backends.docker import DockerBackend
 from open_atp.harness import Harness
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask
-from open_atp.provers.base import ProofResult
+from open_atp.provers.base import ProofResult, ProofStatus
 from open_atp.provers.numina import NuminaProver
 from open_atp.provers.numina_tracker import (
     StatementTracker,
@@ -170,11 +170,11 @@ def _scripted_run_agent(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         i = len(calls)
         calls.append(i)
         reason = reasons[i] if i < len(reasons) else reasons[-1]
-        return [_result_line(reason)], ""
+        return [_result_line(reason)], "", False
 
     return calls, _stub
 
@@ -198,6 +198,24 @@ def test_round_loop_continues_on_limit_then_stops_on_complete(
     assert out.metadata["input_tokens"] == 300
 
 
+def test_round_loop_timeout_becomes_generation_timeout(
+    tmp_path: Path, make_prover: object
+) -> None:
+    """A round loop that stops on its wall-clock budget is TIMEOUT, not a plain miss.
+
+    A generation budget below one round's minimum makes the loop give up before any
+    round runs; the unverified result is then reclassified as a timeout. Drives the
+    real ``prove`` lifecycle -- no ``_run_agent`` stub, since no round executes.
+    """
+    prover = make_prover(timeout_s=1, guard_statements=False)
+
+    result = prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+    assert result.status is ProofStatus.TIMEOUT
+    assert result.error == "GenerationTimeout"
+    assert not result.success
+
+
 def test_helper_cost_is_folded_into_total(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_prover: object
 ) -> None:
@@ -210,7 +228,7 @@ def test_helper_cost_is_folded_into_total(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         # Simulate the in-sandbox skill appending usage across two rounds' calls.
         ledger = workdir / ".claude" / "helper_usage.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -226,7 +244,7 @@ def test_helper_cost_is_folded_into_total(
                 )
                 + "\n"
             )
-        return [_result_line("COMPLETE")], ""
+        return [_result_line("COMPLETE")], "", False
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _stub)
     prover = make_prover(max_rounds=20, guard_statements=False)
@@ -253,7 +271,7 @@ def test_helper_cost_flags_unpriced_model(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         ledger = workdir / ".claude" / "helper_usage.jsonl"
         ledger.parent.mkdir(parents=True, exist_ok=True)
         ledger.write_text(
@@ -267,7 +285,7 @@ def test_helper_cost_flags_unpriced_model(
             )
             + "\n"
         )
-        return [_result_line("COMPLETE")], ""
+        return [_result_line("COMPLETE")], "", False
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _stub)
     prover = make_prover(max_rounds=20, guard_statements=False)
@@ -319,9 +337,9 @@ def test_round_loop_falls_back_to_subtype_when_no_marker(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         calls.append(1)
-        return [_result_line(None, subtype="success")], ""
+        return [_result_line(None, subtype="success")], "", False
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _stub)
     prover = make_prover(max_rounds=20, guard_statements=False)
@@ -346,13 +364,13 @@ def test_guard_error_stops_and_restores_weakened_theorem(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         target = workdir / "MILExample.lean"
         target.write_text(
             "import Mathlib\n\n"
             "theorem mul_comm_assoc (a b c : ℝ) : True := by trivial\n"
         )
-        return [_result_line("COMPLETE")], ""
+        return [_result_line("COMPLETE")], "", False
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _weaken)
     prover = make_prover(
@@ -400,10 +418,10 @@ def test_run_end_to_end_verifies_mocked_numina_result(
         stdout_path: Path,
         session: object | None = None,
         timeout_s: int | None = None,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, bool]:
         assert session is not None  # rounds exec in the live session
         (workdir / "MILExample.lean").write_text(_SOLVED_FILE)
-        return [_result_line("COMPLETE")], ""
+        return [_result_line("COMPLETE")], "", False
 
     monkeypatch.setattr(NuminaProver, "_run_agent", _solve)
     # Keep the session sandbox dependency-free (no real credential mounts).

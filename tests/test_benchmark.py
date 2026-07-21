@@ -27,7 +27,7 @@ from open_atp.benchmark import (
     tasks_from_dir,
 )
 from open_atp.lean import LeanProject, ProofTask
-from open_atp.provers.base import ProofResult
+from open_atp.provers.base import ProofResult, ProofStatus
 
 from .test_api import FIXTURE, FakeProver
 
@@ -111,7 +111,7 @@ def test_layout_and_results_json(tmp_path: Path) -> None:
     }
 
 
-def test_raising_prover_recorded_not_aborted(tmp_path: Path) -> None:
+def test_failing_prover_recorded_not_aborted(tmp_path: Path) -> None:
     provers = {
         "boom": FakeProver("agent", raises=RuntimeError("docker down")),
         "ok": FakeProver("numina"),
@@ -120,13 +120,63 @@ def test_raising_prover_recorded_not_aborted(tmp_path: Path) -> None:
     result = run_benchmark({"alpha": _tasks()["alpha"]}, provers, tmp_path)
 
     by_prover = {r.prover: r.result for r in result.runs}
-    assert by_prover["boom"].error == "docker down"
+    # prove() caught the started run's failure and returned an ERROR record.
+    assert by_prover["boom"].error == "RuntimeError"
+    assert by_prover["boom"].error_msg == "docker down"
     assert by_prover["boom"].verification is None
     assert by_prover["boom"].success is False
+    assert by_prover["boom"].status is ProofStatus.ERROR
     assert by_prover["ok"].success is True
-    # The failed cell still wrote its results.json.
+    assert by_prover["ok"].status is ProofStatus.VERIFIED
+    # The failed cell still wrote its results.json, status included.
     payload = json.loads((tmp_path / "alpha" / "boom" / "results.json").read_text())
-    assert payload["error"] == "docker down"
+    assert payload["error"] == "RuntimeError" and payload["error_msg"] == "docker down"
+    assert payload["status"] == "error"
+
+
+class HangingProver(FakeProver):
+    """A ``FakeProver`` that never returns, with a tiny wall-clock ceiling.
+
+    Drives the outer backstop in ``_prove_bounded``: ``_generate`` sleeps past the
+    ceiling so the worker thread is abandoned and ``RunCeilingExceeded`` is raised.
+    """
+
+    @property
+    def max_duration_s(self) -> int:  # type: ignore[override]
+        return 0  # join returns immediately; the sleeping worker is still alive
+
+    def _generate(
+        self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult
+    ) -> None:
+        time.sleep(5)  # never completes within the ceiling
+
+
+def test_run_ceiling_recorded_as_errored_cell(tmp_path: Path) -> None:
+    """A run wedged past its wall-clock ceiling is a RunCeilingExceeded ERROR cell."""
+    result = run_benchmark(
+        {"alpha": _tasks()["alpha"]}, {"slow": HangingProver("agent")}, tmp_path
+    )
+
+    r = result.runs[0].result
+    assert r.status is ProofStatus.ERROR
+    assert r.error == "RunCeilingExceeded"
+    assert r.verification is None and not r.success
+    payload = json.loads((tmp_path / "alpha" / "slow" / "results.json").read_text())
+    assert payload["status"] == "error"
+
+
+def test_input_rejection_recorded_as_errored_cell(tmp_path: Path) -> None:
+    """A pre-run rejection raises out of prove(); the sweep records an error cell."""
+    provers = {"bad": FakeProver("agent", toolchain="leanprover/lean4:v9.99.0")}
+
+    result = run_benchmark({"alpha": _tasks()["alpha"]}, provers, tmp_path)
+
+    r = result.runs[0].result
+    assert r.status is ProofStatus.ERROR
+    assert r.error == "ToolchainMismatch"
+    assert r.verification is None and not r.success
+    payload = json.loads((tmp_path / "alpha" / "bad" / "results.json").read_text())
+    assert payload["status"] == "error"
 
 
 def test_table_has_a_row_per_pair(tmp_path: Path) -> None:
@@ -153,6 +203,22 @@ def test_table_has_a_row_per_pair(tmp_path: Path) -> None:
     console.print(table)
     rendered = console.file.getvalue()
     assert "✓" in rendered and "✗" in rendered
+
+
+def test_table_shows_error_status_for_failed_cell(tmp_path: Path) -> None:
+    """A cell whose run errored renders its status label, not the ✓/✗ verdict."""
+    provers = {"boom": FakeProver("agent", raises=RuntimeError("docker down"))}
+
+    from open_atp.__main__ import _benchmark_table
+
+    result = run_benchmark({"alpha": _tasks()["alpha"]}, provers, tmp_path)
+    table = _benchmark_table(result)
+
+    console = Console(
+        file=io.StringIO(), width=200, force_terminal=False, color_system=None
+    )
+    console.print(table)
+    assert "error" in console.file.getvalue()
 
 
 def test_only_restricts_and_orders_tasks(tmp_path: Path) -> None:

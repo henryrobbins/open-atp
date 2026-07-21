@@ -40,12 +40,31 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from open_atp.backends.base import ExecTimeout
 from open_atp.images import SKELETON_DIR
 from open_atp.lean import LeanProject, ProofTask, create_project
-from open_atp.provers.base import AutomatedProver, ProofResult
+from open_atp.provers.base import (
+    AutomatedProver,
+    ProofResult,
+    _status_for_exception,
+)
 
 log = logging.getLogger("open_atp")
+
+
+def _errored_result(prover: str, output_dir: Path, exc: BaseException) -> ProofResult:
+    """Synthesize a minimal failed :class:`ProofResult` from an escaped exception."""
+    return ProofResult(
+        prover=prover,
+        verification=None,
+        output_dir=output_dir,
+        error=type(exc).__name__,
+        error_msg=str(exc),
+        status=_status_for_exception(exc),
+    )
+
+
+class RunCeilingExceeded(Exception):
+    """The run exceeded the maximum allowed duration and is in an unhealthy state."""
 
 
 @dataclass(frozen=True)
@@ -110,7 +129,7 @@ def _prove_bounded(
     The backend already bounds each Modal call, so this rarely fires; it is the outer
     backstop guaranteeing no single wedged run can stall the whole sweep. On timeout
     the worker thread is abandoned (daemon, so it can't block process exit) and
-    :class:`~open_atp.backends.base.ExecTimeout` is raised for the caller to classify.
+    :class:`RunCeilingExceeded` is raised for the caller to classify.
     """
     result: list[ProofResult] = []
     error: list[BaseException] = []
@@ -129,7 +148,7 @@ def _prove_bounded(
             "task exceeded wall-clock ceiling",
             extra={"prover": prover.name, "task": task.name, "ceiling_s": ceiling_s},
         )
-        raise ExecTimeout(f"task exceeded {ceiling_s:.0f}s wall-clock ceiling")
+        raise RunCeilingExceeded(f"task exceeded {ceiling_s:.0f}s wall-clock ceiling")
     if error:
         raise error[0]
     return result[0]
@@ -210,19 +229,19 @@ def run_benchmark(
     ) -> BenchmarkRun:
         run_dir = output_dir / task_name / prover_name
         run_dir.mkdir(parents=True, exist_ok=True)
-        # ``prove`` binds task/prover/run_id onto the context itself, so backend and
-        # verifier records stay attributed and a generation crash is already logged
-        # (with traceback) inside that binding -- here we only build the error result.
         with gates[prover_name]:
             try:
                 result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
-                result = ProofResult(
-                    prover=prover.name,
-                    verification=None,
-                    output_dir=run_dir,
-                    error=str(exc),
+                log.exception(
+                    "run failed",
+                    extra={"task": task_name, "prover": prover_name},
+                    exc_info=exc,
                 )
+                # prover.prove() only raises exceptions that prevent the run from
+                # starting (e.g., missing credentials). To keep the result JSONL
+                # well-formatted, we synthesize a minimal failed ProofResult.
+                result = _errored_result(prover.name, run_dir, exc)
         (run_dir / "results.json").write_text(
             json.dumps(result.to_dict(), indent=2, default=str)
         )
@@ -239,7 +258,7 @@ def run_benchmark(
     def record(index: int, run: BenchmarkRun) -> None:
         slots[index] = run
         r = run.result
-        status = "✓" if r.success else ("error" if r.error else "✗")
+        status = "✓" if r.success else r.status.value
         log.debug(
             "run complete",
             extra={"task": run.task, "prover": run.prover, "status": status},
