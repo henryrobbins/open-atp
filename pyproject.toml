@@ -1,6 +1,6 @@
 [project]
 name = "open-atp"
-version = "0.3.0"
+version = "0.4.0"
 description = "Open Automated Theorem Proving: upload Lean files with sorrys, get verified completed proofs across multiple proving backends."
 readme = "README.md"
 authors = [{ name = "Henry Robbins", email = "hwr@stanford.edu" }]
