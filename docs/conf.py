@@ -129,14 +129,11 @@ numpydoc_class_members_toctree = False
 numpydoc_show_class_members = False
 numpydoc_xref_param_type = True
 numpydoc_xref_ignore = {"of", "or", "optional", "default"}
+# Maps a bare name in a numpydoc *type* field to its full path, so
+# ``backend : ComputeBackend`` links. Only type fields are rewritten -- prose uses
+# explicit ``:class:``/``:func:`` roles and never consults this table, so only
+# names that can appear as a *type* belong here (no functions, no constants).
 numpydoc_xref_aliases = {
-    # Build / catalog
-    "standard_prover": "open_atp.config.standard_prover",
-    "standard_provers": "open_atp.config.standard_provers",
-    "build_prover": "open_atp.config.build_prover",
-    "build_harness": "open_atp.config.build_harness",
-    "build_backend": "open_atp.config.build_backend",
-    "create_project": "open_atp.lean.create_project",
     # Images
     "DEFAULT_IMAGE": "open_atp.images.DEFAULT_IMAGE",
     "SKELETON_DIR": "open_atp.images.SKELETON_DIR",
@@ -160,7 +157,6 @@ numpydoc_xref_aliases = {
     "AgentProver": "open_atp.provers.agent_prover.AgentProver",
     "AristotleProver": "open_atp.provers.aristotle.AristotleProver",
     "NuminaProver": "open_atp.provers.numina.NuminaProver",
-    "STANDARD_PROVERS": "open_atp.config.STANDARD_PROVERS",
     # Harnesses
     "Harness": "open_atp.harness.base.Harness",
     "HarnessRunResult": "open_atp.harness.base.HarnessRunResult",
@@ -170,8 +166,6 @@ numpydoc_xref_aliases = {
     "OpenCodeHarness": "open_atp.harness.opencode.OpenCodeHarness",
     "VibeHarness": "open_atp.harness.vibe.VibeHarness",
     "AxProverBaseHarness": "open_atp.harness.axproverbase.AxProverBaseHarness",
-    "COST_PER_MTOK": "open_atp.harness.cost.COST_PER_MTOK",
-    "compute_cost_usd": "open_atp.harness.cost.compute_cost_usd",
     # Modal SDK types referenced in ModalBackend docstrings. Resolved to the Modal
     # docs by the ``missing-reference`` handler in ``setup`` below.
     "Sandbox": "modal.Sandbox",
