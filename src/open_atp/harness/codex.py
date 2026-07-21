@@ -27,12 +27,15 @@ class CodexHarness(Harness):
         Model id the agent runs; must be an OpenAI model.
     effort : str, default "high"
         Reasoning-effort level.
-    auth_file : Path, optional
+    auth_file : pathlib.Path, optional
         The Codex ``auth.json`` to mount. ``None`` (default) uses ``~/.codex/auth.json``
         (from ``codex login``); resolution fails if the file is absent.
 
     Examples
     --------
+
+    Constructing the harness resolves its defaults:
+
     >>> from open_atp.harness import CodexHarness
     >>> harness = CodexHarness()
     >>> harness.name

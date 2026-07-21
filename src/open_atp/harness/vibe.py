@@ -57,6 +57,9 @@ class VibeHarness(Harness):
 
     Examples
     --------
+
+    Constructing the harness resolves its defaults, including the agent it drives:
+
     >>> from open_atp.harness import VibeHarness
     >>> harness = VibeHarness()
     >>> harness.name

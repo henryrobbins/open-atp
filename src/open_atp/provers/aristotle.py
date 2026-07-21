@@ -114,9 +114,9 @@ class AristotleProver(AutomatedProver):
     api_key : str, optional
         The Harmonic API key. ``None`` (default) reads it from the host
         ``ARISTOTLE_API_KEY`` env var.
-    allow_agent_questions : bool
-        Whether to let the hosted agent ask clarifying questions. Off by default:
-        this is a headless API path and a prompt for stdin would hang the run.
+    allow_agent_questions : bool, default False
+        Whether to let the hosted agent ask clarifying questions. This is a headless
+        API path, so a prompt for stdin would hang the run.
     max_connection_retries : int, default 5
         Bounds retries of each API call when a connection drops.
         The hosted run lives server-side, so a dropped connection is recoverable:

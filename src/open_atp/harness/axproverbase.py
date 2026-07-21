@@ -69,6 +69,9 @@ class AxProverBaseHarness(Harness):
 
     Examples
     --------
+
+    Constructing the harness resolves its defaults:
+
     >>> from open_atp.harness import AxProverBaseHarness
     >>> harness = AxProverBaseHarness()
     >>> harness.name

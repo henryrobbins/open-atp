@@ -46,8 +46,8 @@ class NuminaHarness(ClaudeCodeHarness):
         env var.
     helper_env_keys : tuple[str, ...], optional
         Host credential names forwarded into the sandbox when present, skipped when
-        absent (never a hard failure). Defaults to
-        :data:`_DEFAULT_HELPER_ENV_KEYS`.
+        absent (never a hard failure). Defaults to the Leandex, Gemini, OpenAI, and
+        Anthropic key names.
     env : dict[str, str], optional
         Literal env vars (name -> value) forwarded verbatim; win over resolved
         credentials (including helper keys) on a key clash. Defaults to none.

@@ -132,6 +132,8 @@ class DockerBackend(ComputeBackend):
     Examples
     --------
 
+    Constructing the backend records its config without contacting the daemon:
+
     >>> from open_atp.backends.docker import DockerBackend
     >>> from open_atp.images import DEFAULT_IMAGE
     >>> backend = DockerBackend(image=DEFAULT_IMAGE)
@@ -288,6 +290,13 @@ class DockerSession(ComputeSession):
 
     The workdir is bind-mounted, so :meth:`sync_out`/:meth:`sync_in` are no-ops --
     edits already live on the host.
+
+    Parameters
+    ----------
+    backend : DockerBackend
+        The backend that provisioned the container.
+    container : str
+        Name of the running container commands are ``docker exec``'d into.
     """
 
     backend: DockerBackend

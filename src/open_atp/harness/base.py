@@ -87,7 +87,7 @@ class AgentAuth:
     env : dict[str, str], optional
         Environment variables (name -> value) to forward into the sandbox. Defaults
         to an empty mapping.
-    mounts : list[tuple[Path, str]], optional
+    mounts : list[tuple[pathlib.Path, str]], optional
         Host directories to expose under the sandbox's ``$HOME``, as
         ``(host_dir, dest_basename)`` pairs (e.g. ``(~/.codex, ".codex")``).
         Defaults to an empty list.

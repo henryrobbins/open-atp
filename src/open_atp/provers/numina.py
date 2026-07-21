@@ -132,10 +132,10 @@ class NuminaProver(AgentProver):
     oauth_token : str, optional
         The ``CLAUDE_CODE_OAUTH_TOKEN`` to forward into the sandbox; ``None``
         (default) reads it from the host env var.
-    helper_env_keys : tuple[str, ...]
+    helper_env_keys : tuple[str, ...], optional
         Helper-skill credentials forwarded into the sandbox when present in the host
-        env; skills degrade/skip when their key is absent. Defaults to
-        :data:`_DEFAULT_HELPER_ENV_KEYS`.
+        env; skills degrade/skip when their key is absent. Defaults to the Leandex,
+        Gemini, OpenAI, and Anthropic key names.
     guard_statements : bool, default True
         Whether to snapshot the target theorems and reject runs that weaken or
         delete them.

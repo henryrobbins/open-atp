@@ -201,7 +201,7 @@ def _safe_stream(stream: Iterable[str], sb: modal.Sandbox) -> Iterator[str]:
 
     Yields
     ------
-    Iterator[str]
+    str
         Each stream chunk as the underlying stream delivers it.
 
     Raises
@@ -400,7 +400,7 @@ class ModalCommandHandle(CommandHandle):
 
 
 def _terminate(sb: modal.Sandbox) -> None:
-    """Tear down the Sandbox"""
+    """Tear down the Sandbox."""
     try:
         _safe_run(sb.terminate, timeout_s=TERMINATE_TIMEOUT_S, sb=sb, label="terminate")
     except Exception:
@@ -521,6 +521,8 @@ class ModalBackend(ComputeBackend):
 
     Examples
     --------
+
+    Constructing the backend records its config without provisioning a Sandbox:
 
     >>> from open_atp.backends.modal import ModalBackend
     >>> from open_atp.images import DEFAULT_IMAGE
@@ -749,6 +751,15 @@ class ModalSession(ComputeSession):
     The filesystem is isolated, so :meth:`sync_out` (tar pull) and :meth:`sync_in`
     (tar push) bridge host<->Sandbox when a caller needs the host workdir current
     between commands, e.g. to diff the staged files partway through a run.
+
+    Parameters
+    ----------
+    backend : ModalBackend
+        The backend that provisioned the Sandbox.
+    sb : modal.Sandbox
+        The live Sandbox commands execute in.
+    workdir : pathlib.Path
+        Host directory mirrored into the Sandbox and pulled back on sync.
     """
 
     backend: ModalBackend

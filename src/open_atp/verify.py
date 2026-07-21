@@ -264,8 +264,8 @@ class Verifier:
         Examples
         --------
 
-        A real project compiles in the backend; a project with no ``.lean`` files
-        short-circuits to a trivial passing report without touching the sandbox:
+        A project with no ``.lean`` files short-circuits to a trivial passing
+        report without touching the sandbox:
 
         >>> import tempfile
         >>> from pathlib import Path
