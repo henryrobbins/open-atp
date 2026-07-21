@@ -14,6 +14,12 @@ Numina runs on the Claude Code CLI, so it authenticates exactly like the {doc}`c
 claude setup-token
 ```
 
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status numina
+```
+
 By default {class}`~open_atp.provers.numina.NuminaProver` reads `CLAUDE_CODE_OAUTH_TOKEN` from the host environment (for example a `.env` file in your project) and forwards it into the sandbox. To supply the token explicitly, pass it as the `oauth_token` argument to {class}`~open_atp.provers.numina.NuminaProver`.
 
 Numina's helper skills additionally call out to Leandex / Gemini / GPT (and Claude for the informal prover). Their keys (`LEAN_LEANDEX_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, and `ANTHROPIC_API_KEY`) are forwarded into the sandbox when present in the host env. A skill whose key is absent degrades or skips rather than failing the run. It is recommended to define all keys in a `.env` file in your project root.

@@ -2,17 +2,40 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 import shutil
 import tempfile
 import threading
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
+from open_atp.auth import AuthKind, AuthStatus
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult, MissingCredentials
 
 log = logging.getLogger("open_atp")
+
+
+def _jwt_expiry(token: str) -> datetime | None:
+    """The ``exp`` claim of a JWT, or ``None`` if it has none to read.
+
+    Only the payload is decoded -- the signature is the issuer's to check, and a
+    token we cannot parse is reported as expiry-less rather than invalid.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    payload = parts[1]
+    payload += "=" * (-len(payload) % 4)  # JWTs drop base64url padding
+    try:
+        exp = json.loads(base64.urlsafe_b64decode(payload)).get("exp")
+    except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return datetime.fromtimestamp(exp, UTC) if isinstance(exp, int | float) else None
 
 
 class CodexHarness(Harness):
@@ -66,6 +89,35 @@ class CodexHarness(Harness):
         # atomic (see _home_dirs).
         self._codex_home_lock = threading.Lock()
 
+    def auth_status(self) -> AuthStatus:
+        path = self._auth_path()
+        status = AuthStatus(
+            kind=AuthKind.OAUTH,
+            source=str(path),
+            present=False,
+            remedy="codex login",
+        )
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return status
+        tokens = data.get("tokens") or {}
+        access = tokens.get("access_token")
+        # `codex login` writes ChatGPT OAuth tokens; `codex login --api-key` writes a
+        # bare key instead, which authenticates just as well and never expires.
+        if not (access or data.get("OPENAI_API_KEY")):
+            return status
+        return replace(
+            status,
+            present=True,
+            expires_at=_jwt_expiry(access) if access else None,
+            refreshable=bool(tokens.get("refresh_token")),
+        )
+
+    def _auth_path(self) -> Path:
+        """The Codex ``auth.json`` this harness authenticates from."""
+        return self._auth_file or Path.home() / ".codex" / "auth.json"
+
     def _home_dirs(self) -> list[tuple[Path, str]]:
         # Mount ONLY the auth credential, never the whole ~/.codex: the host's
         # config.toml registers personal MCP servers (e.g. a localhost Zotero server)
@@ -73,7 +125,7 @@ class CodexHarness(Harness):
         # Stage a minimal .codex holding just auth.json -- the launch script supplies
         # the lean-lsp MCP via -c overrides, so no host config is needed. Cached so
         # the staged dir survives until the backend mounts it.
-        auth = self._auth_file or Path.home() / ".codex" / "auth.json"
+        auth = self._auth_path()
         if not auth.is_file():
             log.error(
                 "missing codex auth file",

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 from open_atp._capture import capture_stdout
+from open_atp.auth import AuthStatus
 from open_atp.backends.base import ComputeBackend
 from open_atp.harness.base import MissingCredentials
 from open_atp.lean import LeanProject, ProofTask
@@ -191,6 +192,20 @@ class AristotleProver(AutomatedProver):
         """The prover's own prompt handed to Aristotle, before any user prompt."""
         return PROVER_PROMPT
 
+    def auth_status(self) -> AuthStatus:
+        """Report the ``ARISTOTLE_API_KEY`` the hosted API is called with.
+
+        Returns
+        -------
+        ~open_atp.auth.AuthStatus
+            The API key status, read from api_key constructor or host environment.
+        """
+        return AuthStatus.from_env(
+            "ARISTOTLE_API_KEY",
+            self._api_key,
+            remedy="set ARISTOTLE_API_KEY or pass api_key",
+        )
+
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult
     ) -> None:
@@ -266,6 +281,10 @@ class AristotleProver(AutomatedProver):
 
         key = self._api_key or os.environ.get("ARISTOTLE_API_KEY")
         if not key:
+            log.error(
+                "missing credential",
+                extra={"remedy": "set ARISTOTLE_API_KEY or pass api_key"},
+            )
             raise MissingCredentials(
                 "aristotle prover requires ARISTOTLE_API_KEY (set it or pass api_key)"
             )

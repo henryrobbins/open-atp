@@ -19,6 +19,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Mapping
+from datetime import timedelta
 from pathlib import Path
 from typing import TextIO, cast
 
@@ -30,6 +31,7 @@ from rich.table import Table
 from structlog.typing import Processor
 from tqdm import tqdm
 
+from open_atp.auth import AuthState, AuthStatus
 from open_atp.backends import _BACKENDS
 from open_atp.backends.base import ComputeBackend
 from open_atp.benchmark import (
@@ -45,9 +47,12 @@ from open_atp.config import (
     standard_prover,
     standard_provers,
 )
+from open_atp.harness.base import MissingCredentials
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import AutomatedProver, ProofResult, ProofStatus
+
+log = logging.getLogger("open_atp")
 
 #: ax-prover baked into the Modal image (mirrors the images/Dockerfile ARG). Pinned
 #: to a commit on our fork (henryrobbins/ax-prover-base) rather than the 0.1.1 PyPI
@@ -231,6 +236,132 @@ def _benchmark_table(result: BenchmarkResult) -> Table:
         time = f"{r.duration_s:.0f}s" if r.duration_s is not None else "—"
         table.add_row(run.task, run.prover, status, cost, time)
     return table
+
+
+#: Row style per credential state: valid is green, nearly-expired yellow, and both
+#: "won't authenticate" states red.
+_AUTH_STYLES = {
+    AuthState.OK: "green",
+    AuthState.EXPIRING: "yellow",
+    AuthState.EXPIRED: "red",
+    AuthState.MISSING: "red",
+}
+
+
+def _format_remaining(remaining: timedelta | None) -> str:
+    """A credential's time left, coarsened to its two largest units.
+
+    Blank once the window has passed -- the status column already says it expired,
+    and how long ago is not what you act on.
+    """
+    if remaining is None or remaining <= timedelta(0):
+        return "—"
+    hours, seconds = divmod(int(remaining.total_seconds()), 3600)
+    days, hours = divmod(hours, 24)
+    minutes = seconds // 60
+    if days:
+        return f"{days}d {hours}h"
+    return f"{hours}h {minutes}m" if hours else f"{minutes}m"
+
+
+def _abbreviate_home(source: str) -> str:
+    """A credential path shortened against ``$HOME``; env var names pass through."""
+    home = str(Path.home())
+    return f"~{source[len(home) :]}" if source.startswith(home) else source
+
+
+def _auth_fields(name: str, status: AuthStatus) -> dict[str, str]:
+    """One prover's credential rendered field by field, shared by both layouts.
+
+    A remedy is reported only for a credential that won't authenticate; a valid one
+    needs no instructions for obtaining it, so it reads as ``—``.
+    """
+    state = status.state()
+    return {
+        "prover": name,
+        "auth": status.kind.value,
+        "credential": _abbreviate_home(status.source),
+        "status": f"[{_AUTH_STYLES[state]}]{state.value}[/]",
+        "expires in": _format_remaining(status.time_remaining()),
+        "remedy": status.remedy if state is not AuthState.OK and status.remedy else "—",
+    }
+
+
+def _auth_table(statuses: Mapping[str, AuthStatus]) -> Table:
+    """A prover-per-row credential table: kind, where it lives, how long it lasts."""
+    rows = {name: _auth_fields(name, s) for name, s in statuses.items()}
+    # A sixth column costs width every other column needs, so earn it: nothing to
+    # fix means nothing to say, and an all-valid host sees the narrow table.
+    show_remedy = any(row["remedy"] != "—" for row in rows.values())
+
+    table = Table(box=ROUNDED)
+    table.add_column("prover")
+    table.add_column("auth")
+    # Fold rather than truncate: a narrow terminal must not hide which env var or
+    # file to go fix.
+    table.add_column("credential", overflow="fold")
+    table.add_column("status", justify="center")
+    table.add_column("expires in", justify="right")
+    if show_remedy:
+        table.add_column("remedy", overflow="fold")
+    for row in rows.values():
+        if not show_remedy:
+            del row["remedy"]
+        table.add_row(*row.values())
+    return table
+
+
+def _auth_detail(name: str, status: AuthStatus) -> Table:
+    """One prover's credential transposed: a row per field, with its value.
+
+    Reporting a single prover leaves the columns of :func:`_auth_table` mostly
+    empty, so the same fields are turned on their side instead.
+    """
+    table = Table(box=ROUNDED, show_header=False)
+    table.add_column()
+    table.add_column(overflow="fold")
+    for label, value in _auth_fields(name, status).items():
+        if label == "remedy" and value == "—":
+            continue
+        table.add_row(label, value)
+    return table
+
+
+def _auth_status(args: argparse.Namespace) -> int:
+    # Every prover needs a backend, but none is contacted here: reading a credential
+    # is a host-side operation, so the default backend stands in for all of them.
+    backend = _build_backend({"type": "docker"})
+    names = [args.prover] if args.prover else standard_provers()
+    statuses = {
+        name: standard_prover(name, backend=backend).auth_status() for name in names
+    }
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    name: {
+                        "kind": s.kind.value,
+                        "source": s.source,
+                        "present": s.present,
+                        "state": s.state().value,
+                        "expires_at": s.expires_at.isoformat()
+                        if s.expires_at
+                        else None,
+                        "refreshable": s.refreshable,
+                    }
+                    for name, s in statuses.items()
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.prover:
+        Console().print(_auth_detail(args.prover, statuses[args.prover]))
+    else:
+        Console().print(_auth_table(statuses))
+    return 0
 
 
 def _prove(args: argparse.Namespace) -> int:
@@ -683,6 +814,22 @@ def build_parser() -> argparse.ArgumentParser:
         "output", help="Parent directory; the dataset lands at <output>/<dataset>."
     )
 
+    auth = sub.add_parser(
+        "auth-status",
+        help="Show each standard prover's credential and how long it stays valid.",
+    )
+    auth.add_argument(
+        "prover",
+        nargs="?",
+        choices=standard_provers(),
+        help="Report only this prover; every standard prover by default.",
+    )
+    auth.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the statuses as JSON.",
+    )
+
     build = sub.add_parser(
         "build-docker-image",
         help="Build the sandbox Docker image from images/Dockerfile.",
@@ -741,16 +888,25 @@ def main(argv: list[str] | None = None) -> int:
         log_file = None
     _configure_logging(console_level=console_level, log_file=log_file)
 
-    if args.command == "prove":
-        return _prove(args)
-    if args.command == "download":
-        return _download(args)
-    if args.command == "benchmark":
-        return _benchmark(args)
-    if args.command == "build-docker-image":
-        return _build_image(args)
-    if args.command == "build-modal-image":
-        return _build_modal_image(args)
+    try:
+        if args.command == "prove":
+            return _prove(args)
+        if args.command == "download":
+            return _download(args)
+        if args.command == "benchmark":
+            return _benchmark(args)
+        if args.command == "auth-status":
+            return _auth_status(args)
+        if args.command == "build-docker-image":
+            return _build_image(args)
+        if args.command == "build-modal-image":
+            return _build_modal_image(args)
+    except MissingCredentials:
+        # Already logged where it was raised, with the credential's source and what
+        # to run for one, so there is nothing to add -- and nothing to act on in a
+        # stack from a run that never started. `auth-status` reports the same thing
+        # without having to trigger it.
+        return 1
     parser.error(f"unknown command: {args.command}")
     return 2
 

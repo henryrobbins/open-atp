@@ -142,6 +142,11 @@ numpydoc_xref_aliases = {
     "ProofTask": "open_atp.lean.ProofTask",
     "ToolchainMismatch": "open_atp.lean.ToolchainMismatch",
     "MathlibRevMismatch": "open_atp.lean.MathlibRevMismatch",
+    # Credentials
+    "AuthStatus": "open_atp.auth.AuthStatus",
+    "AuthKind": "open_atp.auth.AuthKind",
+    "AuthState": "open_atp.auth.AuthState",
+    "EXPIRY_WARNING": "open_atp.auth.EXPIRY_WARNING",
     # Verification
     "VerificationReport": "open_atp.verify.VerificationReport",
     "Verifier": "open_atp.verify.Verifier",

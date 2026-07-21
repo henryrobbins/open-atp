@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Any, ClassVar
 
+from open_atp.auth import AuthStatus
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult
 
@@ -116,6 +117,14 @@ class AxProverBaseHarness(Harness):
         super().__init__(model=model, effort=effort)
         self.max_iterations = max_iterations
         self._provider_api_key = provider_api_key
+
+    def auth_status(self) -> AuthStatus:
+        env_name = self._PROVIDER_ENV[_infer_provider(self.model)]
+        return AuthStatus.from_env(
+            env_name,
+            self._provider_api_key,
+            remedy=f"set {env_name} for {self.model}",
+        )
 
     def _required_env(self) -> dict[str, str]:
         # ax-prover reads the provider key from the process env; forward the selected

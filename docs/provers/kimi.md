@@ -14,6 +14,12 @@ Kimi Code is included with every paid Kimi Code plan. [Choose a plan](https://ww
 kimi login
 ```
 
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status kimi
+```
+
 This writes OAuth credentials to `~/.kimi-code`. By default the harness reads that file; pass it explicitly to override:
 
 ```{testcode}
@@ -25,6 +31,10 @@ KimiHarness(home_dir=Path("~/.kimi-code").expanduser())
 ```
 
 The harness mounts the credential into the sandbox at run time so Kimi Code can refresh its access token mid-session, billing against your Kimi Code subscription. See {ref}`tracking-cost-and-usage-kimi` for details.
+
+:::{warning}
+**Token expiration:** The token in `~/.kimi-code/credentials/kimi-code.json` is valid for only about **15 minutes** and it only renews when the Kimi CLI runs *on the host*. A sandboxed run will fail if the token expires mid-run. Check the time remaining with `open-atp auth-status`, and run `kimi login` on the host immediately before each run.
+:::
 
 ## Using the prover
 

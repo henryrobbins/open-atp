@@ -24,7 +24,7 @@ Create an xAI account at [xAI Console](https://console.x.ai/) and generate an AP
 export XAI_API_KEY=...
 ```
 
-It is recommended to define this in a `.env` file in your project root. Alternatively, pass the key to the harness explicitly:
+Alternatively, pass the key to the harness explicitly:
 
 ```{testcode}
 from open_atp.harness import OpenCodeHarness
@@ -46,6 +46,16 @@ from open_atp.harness import OpenCodeHarness
 
 OpenCodeHarness(provider="xai", model="grok-4.5", auth="login")
 ```
+
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status grok
+```
+
+:::{warning}
+**Token expiration:** The xAI entry in `~/.local/share/opencode/auth.json` expires roughly **6 hours** after it is minted, and it only renews when OpenCode runs *on the host*. A sandboxed run will fail if the token expires mid-run. Check the time remaining with `open-atp auth-status`, and log in again on the host before a long benchmark.
+:::
 
 ## Using the prover
 

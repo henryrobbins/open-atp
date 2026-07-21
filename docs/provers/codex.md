@@ -14,6 +14,12 @@ Codex is available on paid ChatGPT plans. [Choose a plan](https://chatgpt.com/pr
 codex login
 ```
 
+Check you are properly authenticated with:
+
+```bash
+open-atp auth-status codex
+```
+
 This writes credentials to `~/.codex/auth.json`. By default the harness reads that file; pass it explicitly to override:
 
 ```{testcode}
@@ -25,6 +31,10 @@ CodexHarness(auth_file=Path("~/.codex/auth.json").expanduser())
 ```
 
 The harness mounts the credential into the sandbox at run time so Codex can refresh its access token mid-session, billing against your ChatGPT subscription. See {ref}`tracking-cost-and-usage-codex` for details.
+
+:::{warning}
+**Token expiration:** The token in `~/.codex/auth.json` expires roughly **10 days** after it is minted, and it only renews when the Codex CLI runs *on the host*. A sandboxed run will fail if the token expires mid-run. Check the time remaining with `open-atp auth-status`, and run `codex login` on the host before a long benchmark.
+:::
 
 ## Using the prover
 

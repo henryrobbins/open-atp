@@ -11,6 +11,8 @@ it, so no backend is exercised.
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import os
 from pathlib import Path
 
@@ -19,6 +21,7 @@ import pytest
 from open_atp import __main__ as cli
 from open_atp.backends.docker import DockerBackend
 from open_atp.config import standard_provers
+from open_atp.harness.base import MissingCredentials
 
 from .test_api import FIXTURE, FakeProver
 
@@ -212,3 +215,84 @@ def test_download_dispatches_to_download_dataset(
     assert rc == 0
     assert seen["dataset"] is cli.DATASET.FATE_M
     assert seen["dest"] == tmp_path
+
+
+def test_auth_status_json_reports_every_standard_prover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An unauthenticated host: no credential env vars, and an empty $HOME for the
+    # file-backed CLIs. Reading them must report, never raise.
+    for var in [v for v in os.environ if v.endswith(("_API_KEY", "_OAUTH_TOKEN"))]:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    rc = cli._auth_status(argparse.Namespace(json=True, prover=None))
+
+    assert rc == 0
+    statuses = json.loads(capsys.readouterr().out)
+    assert sorted(statuses) == sorted(standard_provers())
+    assert all(s["state"] == "missing" for s in statuses.values())
+    assert {s["kind"] for s in statuses.values()} == {"api_key", "oauth"}
+
+
+def test_auth_status_reports_only_the_named_prover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    rc = cli._auth_status(argparse.Namespace(json=True, prover="codex"))
+
+    assert rc == 0
+    assert list(json.loads(capsys.readouterr().out)) == ["codex"]
+
+
+def test_auth_status_transposes_the_table_for_a_single_prover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    rc = cli._auth_status(argparse.Namespace(json=False, prover="codex"))
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    # A row per field, so the labels run down the page rather than across it.
+    assert out.index("prover") < out.index("credential") < out.index("expires in")
+    assert "codex login" in out  # an empty $HOME has nothing to read
+
+
+def test_main_reports_a_missing_credential_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom(args: argparse.Namespace) -> int:
+        raise MissingCredentials("no credential at FAKE_API_KEY; fake login")
+
+    monkeypatch.setattr(cli, "_auth_status", boom)
+    # main() installs the CLI's own handlers on the shared logger; restore them so
+    # the log capture other tests rely on survives.
+    logger = logging.getLogger("open_atp")
+    monkeypatch.setattr(logger, "handlers", list(logger.handlers))
+    monkeypatch.setattr(logger, "propagate", logger.propagate)
+
+    rc = cli.main(["auth-status"])
+
+    assert rc == 1  # reported, not raised out of the CLI
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.out + captured.err
+
+
+def test_auth_status_table_leaves_an_elapsed_window_blank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    store = tmp_path / ".local" / "share" / "opencode"
+    store.mkdir(parents=True)
+    store.joinpath("auth.json").write_text(
+        json.dumps({"xai": {"access": "a", "refresh": "r", "expires": 1_000}})
+    )
+
+    rc = cli._auth_status(argparse.Namespace(json=False, prover=None))
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "expired" in out  # the status column carries the whole story
+    assert "ago" not in out

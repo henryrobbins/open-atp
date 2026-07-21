@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from open_atp.auth import AuthStatus
 from open_atp.harness._paths import _SCRIPTS
 from open_atp.harness.base import Harness, HarnessRunResult, MissingCredentials
 
@@ -101,6 +102,13 @@ class VibeHarness(Harness):
         self.max_turns = max_turns
         self.max_price = max_price
         self._mistral_api_key = mistral_api_key
+
+    def auth_status(self) -> AuthStatus:
+        return AuthStatus.from_env(
+            "MISTRAL_API_KEY",
+            self._mistral_api_key,
+            remedy="set MISTRAL_API_KEY or pass api_key",
+        )
 
     def _required_env(self) -> dict[str, str]:
         # The builtin lean agent's provider reads MISTRAL_API_KEY from the process

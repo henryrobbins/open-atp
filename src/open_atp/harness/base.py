@@ -33,6 +33,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import ClassVar
 
+from open_atp.auth import AuthStatus
+
 log = logging.getLogger("open_atp")
 
 
@@ -241,6 +243,16 @@ class Harness(ABC):
             },
         )
         return auth
+
+    @abstractmethod
+    def auth_status(self) -> AuthStatus:
+        """Report this harness's credential status without resolving or staging it.
+
+        Returns
+        -------
+        ~open_atp.auth.AuthStatus
+            Where the credential lives, whether it is there, and when it expires.
+        """
 
     def _static_env(self) -> dict[str, str]:
         """Non-secret env vars to set for this harness (e.g. ``IS_SANDBOX``).

@@ -18,11 +18,14 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import tarfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from open_atp.auth import AuthKind, AuthStatus
 from open_atp.backends.base import (
     ComputeError,
     ExecTimeout,
@@ -81,6 +84,7 @@ class FakeProver(AutomatedProver):
         cost_usd: float | None = 1.0,
         toolchain: str = DEFAULT_IMAGE.lean_toolchain,
         raises: Exception | None = None,
+        auth: AuthStatus | None = None,
     ) -> None:
         # The ``toolchain`` knob rides on the backend image to simulate a mismatch;
         # backend construction is offline, so no Docker daemon is contacted.
@@ -89,6 +93,10 @@ class FakeProver(AutomatedProver):
         self._verified = verified
         self._cost = cost_usd
         self._raises = raises
+        self._auth = auth or AuthStatus(AuthKind.API_KEY, "FAKE_API_KEY", present=True)
+
+    def auth_status(self) -> AuthStatus:
+        return self._auth
 
     def _generate(
         self, task: ProofTask, wd: Path, logs_dir: Path, result: ProofResult
@@ -313,6 +321,107 @@ def test_prove_verified_candidate_sets_status(tmp_path: Path) -> None:
     assert result.success
     assert result.status is ProofStatus.VERIFIED
     assert result.error is None and result.error_msg is None
+
+
+def _expiring(minutes: float) -> AuthStatus:
+    return AuthStatus(
+        AuthKind.OAUTH,
+        "SOME_TOKEN",
+        present=True,
+        expires_at=datetime.now(UTC) + timedelta(minutes=minutes),
+    )
+
+
+def test_prove_warns_when_the_credential_expires_mid_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    prover = FakeProver("agent", auth=_expiring(5))
+
+    with caplog.at_level(logging.WARNING, logger="open_atp"):
+        result = prover.prove(_task(), tmp_path / "run")
+
+    assert any("expires soon" in r.message for r in caplog.records)
+    assert result.success  # a warning, not a refusal
+
+
+def test_prove_rejects_an_expired_credential_before_starting(tmp_path: Path) -> None:
+    prover = FakeProver("agent", auth=_expiring(-5))
+    output = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="expired"):
+        prover.prove(_task(), output)
+
+    assert not output.exists()  # rejected before any sandbox or output dir
+
+
+def test_prove_rejects_an_absent_credential_before_starting(tmp_path: Path) -> None:
+    absent = AuthStatus(
+        AuthKind.OAUTH, "~/.codex/auth.json", present=False, remedy="codex login"
+    )
+    output = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match=r"no credential at .*; codex login"):
+        FakeProver("codex", auth=absent).prove(_task(), output)
+
+    assert not output.exists()
+
+
+def test_missing_credential_is_logged_once_with_its_remedy(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The one record has to carry the fix -- nothing downstream logs a second."""
+    absent = AuthStatus(
+        AuthKind.OAUTH, "~/.codex/auth.json", present=False, remedy="codex login"
+    )
+
+    with caplog.at_level(logging.ERROR, logger="open_atp"):
+        with pytest.raises(MissingCredentials):
+            FakeProver("codex", auth=absent).prove(_task(), tmp_path / "run")
+
+    (record,) = [r for r in caplog.records if r.message == "missing credential"]
+    assert record.remedy == "codex login"
+
+
+def test_expired_credential_message_says_how_to_renew_it(tmp_path: Path) -> None:
+    refreshable = AuthStatus(
+        AuthKind.OAUTH,
+        "~/.kimi-code/credentials/kimi-code.json",
+        present=True,
+        expires_at=datetime.now(UTC) - timedelta(hours=2),
+        refreshable=True,
+    )
+
+    with pytest.raises(MissingCredentials, match="run its CLI on this host"):
+        FakeProver("kimi", auth=refreshable).prove(_task(), tmp_path / "run")
+
+
+def test_prove_stays_quiet_for_a_credential_that_outlasts_the_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    prover = FakeProver("agent", auth=_expiring(60))
+
+    with caplog.at_level(logging.WARNING, logger="open_atp"):
+        prover.prove(_task(), tmp_path / "run")
+
+    assert not [r for r in caplog.records if "expires soon" in r.message]
+
+
+def test_prove_rejects_an_unreadable_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A credential that cannot be read is not one the run can authenticate with."""
+
+    def boom() -> AuthStatus:
+        raise OSError("credential registry unreachable")
+
+    prover = FakeProver("agent")
+    monkeypatch.setattr(prover, "auth_status", boom)
+    output = tmp_path / "run"
+
+    with pytest.raises(MissingCredentials, match="failed to read credential"):
+        prover.prove(_task(), output)
+
+    assert not output.exists()
 
 
 def _render(table: object) -> str:
