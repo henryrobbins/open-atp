@@ -90,10 +90,20 @@ def test_parse_ignores_blank_and_malformed_lines(tmp_path: Path) -> None:
 
 
 def test_compute_cost_usd_known_and_unknown_model() -> None:
-    # claude-opus-4-8 is (5.0, 25.0) per Mtok.
+    # claude-opus-4-8 is $5.0 input / $25.0 output per Mtok.
     cost = compute_cost_usd("claude-opus-4-8", 1_000_000, 1_000_000)
     assert cost == pytest.approx(30.0)
     assert compute_cost_usd("no-such-model", 1000, 1000) is None
+
+
+def test_compute_cost_usd_prices_cached_input_as_a_subset() -> None:
+    # Cached tokens come out of the input total, not on top of it: half of 1M input
+    # at the $0.5 cached rate + half at the $5 rate = 2.75, vs 5.0 uncached.
+    assert compute_cost_usd("claude-opus-4-8", 1_000_000, 0, 500_000) == pytest.approx(
+        2.75
+    )
+    # A model with no published cached rate bills cached tokens at the input rate.
+    assert compute_cost_usd("gpt-5.4-pro", 1_000_000, 0, 500_000) == pytest.approx(30.0)
 
 
 def test_codex_cost_falls_back_to_token_table(tmp_path: Path) -> None:
@@ -101,13 +111,19 @@ def test_codex_cost_falls_back_to_token_table(tmp_path: Path) -> None:
     harness = _HARNESSES["codex"](model="gpt-5.4", effort="high")
     lines = [
         '{"type":"turn.completed","usage":{"input_tokens":2000000,'
-        '"output_tokens":1000000}}',
+        '"cached_input_tokens":1000000,"output_tokens":1000000}}',
     ]
     result = harness.parse_result(lines, tmp_path)
     assert result.cost_usd is None  # codex never self-reports
-    # gpt-5.4 is (2.5, 15.0): 2M*2.5 + 1M*15 = 5 + 15 = 20.
-    estimated = compute_cost_usd("gpt-5.4", result.input_tokens, result.output_tokens)
-    assert estimated == pytest.approx(20.0)
+    # Codex reports the cache-hit subset of its input total, so it prices at the
+    # discounted rate: gpt-5.4 is $2.5 input / $0.25 cached / $15 output per Mtok,
+    # so 1M*2.5 + 1M*0.25 + 1M*15 = 17.75 (vs 20.0 with the whole input uncached).
+    assert result.input_tokens == 2_000_000
+    assert result.cached_input_tokens == 1_000_000
+    estimated = compute_cost_usd(
+        "gpt-5.4", result.input_tokens, result.output_tokens, result.cached_input_tokens
+    )
+    assert estimated == pytest.approx(17.75)
 
 
 # --- stage / write_prompt --------------------------------------------------

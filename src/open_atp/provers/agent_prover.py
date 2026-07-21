@@ -299,7 +299,10 @@ class AgentProver(AutomatedProver):
         # leave it None rather than estimating $0 from the absent token counts.
         if cost is None and not timed_out:
             cost = compute_cost_usd(
-                self.harness.model, parsed.input_tokens, parsed.output_tokens
+                self.harness.model,
+                parsed.input_tokens,
+                parsed.output_tokens,
+                parsed.cached_input_tokens,
             )
 
         completed: dict[str, str] = {}
@@ -322,6 +325,7 @@ class AgentProver(AutomatedProver):
             "model": self.harness.model,
             "effort": self.harness.effort,
             "input_tokens": parsed.input_tokens,
+            "cached_input_tokens": parsed.cached_input_tokens,
             "output_tokens": parsed.output_tokens,
             "stop_reason": stop_reason,
         }

@@ -61,6 +61,8 @@ Each harness adapts one agent CLI and is a
 ## Pricing
 
 ```{eval-rst}
+.. autoclass:: open_atp.harness.cost.ModelPrice
+
 .. autofunction:: open_atp.harness.cost.compute_cost_usd
 
 .. autodata:: open_atp.harness.cost.COST_PER_MTOK

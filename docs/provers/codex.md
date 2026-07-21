@@ -107,7 +107,7 @@ The agent prompt (below) is written into the working directory and read into `$P
 (tracking-cost-and-usage-codex)=
 ## Tracking cost and usage
 
-The Codex CLI does not report per-run USD. Token totals from the `turn.completed` events are summed and the pricing table in {data}`~open_atp.harness.cost.COST_PER_MTOK` is used to compute the cost in USD. This populates `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. Usage within your plan's quota is not billed. You can monitor plan consumption at [Analytics](https://chatgpt.com/codex/cloud/settings/analytics).
+The Codex CLI does not report per-run USD. Token totals from the `turn.completed` events are summed and the pricing table in {data}`~open_atp.harness.cost.COST_PER_MTOK` is used to compute the cost in USD. This populates `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. Those events report `cached_input_tokens` as a subset of the input total, so cached input is priced at OpenAI's discounted rate. Usage within your plan's quota is not billed. You can monitor plan consumption at [Analytics](https://chatgpt.com/codex/cloud/settings/analytics).
 
 :::{warning}
 Running a large number of proofs can quickly consume your plan's 5 hour session quota.

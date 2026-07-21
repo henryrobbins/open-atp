@@ -91,7 +91,7 @@ The Numina prover uses Claude Code without any of the skills used by the other a
 (tracking-cost-and-usage-numina)=
 ## Tracking cost and usage
 
-The Claude Code CLI's JSON output reports per-run cost directly. The `discussion_partner` skill makes API calls to Gemini and GPT — the cost of each API call is recorded in the working directory. Claude Code CLI and API costs are added to populate `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. Gemini and GPT usage can be monitored from their respective dashboards.
+The Claude Code CLI's JSON output reports per-run cost directly. The `discussion_partner` skill makes API calls to Gemini and GPT — the cost of each API call is recorded in the working directory. Claude Code CLI and API costs are added to populate `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. The helper ledger records only input and output totals, so those API calls are priced at the uncached input rate. Gemini and GPT usage can be monitored from their respective dashboards.
 
 :::{warning}
 Unlike the {doc}`/provers/claude_code` prover, the Numina prover does not solely bill your Claude plan. The `discussion_partner` skill makes API calls to Gemini and GPT, which can quickly become costly.
