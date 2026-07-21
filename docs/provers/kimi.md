@@ -103,4 +103,5 @@ The agent prompt (below) is written into the working directory and read into `$P
 (tracking-cost-and-usage-kimi)=
 ## Tracking cost and usage
 
-Kimi Code's `stream-json` output carries only messages and tool calls, not token totals. The harness reads token usage from Kimi's per-session `wire.jsonl` (`usage.record` events) synced back from the workdir-local `KIMI_CODE_HOME`, populating `input_tokens`/`output_tokens` in {class}`~open_atp.provers.base.ProofResult`. Kimi bills a flat subscription rate and reports no per-run USD, so `cost_usd` is left unset.
+The Kimi Code CLI does not report per-run USD, and its `stream-json` output carries only messages and tool calls, not token totals. Token totals are read from Kimi's per-session `wire.jsonl` (`usage.record` events) synced back from the workdir-local `KIMI_CODE_HOME`, and the pricing table in {data}`~open_atp.harness.cost.COST_PER_MTOK` is used to compute the cost in USD. This populates `cost_usd` in {class}`~open_atp.provers.base.ProofResult`. Usage within your plan's quota is not billed. You can monitor plan consumption at [Kimi Console](https://www.kimi.com/code/console).
+

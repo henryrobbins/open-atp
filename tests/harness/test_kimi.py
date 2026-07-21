@@ -31,6 +31,7 @@ from open_atp.harness import (
     Harness,
     KimiHarness,
     MissingCredentials,
+    compute_cost_usd,
 )
 from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask
@@ -284,7 +285,7 @@ def test_parse_reads_tokens_from_wire_log(tmp_path: Path) -> None:
     assert result.output_tokens == 27
     assert result.stop_reason == "end_turn"
     assert result.result_text == "Done. Replaced sorry with rw."
-    # Kimi bills a flat subscription rate and reports no USD.
+    # Kimi reports no USD of its own; the prover estimates it from these tokens.
     assert result.cost_usd is None
 
 
@@ -386,8 +387,11 @@ def test_generate_reports_changes_and_relocates_session(
     assert not (wd / ".kimi-home" / "credentials").exists()
     assert (logs_dir / "kimi-session").is_dir()
     assert list((logs_dir / "kimi-session").rglob("wire.jsonl"))
-    # Tokens flow from the wire log; kimi never self-reports USD, so cost stays None.
-    assert result.cost_usd is None
+    # Tokens flow from the wire log; kimi never self-reports USD, so the prover
+    # estimates the cost from those tokens at the model's rate.
+    assert result.cost_usd == compute_cost_usd(
+        "kimi-code/kimi-for-coding", 2646 + 17920, 27
+    )
     assert result.metadata["harness"] == "kimi"
     assert result.metadata["model"] == "kimi-code/kimi-for-coding"
     assert result.metadata["input_tokens"] == 2646 + 17920

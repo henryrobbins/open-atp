@@ -32,11 +32,12 @@ class KimiHarness(Harness):
     discovery (which anchors to the nearest ``.git`` and would miss a bare lake
     project) by landing everything at user scope under ``KIMI_CODE_HOME``.
 
-    Cost comes from the session log, not stdout: ``--output-format stream-json``
+    Tokens come from the session log, not stdout: ``--output-format stream-json``
     carries only messages and tool calls -- no token totals. Those live in Kimi's
     per-session ``wire.jsonl`` (``usage.record`` events); :meth:`parse_result` reads
     it from the synced-back home. Kimi bills a flat subscription rate and reports no
-    USD, so ``cost_usd`` is left ``None``.
+    USD, so the cost is estimated from those tokens via
+    :data:`~open_atp.harness.cost.COST_PER_MTOK`.
 
     Parameters
     ----------
