@@ -5,7 +5,7 @@ Every prover -- agentic, Numina, *and* Aristotle -- funnels its output through t
 
 1. Compile each target file with ``lake env lean <file>``.
 2. Scan the compile log for ``sorry`` warnings.
-3. Extract the axiom dependency list via ``#print axioms`` and compare against
+3. Extract each declaration's axiom dependencies and compare against
    :data:`STANDARD_AXIOMS`.
 
 It also enforces the input contract: the project's toolchain (and locked Mathlib
@@ -33,6 +33,26 @@ log = logging.getLogger("open_atp")
 
 _SORRY_RE = re.compile(r"declaration uses 'sorry'|uses `sorry`")
 _AXIOMS_RE = re.compile(r"depends on axioms: \[([^\]]*)\]")
+
+# Appended to each compiled file so the same elaboration that checks the proof also
+# reports what it rests on. ``#print axioms`` needs a name per declaration, which we
+# don't know; walking ``map2`` (the constants this file added, imports excluded) covers
+# every declaration, whatever it is called. Internal names are skipped: they are
+# compiler-generated and already folded into their parent's dependencies. The output
+# mirrors ``#print axioms`` so both are read by the same regex.
+_AXIOM_PROBE = """
+open Lean Elab Command in
+run_cmd do
+  let env ← getEnv
+  for (n, _) in env.constants.map₂.toList do
+    unless n.isInternal do
+      let axs ← liftCoreM <| Lean.collectAxioms n
+      unless axs.isEmpty do
+        logInfo m!"'{n}' depends on axioms: {axs.toList}"
+"""
+# Kept out of the workdir so the probe never shows up beside the candidate's proofs.
+_PROBE = "/tmp/open-atp-axiom-probe.lean"
+_PROBED = "/tmp/open-atp-probed.lean"
 
 
 @dataclass(frozen=True)
@@ -348,17 +368,29 @@ class Verifier:
 
         Every file runs (``;`` not ``&&``) so one failure doesn't mask the rest, and
         the overall status is the OR of the per-file exit codes.
+
+        What is compiled is the file with the axiom probe appended, so one elaboration
+        yields both the compile verdict and the axiom report. The probe is a suffix, so
+        diagnostics keep the candidate's line numbers; ``sed`` restores its name. A
+        file whose imports can't support the probe fails to compile, and so fails the
+        verification -- an axiom check that cannot run must not read as a clean pass.
         """
-        lines = ["fail=0"]
+        lines = [
+            "fail=0",
+            f"cat > {_PROBE} <<'OPEN_ATP_PROBE'",
+            _AXIOM_PROBE.strip(),
+            "OPEN_ATP_PROBE",
+        ]
         for f in rel:
             lines += [
                 f'echo "=== FILE {f} ==="',
-                f'lake env lean "{f}" 2>&1',
-                "rc=$?",
+                f'cat "{f}" {_PROBE} > {_PROBED}',
+                f'lake env lean {_PROBED} 2>&1 | sed "s|^{_PROBED}|{f}|"',
+                "rc=${PIPESTATUS[0]}",
                 'echo "=== EXIT $rc ==="',
                 '[ "$rc" -ne 0 ] && fail=1',
             ]
-        lines.append("exit $fail")
+        lines += [f"rm -f {_PROBE} {_PROBED}", "exit $fail"]
         return "\n".join(lines)
 
     @staticmethod

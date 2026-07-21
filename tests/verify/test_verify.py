@@ -13,8 +13,8 @@ import pytest
 
 from open_atp.backends.docker import DockerBackend
 from open_atp.images import DEFAULT_IMAGE
-from open_atp.lean import LeanProject, ToolchainMismatch
-from open_atp.verify import Verifier, docker_verifier
+from open_atp.lean import LeanProject
+from open_atp.verify import STANDARD_AXIOMS, Verifier, docker_verifier
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mil_trivial"
 
@@ -54,14 +54,28 @@ def test_completed_theorem_is_verified(tmp_path: Path) -> None:
     assert report.compiles, report.compile_log
     assert report.sorry_free
     assert report.verified
+    # The axiom check ran and found only what a Mathlib proof may rest on.
+    assert set(report.axioms) == STANDARD_AXIOMS
+    assert not report.non_standard_axioms
 
 
-def test_toolchain_mismatch_is_rejected(tmp_path: Path) -> None:
+def test_foreign_axiom_is_not_verified(tmp_path: Path) -> None:
+    """A proof resting on a declared axiom compiles cleanly but must not verify."""
     proj = _stage(tmp_path)
-    (proj / "lean-toolchain").write_text("leanprover/lean4:v4.99.0\n")
+    (proj / "MILExample.lean").write_text(
+        "import Mathlib\n\n"
+        "axiom cheat (a b : ℝ) : a * b = b * a\n\n"
+        "theorem mul_comm_assoc (a b c : ℝ) : a * b * c = b * (a * c) := by\n"
+        "  rw [cheat a b, mul_assoc b a c]\n"
+    )
 
-    with pytest.raises(ToolchainMismatch):
-        docker_verifier().verify(LeanProject(proj))
+    report = docker_verifier().verify(LeanProject(proj))
+
+    # Nothing else catches this: it compiles and there is no `sorry` anywhere.
+    assert report.compiles, report.compile_log
+    assert report.sorry_free
+    assert report.non_standard_axioms == ("cheat",)
+    assert not report.verified
 
 
 # --- session primitive ------------------------------------------------------
