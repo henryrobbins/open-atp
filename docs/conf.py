@@ -120,6 +120,11 @@ pygments_dark_style = "github-dark"
 
 autodoc_default_options = {"members": True}
 autodoc_typehints = "signature"
+# Render members in definition order rather than alphabetically: classes define
+# their ``@property`` accessors right after ``__init__``, so properties lead and
+# the methods that follow read in a deliberate order. (``groupwise`` would sort
+# methods *before* properties -- autodoc scores them 50 vs. 60.)
+autodoc_member_order = "bysource"
 numpydoc_class_members_toctree = False
 numpydoc_show_class_members = False
 numpydoc_xref_param_type = True

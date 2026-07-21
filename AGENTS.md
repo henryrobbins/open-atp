@@ -235,6 +235,10 @@ members that are plain data. So the split is:
 
 - **Methods and `@property` are members**, enumerated by `autoclass` and documented in
   **their own docstring**, in full. Document each **once, on the class that defines it.**
+- **Members render in source order** (`autodoc_member_order = "bysource"`), so **define
+  properties right after `__init__`** and order the methods deliberately — the page reads
+  in the order you write. Don't use `groupwise`: autodoc scores methods (50) ahead of
+  properties (60), which is backwards.
 - **`@property` is documented like a method** — never listed in `Attributes`. numpydoc
   overwrites an `Attributes` entry naming a property with the first sentence of that
   property's docstring, so the prose you write there is silently discarded and the
