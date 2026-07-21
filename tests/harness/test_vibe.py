@@ -167,6 +167,16 @@ def test_stage_bootstraps_workdir_local_vibe_home(tmp_path: Path) -> None:
     # Raised MCP tool timeout: cold Mathlib load exceeds vibe's 60s default (mirrors
     # the opencode fix). Vibe's field is in seconds.
     assert "tool_timeout_sec = 180" in config
+    # Leanstral is free. Vibe prices a session from the base config's active model,
+    # before the lean agent's overrides merge, so the model is restated here at zero
+    # -- otherwise every token is billed at the default catalog model's rate.
+    assert 'active_model = "leanstral"' in config
+    assert 'name = "labs-leanstral-1-5"' in config
+    assert "input_price = 0.0" in config
+    assert "output_price = 0.0" in config
+    # Declaring models replaces vibe's defaults rather than merging, so the provider
+    # the model refers to has to be declared too.
+    assert 'name = "mistral-testing"' in config
 
     # The builtin `lean` agent ships with vibe and pins its own model, so no agent
     # profile is written into the workdir.

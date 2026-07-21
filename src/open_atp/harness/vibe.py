@@ -149,9 +149,34 @@ class VibeHarness(Harness):
         # default tool timeout on a cold, few-CPU Modal sandbox -- observed timing
         # out at exactly that 60s default. Vibe's field is in *seconds* (opencode's
         # is ms).
+        # The ``models``/``providers`` block restates the builtin lean agent's own
+        # model, but with explicit zero prices: Leanstral is free, and the builtin
+        # profile therefore declares no ``input_price``/``output_price``. Vibe reads
+        # session pricing from the *base* config's active model, before the agent
+        # profile's overrides are merged, so without this it prices every token at
+        # the default catalog model's rate (mistral-medium-3.5, $1.5/$7.5 per Mtok)
+        # -- against a cumulative prompt counter that re-counts the whole context on
+        # every step, which inflated a 10-task benchmark to ~$180 of phantom spend.
+        # Declaring either list replaces vibe's defaults outright rather than merging,
+        # so the provider has to be restated alongside the model.
         (vibe_home / "config.toml").write_text(
             'installed_agents = ["lean"]\n'
-            "bypass_tool_permissions = true\n\n"
+            "bypass_tool_permissions = true\n"
+            'active_model = "leanstral"\n\n'
+            "[[providers]]\n"
+            'name = "mistral-testing"\n'
+            'api_base = "https://api.mistral.ai/v1"\n'
+            'api_key_env_var = "MISTRAL_API_KEY"\n'
+            'backend = "mistral"\n\n'
+            "[[models]]\n"
+            'name = "labs-leanstral-1-5"\n'
+            'provider = "mistral-testing"\n'
+            'alias = "leanstral"\n'
+            "input_price = 0.0\n"
+            "output_price = 0.0\n"
+            'thinking = "high"\n'
+            "temperature = 1.0\n"
+            "auto_compact_threshold = 200000\n\n"
             "[session_logging]\nenabled = true\n\n"
             "[[mcp_servers]]\n"
             'transport = "stdio"\n'
