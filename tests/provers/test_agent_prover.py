@@ -500,6 +500,17 @@ REJECTED_OUTPUT = {
         "error: failed to run prompt: auth.login_required: OAuth provider "
         '"managed:kimi-code" requires login before it can be used.',
     ),
+    # An `auth="login"` prover whose OAuth refresh is rejected: the CLI fails before
+    # any request is made, so nothing here reads as a rejected key or a 401.
+    "opencode_oauth_refresh": (
+        [
+            '{"type":"error","sessionID":"ses_07ca37daaffezDNMrfwsivh7sR",'
+            '"error":{"name":"UnknownError","data":{"message":'
+            '"xAI token refresh failed (400): {\\"error\\":\\"invalid_grant\\",'
+            '\\"error_description\\":\\"Refresh token has been revoked\\"}"}}}'
+        ],
+        "",
+    ),
 }
 
 
