@@ -45,8 +45,9 @@ class KimiHarness(Harness):
         Model alias the agent runs (a ``config.toml`` alias). Default
         ``"kimi-code/kimi-for-coding"`` (K2.7 Coding).
     effort : str
-        Reasoning-effort level. Default ``"high"``. Reported only -- ``kimi -p`` has
-        no effort flag and the default model pins its own thinking budget.
+        Reasoning-effort level, one of ``"low"``, ``"high"`` (default), or ``"max"``.
+        Passed via ``KIMI_MODEL_THINKING_EFFORT``; an unsupported value fails the run
+        with a provider 400.
     home_dir : Path, optional
         The Kimi Code data directory to stage credentials from. ``None`` (default)
         uses ``$KIMI_CODE_HOME`` or ``~/.kimi-code`` (from ``kimi login``);

@@ -219,6 +219,12 @@ def test_agent_command_renders_model_and_workdir_home() -> None:
     assert "--model 'kimi-code/kimi-for-coding'" in script
     assert "<<MODEL>>" not in script
     assert 'export KIMI_CODE_HOME="$PWD/.kimi-home"' in script
+
+
+def test_agent_command_exports_effort() -> None:
+    script = KimiHarness(effort="low")._agent_command()
+    assert "export KIMI_MODEL_THINKING_EFFORT='low'" in script
+    assert "<<EFFORT>>" not in script
     assert "--output-format stream-json" in script
     # No background cron daemon / auto-updater in an ephemeral sandbox: they do
     # unwanted network/CPU work and a lingering child destabilizes the sandbox.
