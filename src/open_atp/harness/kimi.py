@@ -17,41 +17,16 @@ log = logging.getLogger("open_atp")
 class KimiHarness(Harness):
     """Moonshot Kimi Code CLI, authenticated by its file-stored OAuth credential.
 
-    Kimi Code logs in via a device-code flow (``kimi login``) and stores the
-    resulting OAuth tokens as files under its data directory (default
-    ``~/.kimi-code``): ``config.toml`` (provider + model registry, wiring the
-    ``managed:kimi-code`` provider to the file-stored token), ``credentials/`` (the
-    access/refresh tokens), and ``device_id``. There is no API-key env var to
-    forward, so the harness stages those files rather than resolving a credential.
-
-    Like :class:`~open_atp.harness.VibeHarness`, the whole home is workdir-local:
-    ``kimi_agent.sh`` exports ``KIMI_CODE_HOME=$PWD/.kimi-home`` so the credential,
-    the user-scope ``mcp.json`` (lean-lsp) and skills dir, and the per-session wire
-    log all live under the workdir. This isolates concurrent runs, syncs the
-    telemetry back out on both backends, and sidesteps Kimi's project-scope config
-    discovery (which anchors to the nearest ``.git`` and would miss a bare lake
-    project) by landing everything at user scope under ``KIMI_CODE_HOME``.
-
-    Tokens come from the session log, not stdout: ``--output-format stream-json``
-    carries only messages and tool calls -- no token totals. Those live in Kimi's
-    per-session ``wire.jsonl`` (``usage.record`` events); :meth:`parse_result` reads
-    it from the synced-back home. Kimi bills a flat subscription rate and reports no
-    USD, so the cost is estimated from those tokens via
-    :data:`~open_atp.harness.cost.COST_PER_MTOK`.
-
     Parameters
     ----------
     model : str
-        Model alias the agent runs (a ``config.toml`` alias). Default
-        ``"kimi-code/kimi-for-coding"`` (K2.7 Coding).
+        Model alias the agent runs (a ``config.toml`` alias). Default ``"k3"`` (K3).
     effort : str
         Reasoning-effort level, one of ``"low"``, ``"high"`` (default), or ``"max"``.
-        Passed via ``KIMI_MODEL_THINKING_EFFORT``; an unsupported value fails the run
-        with a provider 400.
     home_dir : Path, optional
         The Kimi Code data directory to stage credentials from. ``None`` (default)
         uses ``$KIMI_CODE_HOME`` or ``~/.kimi-code`` (from ``kimi login``);
-        resolution fails if its ``credentials/`` is absent.
+        resolution fails if absent.
 
     Examples
     --------
@@ -60,7 +35,7 @@ class KimiHarness(Harness):
     >>> harness.name
     'kimi'
     >>> harness.model
-    'kimi-code/kimi-for-coding'
+    'k3'
     """
 
     name = "kimi"
@@ -76,7 +51,7 @@ class KimiHarness(Harness):
     def __init__(
         self,
         *,
-        model: str = "kimi-code/kimi-for-coding",
+        model: str = "k3",
         effort: str = "high",
         home_dir: Path | None = None,
     ) -> None:

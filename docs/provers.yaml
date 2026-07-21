@@ -81,7 +81,7 @@ provers:
     page: kimi
     id:   kimi
     skills: [leanprover]
-    mcp: true               # lean-lsp-mcp via user-scope mcp.json
+    mcp: true
     company: { label: Moonshot AI, url: https://www.moonshot.ai }
     paper: null
     cite: null
