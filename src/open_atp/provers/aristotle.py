@@ -240,9 +240,8 @@ class AristotleProver(AutomatedProver):
             (logs_dir / "summary.md").write_text(summary_src.read_text())
 
         result.completed_files = completed
-        # Aristotle is free to use, so the run genuinely costs nothing -- distinct
-        # from an unset cost, which means the figure is unknown. The API exposes no
-        # usage or credit field to read either way.
+        # Aristotle is free to use. The API exposes no usage or credit field to
+        # read either way.
         result.cost_usd = 0.0
 
         # Generation was network-only, so there is no live session to reuse
