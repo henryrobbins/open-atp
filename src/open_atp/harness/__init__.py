@@ -22,8 +22,8 @@ from open_atp.harness.kimi import KimiHarness
 from open_atp.harness.opencode import OpenCodeHarness
 from open_atp.harness.vibe import VibeHarness
 
-#: Harness registry by name (``Harness.name`` -> harness class). Package-internal: the
-#: factory in :mod:`open_atp.config` dispatches a harness spec's ``type`` through this.
+# Harness registry by name (``Harness.name`` -> harness class), keyed by the ``type``
+# a ``harness`` config spec names.
 _HARNESSES: dict[str, type[Harness]] = {
     h.name: h
     for h in (

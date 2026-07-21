@@ -662,7 +662,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument(
         "--timeout",
         type=float,
-        help="Per-task wall-clock timeout in minutes (default: 30).",
+        help="Per-task wall-clock timeout in minutes; defaults to the prover's own.",
     )
     benchmark.add_argument(
         "--json",

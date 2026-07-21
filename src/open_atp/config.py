@@ -17,11 +17,9 @@ dependency here) into a constructed prover::
         },
     })
 
-Each level is dispatched on a ``type`` key through its package-internal registry
-(``open_atp.backends._BACKENDS``, ``open_atp.harness._HARNESSES``,
-``open_atp.provers._PROVERS``); the remaining keys become constructor
-kwargs. Unknown keys raise -- a typo'd option fails loudly rather than being silently
-ignored.
+Each level is dispatched on its ``type`` key; the remaining keys become constructor
+kwargs. An unknown ``type`` or a key the target doesn't accept raises -- a typo'd
+option fails loudly rather than being silently ignored.
 
 For the common case of "give me a sensible default prover by name", the
 :data:`STANDARD_PROVERS` catalog names each ready-to-run default

@@ -125,8 +125,8 @@ class ProofTask:
     project : LeanProject
         The lake project to complete.
     name : str, default None
-        Task identifier, used to attribute log records to this task. Set by
-        :func:`~open_atp.benchmark.tasks_from_dir`; ``None`` for a one-off task.
+        Task identifier, used to attribute log records to this task. Populated when
+        tasks are loaded from a dataset directory; ``None`` for a one-off task.
     targets : tuple[Path, ...], default ()
         Explicit list of files (relative to ``project.root``) to focus on. When
         empty, every file containing ``sorry`` is fair game.

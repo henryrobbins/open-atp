@@ -143,9 +143,9 @@ class VibeHarness(Harness):
         # ``tool_timeout_sec`` mirrors the 180s opencode fix: the first
         # ``lean_diagnostic_messages`` call starts ``lake serve`` and loads the file's
         # full Mathlib import closure into the LSP, which blows through vibe's 60s
-        # default tool timeout on a cold, few-CPU Modal sandbox (the
-        # ``test_lean_lsp_mcp[vibe-modal]`` probe timed out at exactly 60s). Vibe's
-        # field is in *seconds* (opencode's is ms).
+        # default tool timeout on a cold, few-CPU Modal sandbox -- observed timing
+        # out at exactly that 60s default. Vibe's field is in *seconds* (opencode's
+        # is ms).
         (vibe_home / "config.toml").write_text(
             'installed_agents = ["lean"]\n'
             "bypass_tool_permissions = true\n\n"

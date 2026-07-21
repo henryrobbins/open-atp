@@ -9,8 +9,9 @@ An ``AgentProver`` composes:
 
 ``prove`` stages the project into the workdir, lets the agent fill the sorrys in
 place, then diffs the ``.lean`` files against the staged originals to report what
-changed. The shared :class:`~open_atp.verify.Verifier` (owned by the base
-``run``) does the final compile/sorry/axiom check.
+changed. The shared :class:`~open_atp.verify.Verifier` (owned by
+:meth:`~open_atp.provers.base.AutomatedProver.prove`) does the final
+compile/sorry/axiom check.
 """
 
 from __future__ import annotations
@@ -355,10 +356,6 @@ class AgentProver(AutomatedProver):
         ``timeout_s`` is the agent's wall-clock budget, enforced by the backend killing
         the command when it is exceeded. A multi-round caller passes the *remaining*
         budget so successive rounds share one sandbox lifetime.
-
-        Isolated (it owns credential resolution + the backend call) so tests can
-        stand in a fake run -- write a solved file, return a captured stream --
-        without Docker or credentials.
         """
         env, _ = self._auth(harness)
         lines: list[str] = []

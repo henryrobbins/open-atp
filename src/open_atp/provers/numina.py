@@ -100,24 +100,21 @@ _MIN_ROUND_S = 60
 
 # Helper-LLM usage ledger: ``discussion_partner.py`` appends one JSON record per
 # Gemini/GPT call here (workdir-relative, under ``.claude/`` next to ``cli.log``).
-# ``prove()`` reads it after the run, prices the tokens, and bills the result into
-# the run's ``cost_usd`` so discussion-partner spend is not lost. The path is the
-# host-side mirror of the default in ``discussion_partner._record_usage``.
+# Read after the run and priced into the run's ``cost_usd``, so discussion-partner
+# spend is not lost. The path is the host-side mirror of the default in
+# ``discussion_partner._record_usage``.
 _HELPER_USAGE_FILE = Path(".claude") / "helper_usage.jsonl"
 
 
 class NuminaProver(AgentProver):
     """Run the Numina coordinator/subagent scaffold as an :class:`AgentProver`.
 
-    A specialization of :class:`AgentProver` wired to Numina's vendored scaffold
-    (coordinator prompt + skills + subagent prompts, staged by
-    :meth:`_stage_numina_assets`); generation and the shared
+    Numina's vendored scaffold -- coordinator prompt, skills, and subagent prompts --
+    is staged into the sandbox's ``.claude/`` tree; generation and the shared
     :class:`~open_atp.verify.Verifier` work exactly as in the base agent prover.
 
-    The harness is fixed to an internal ``NuminaHarness`` (Claude Code with no plugins,
-    since Numina ships its own scaffold) and is *not* configurable --
-    Numina is claude-CLI driven, and :meth:`_stage_numina_assets` mounts the vendored
-    scaffold straight into the known ``.claude/`` locations.
+    The harness is *not* configurable: Numina is claude-CLI driven and ships its own
+    scaffold in place of plugins.
 
     Parameters
     ----------

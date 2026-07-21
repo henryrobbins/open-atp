@@ -636,9 +636,6 @@ class ModalBackend(ComputeBackend):
         secret = modal.Secret.from_dict(secret_dict)
 
         # Idle Sandbox with no main process: we must push the workdir before exec.
-        # Give the Sandbox SYNC_HEADROOM_S beyond the work budget: commands are
-        # coreutils-capped at the budget (see _exec_payload), so the Sandbox outlives
-        # a timed-out command and the partial workdir can still be pulled back.
         log.debug(
             "provisioning modal sandbox",
             extra={
@@ -657,6 +654,9 @@ class ModalBackend(ComputeBackend):
                 secrets=[secret],
                 cpu=cpu,
                 memory=self.memory_mib,
+                # Outlive the work budget: commands are separately coreutils-capped
+                # at it, so a timed-out command still leaves the Sandbox up long
+                # enough to pull the partial workdir back.
                 timeout=timeout_s + self.wallclock_overhead_s,
                 region=self.region,
             )
@@ -748,7 +748,7 @@ class ModalSession(ComputeSession):
 
     The filesystem is isolated, so :meth:`sync_out` (tar pull) and :meth:`sync_in`
     (tar push) bridge host<->Sandbox when a caller needs the host workdir current
-    between commands (e.g. a host-side diff, or Numina's statement tracker).
+    between commands, e.g. to diff the staged files partway through a run.
     """
 
     backend: ModalBackend

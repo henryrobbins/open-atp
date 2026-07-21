@@ -347,9 +347,8 @@ class Verifier:
     def _compile_script(rel: list[str]) -> str:
         """Compile each file, bracketing it with markers so we can read exit codes.
 
-        Mirrors milp_flare's ``entrypoint.sh``: every file runs (``;`` not ``&&``) so
-        one failure doesn't mask the rest, and the overall status is the OR of the
-        per-file exit codes.
+        Every file runs (``;`` not ``&&``) so one failure doesn't mask the rest, and
+        the overall status is the OR of the per-file exit codes.
         """
         lines = ["fail=0"]
         for f in rel:

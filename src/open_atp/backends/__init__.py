@@ -8,9 +8,8 @@ from open_atp.backends.base import (
 from open_atp.backends.docker import DockerBackend
 from open_atp.backends.modal import ModalBackend
 
-#: Backend registry by name (``ComputeBackend.name`` -> backend class).
-#: Package-internal: the factory in :mod:`open_atp.config` dispatches a ``compute``
-#: spec's ``type`` through this.
+# Backend registry by name (``ComputeBackend.name`` -> backend class), keyed by the
+# ``type`` a ``compute`` config spec names.
 _BACKENDS: dict[str, type[ComputeBackend]] = {
     "docker": DockerBackend,
     "modal": ModalBackend,
