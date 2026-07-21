@@ -2,29 +2,21 @@
 
 The library's runtime objects -- :class:`~open_atp.provers.base.AutomatedProver`,
 :class:`~open_atp.harness.Harness`, :class:`~open_atp.backends.base.ComputeBackend` --
-take plain keyword arguments. This module is the thin factory that turns a nested
-config dict (e.g. parsed from YAML; parsing is the caller's job, so there is no YAML
-dependency here) into a constructed prover::
+take plain keyword arguments. This module is the thin factory behind the CLI's
+``--config`` file, turning nested config dicts (parsed from YAML by the caller, so
+there is no YAML dependency here) into constructed objects::
 
-    from open_atp.config import build_prover
-
-    prover = build_prover({
-        "compute": {"type": "modal", "cpu": 2, "memory_mib": 4096},
-        "prover": {
-            "type": "agent",
-            "harness": {"type": "claude_code", "model": "claude-opus-4-8"},
-            "skills": ["lean-proof"],
-        },
-    })
+    compute: {type: modal, cpu: 2, memory_mib: 4096}
+    provers:
+      - {type: agent, harness: {type: claude_code}, skills: [lean-proof]}
 
 Each level is dispatched on its ``type`` key; the remaining keys become constructor
 kwargs. An unknown ``type`` or a key the target doesn't accept raises -- a typo'd
 option fails loudly rather than being silently ignored.
 
-For the common case of "give me a sensible default prover by name", the
-:data:`STANDARD_PROVERS` catalog names each ready-to-run default
-(``"claude"``, ``"numina"``, ...) as a canonical prover spec, and
-:func:`standard_prover` builds one against a backend.
+The public surface here is by *name*: :data:`STANDARD_PROVERS` catalogs each
+ready-to-run default as a canonical prover spec, and :func:`standard_prover` builds
+one against a backend. To go beyond the defaults, construct a prover class directly.
 """
 
 from __future__ import annotations
@@ -67,7 +59,7 @@ def _split(
     return cls, rest
 
 
-def build_backend(spec: Mapping[str, object]) -> ComputeBackend:
+def _build_backend(spec: Mapping[str, object]) -> ComputeBackend:
     """Construct a :class:`~open_atp.backends.base.ComputeBackend` from a compute spec.
 
     ``spec`` is a mapping with a ``type`` (``"docker"`` / ``"modal"``) plus that
@@ -78,7 +70,7 @@ def build_backend(spec: Mapping[str, object]) -> ComputeBackend:
     return cls(**kwargs)  # type: ignore[arg-type]  # validated dict -> kwargs
 
 
-def build_harness(spec: Mapping[str, object] | str) -> Harness:
+def _build_harness(spec: Mapping[str, object] | str) -> Harness:
     """Construct a :class:`~open_atp.harness.Harness` from a harness spec.
 
     ``spec`` is either a bare type name (``"claude_code"``) or a mapping with a ``type``
@@ -103,23 +95,12 @@ def _build_prover(
     """
     cls, kwargs = _split(_PROVERS, spec, "prover")
     if "harness" in kwargs:
-        kwargs["harness"] = build_harness(
+        kwargs["harness"] = _build_harness(
             cast("Mapping[str, object] | str", kwargs["harness"])
         )
     if name is not None and "name" in inspect.signature(cls).parameters:
         kwargs.setdefault("name", name)
     return cls(backend=backend, **kwargs)  # type: ignore[arg-type]  # validated kwargs
-
-
-def build_prover(config: Mapping[str, object]) -> AutomatedProver:
-    """Construct a fully-wired prover from a ``{compute, prover}`` config dict.
-
-    Builds the backend from ``config["compute"]``, then the prover from
-    ``config["prover"]`` (dispatched on its ``type``), recursively building a nested
-    ``harness`` spec along the way, and wires the backend in.
-    """
-    backend = build_backend(cast("Mapping[str, object]", config["compute"]))
-    return _build_prover(cast("Mapping[str, object]", config["prover"]), backend)
 
 
 #: The standard catalog: a friendly name -> the canonical ``prover`` spec for that
@@ -162,8 +143,8 @@ def standard_prover(name: str, *, backend: ComputeBackend) -> AutomatedProver:
 
     ``name`` is a :data:`STANDARD_PROVERS` key, as listed by
     :func:`standard_provers`. The prover is built with its class's baked-in defaults;
-    to customize any knob (model, effort, skills, ...), use :func:`build_prover` with
-    a full config dict instead.
+    to customize any knob (model, effort, skills, ...), construct the prover class
+    directly instead.
 
     The sandbox image (and the toolchain + Mathlib pins projects are checked against)
     comes from ``backend``, not a parameter here.

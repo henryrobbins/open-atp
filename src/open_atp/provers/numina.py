@@ -44,7 +44,7 @@ from open_atp.harness._numina import _DEFAULT_HELPER_ENV_KEYS, NuminaHarness
 from open_atp.harness._paths import _vendor_numina_dir
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver
-from open_atp.provers.base import GenerationTimeout, ProofResult, compose_prompt
+from open_atp.provers.base import GenerationTimeout, ProofResult, _compose_prompt
 from open_atp.provers.numina_tracker import StatementTracker
 
 log = logging.getLogger("open_atp")
@@ -79,7 +79,7 @@ def _coordinator_prompt() -> str:
     The coordinator scaffold is a vendored asset (``vendor/numina/prompts``); the
     session-control protocol is appended so the round loop can tell "done" from "out
     of budget". This is the *prover* prompt -- the task's optional ``user_prompt`` is
-    layered on top by :func:`~open_atp.provers.base.compose_prompt`.
+    layered on top of it.
     """
     main_entry = _vendor_numina_dir() / "prompts" / "main_entry.md"
     return main_entry.read_text() + _END_REASON_PROTOCOL
@@ -241,7 +241,7 @@ class NuminaProver(AgentProver):
         harness.stage_wd(wd)
         self._stage_numina_assets(wd)
         harness.stage_skills(wd, [resolve_skill(s) for s in self.skills])
-        harness.write_prompt(wd, compose_prompt(self.prover_prompt, task.user_prompt))
+        harness.write_prompt(wd, _compose_prompt(self.prover_prompt, task.user_prompt))
         stdout_path = logs_dir / "stdout.txt"
 
         # 4. Statement-change guard: snapshot the target theorems before the run.

@@ -132,9 +132,8 @@ class ProofTask:
         empty, every file containing ``sorry`` is fair game.
     user_prompt : str, default None
         Per-task guidance appended below the prover's own prompt under an
-        ``# Additional instructions`` heading (see
-        :func:`~open_atp.provers.base.compose_prompt`). ``None`` (the common case)
-        leaves the prover prompt untouched.
+        ``# Additional instructions`` heading. ``None`` (the common case) leaves the
+        prover prompt untouched.
     metadata : dict[str, str], optional
         Free-form metadata carried alongside the task. Defaults to an empty mapping.
     """

@@ -27,9 +27,6 @@ from open_atp.benchmark import (
     tasks_from_dir,
 )
 from open_atp.config import (
-    build_backend,
-    build_harness,
-    build_prover,
     standard_prover,
     standard_provers,
 )
@@ -56,9 +53,6 @@ __all__ = [
     "ProofTask",
     "standard_prover",
     "standard_provers",
-    "build_prover",
-    "build_backend",
-    "build_harness",
     "create_project",
     "download_dataset",
     "run_benchmark",

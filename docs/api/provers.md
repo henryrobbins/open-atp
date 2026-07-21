@@ -60,8 +60,8 @@ run generation in a live session over that backend and verify in the same hot sa
 This is the top-level surface re-exported from `open_atp` itself.
 
 {func}`~open_atp.config.standard_provers` lists the accepted names.
-Each builds its class's baked-in defaults — to customize any knob, use
-{func}`~open_atp.config.build_prover` with a full config dict instead.
+Each builds its class's baked-in defaults — to customize any knob, construct the
+prover class directly.
 
 ```{eval-rst}
 .. autofunction:: open_atp.config.standard_prover
@@ -70,11 +70,4 @@ Each builds its class's baked-in defaults — to customize any knob, use
 
 .. autodata:: open_atp.config.STANDARD_PROVERS
 
-.. autofunction:: open_atp.config.build_prover
-
-.. autofunction:: open_atp.config.build_backend
-
-.. autofunction:: open_atp.config.build_harness
-
-.. autofunction:: open_atp.provers.base.compose_prompt
 ```

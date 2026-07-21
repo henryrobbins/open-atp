@@ -30,7 +30,7 @@ from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.base import (
     AutomatedProver,
     ProofResult,
-    compose_prompt,
+    _compose_prompt,
 )
 
 if TYPE_CHECKING:
@@ -203,7 +203,7 @@ class AristotleProver(AutomatedProver):
             for p in task.project.lean_files()
         }
 
-        prompt = compose_prompt(self.prover_prompt, task.user_prompt)
+        prompt = _compose_prompt(self.prover_prompt, task.user_prompt)
         # The raw result archive and the full run record both belong with the run's
         # logs, not the proof project. The hosted agent has no live stdout stream, so
         # its record (events, transcript, summary) is downloaded here rather than teed.

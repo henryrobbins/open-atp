@@ -39,7 +39,7 @@ from open_atp.provers.base import (
     AutomatedProver,
     GenerationTimeout,
     ProofResult,
-    compose_prompt,
+    _compose_prompt,
 )
 
 log = logging.getLogger("open_atp")
@@ -205,7 +205,7 @@ class AgentProver(AutomatedProver):
         harness = self.harness
         harness.stage_wd(wd)
         harness.stage_skills(wd, [resolve_skill(s) for s in self.skills])
-        harness.write_prompt(wd, compose_prompt(self.prover_prompt, task.user_prompt))
+        harness.write_prompt(wd, _compose_prompt(self.prover_prompt, task.user_prompt))
         stdout_path = logs_dir / "stdout.txt"
 
         # 4. Run the agent and the final check in one persistent sandbox: generation
