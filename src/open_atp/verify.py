@@ -168,10 +168,9 @@ class Verifier:
         """Reject a project whose pins differ from the backend image's.
 
         Matches the project's :attr:`~open_atp.lean.LeanProject.lean_toolchain`
-        against the image's :attr:`~open_atp.images.Image.lean_toolchain`, and its
+        against the image's ``lean_toolchain``, and its
         locked :attr:`~open_atp.lean.LeanProject.mathlib_rev` (when the project
-        records one) against the image's
-        :attr:`~open_atp.images.Image.mathlib_rev`. Raises
+        records one) against the image's ``mathlib_rev``. Raises
         :class:`~open_atp.lean.ToolchainMismatch` or
         :class:`~open_atp.lean.MathlibRevMismatch` on the first mismatch.
 
@@ -264,8 +263,8 @@ class Verifier:
         Examples
         --------
 
-        A real project compiles in the backend; a project with no ``.lean`` files
-        short-circuits to a trivial passing report without touching the sandbox:
+        A project with no ``.lean`` files short-circuits to a trivial passing
+        report without touching the sandbox:
 
         >>> import tempfile
         >>> from pathlib import Path
@@ -347,9 +346,8 @@ class Verifier:
     def _compile_script(rel: list[str]) -> str:
         """Compile each file, bracketing it with markers so we can read exit codes.
 
-        Mirrors milp_flare's ``entrypoint.sh``: every file runs (``;`` not ``&&``) so
-        one failure doesn't mask the rest, and the overall status is the OR of the
-        per-file exit codes.
+        Every file runs (``;`` not ``&&``) so one failure doesn't mask the rest, and
+        the overall status is the OR of the per-file exit codes.
         """
         lines = ["fail=0"]
         for f in rel:

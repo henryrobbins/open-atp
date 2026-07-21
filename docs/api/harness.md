@@ -47,15 +47,15 @@ Each harness adapts one agent CLI and is a
 
 .. autoclass:: open_atp.harness.vibe.VibeHarness
    :show-inheritance:
-   :exclude-members: stage_wd
+   :exclude-members: stage_wd, parse_result, collect_logs
 
 .. autoclass:: open_atp.harness.axproverbase.AxProverBaseHarness
    :show-inheritance:
-   :exclude-members: stage_wd
+   :exclude-members: stage_wd, parse_result, collect_logs
 
 .. autoclass:: open_atp.harness.kimi.KimiHarness
    :show-inheritance:
-   :exclude-members: stage_wd
+   :exclude-members: stage_wd, parse_result, collect_logs
 ```
 
 ## Pricing

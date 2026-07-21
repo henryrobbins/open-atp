@@ -38,6 +38,9 @@ class ClaudeCodeHarness(Harness):
 
     Examples
     --------
+
+    Constructing the harness resolves its defaults:
+
     >>> from open_atp.harness import ClaudeCodeHarness
     >>> harness = ClaudeCodeHarness()
     >>> harness.name

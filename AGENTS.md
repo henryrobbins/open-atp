@@ -77,22 +77,18 @@ vendored code**, and keep its upstream style. It ships in the wheel via
 
 ## Provers
 
-Names accepted by the `prove` positional `prover`, the `benchmark --provers` flag,
-and the `STANDARD_PROVERS` registry (`config.py`):
+**`STANDARD_PROVERS` in `config.py` is the source of truth for the prover roster.**
+Its keys are exactly the names accepted by the `prove` positional `prover` and the
+`benchmark --provers` flag, and each value spells out that prover's wiring — which
+harness backs it, and any model / provider / auth overrides. Read it there rather
+than maintaining a second list here; `standard_provers()` returns the names at
+runtime. Per-prover presentation metadata (company, paper, source, skills, MCP)
+lives in `docs/provers.yaml` — see [Docs: prover comparison table](#docs-prover-comparison-table).
 
-| Name | Backing tool | Notes |
-| --- | --- | --- |
-| `aristotle` | Harmonic Aristotle (hosted) | remote API via `aristotlelib`, no local gen sandbox |
-| `claude` | Claude Code (`claude_code` harness) | default; coding agent + lean-lsp-mcp |
-| `codex` | OpenAI Codex CLI | model `gpt-5.5` |
-| `deepseek` | DeepSeek via opencode | `opencode` harness on the `deepseek` provider, `auth="api_key"` (`DEEPSEEK_API_KEY`); model `deepseek-v4-pro` |
-| `grok` | xAI Grok via opencode | `opencode` harness on the `xai` provider, `auth="login"`; model `grok-4.5`; auth via `opencode auth login` -> xAI, bills the xAI plan |
-| `axproverbase` | ax-prover (LangGraph) | proposer→builder→reviewer loop; default model `claude-opus-4-8`, effort `high` |
-| `numina` | Numina skills/prompts on Claude Code | round-continuation loop |
-| `leanstral` | Mistral Vibe `lean` scaffold | hosted model (default `magistral-medium-latest`), no GPU; `--model` configurable |
-
-Agentic harnesses share **lean-lsp-mcp** as their LSP server. The shared `Verifier`
-does the final compile/sorry/axiom check regardless of which tool generated the proof.
+Most entries are the shared `AgentProver` on a different harness; the rest are
+standalone provers. Agentic harnesses share **lean-lsp-mcp** as their LSP server.
+The shared `Verifier` does the final compile/sorry/axiom check regardless of which
+tool generated the proof.
 
 ## Tooling
 

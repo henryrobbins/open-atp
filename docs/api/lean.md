@@ -45,5 +45,6 @@ enforces).
 .. autodata:: open_atp.images.DEFAULT_IMAGE
 
 .. autoclass:: open_atp.images.Image
-   :members:
+
+.. autodata:: open_atp.images.SKELETON_DIR
 ```

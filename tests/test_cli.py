@@ -17,13 +17,14 @@ from pathlib import Path
 import pytest
 
 from open_atp import __main__ as cli
-from open_atp.config import build_backend, standard_provers
+from open_atp.backends.docker import DockerBackend
+from open_atp.config import standard_provers
 
 from .test_api import FIXTURE, FakeProver
 
 
 def _backend() -> object:
-    return build_backend({"type": "docker"})  # constructed, never started
+    return DockerBackend()  # constructed, never started
 
 
 def _select(provers_spec: object, provers_arg: str | None) -> dict[str, object]:
@@ -95,6 +96,11 @@ def test_duplicate_derived_names_are_suffixed(tmp_path: Path) -> None:
 def test_invalid_entry_rejected(tmp_path: Path) -> None:
     with pytest.raises(SystemExit):
         _select([123], None)
+
+
+def test_misspelled_prover_option_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="unknown 'agent' prover option"):
+        _select([{"type": "agent", "effrt": "x"}], None)
 
 
 def test_load_config_reads_mapping(tmp_path: Path) -> None:

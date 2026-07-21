@@ -12,7 +12,6 @@ funnels its output through the {class}`~open_atp.verify.Verifier`.
 
 ```{eval-rst}
 .. autoclass:: open_atp.verify.Verifier
-   :members: check_compatible, verify
 ```
 
 ## Report

@@ -146,6 +146,10 @@ numpydoc_xref_aliases = {
     "VerificationReport": "open_atp.verify.VerificationReport",
     "Verifier": "open_atp.verify.Verifier",
     "ProofResult": "open_atp.provers.base.ProofResult",
+    # Benchmark
+    "BenchmarkRun": "open_atp.benchmark.BenchmarkRun",
+    "BenchmarkResult": "open_atp.benchmark.BenchmarkResult",
+    "DATASET": "open_atp.benchmark.DATASET",
     "AutomatedProver": "open_atp.provers.base.AutomatedProver",
     # Backends
     "ComputeBackend": "open_atp.backends.base.ComputeBackend",

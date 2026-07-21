@@ -44,7 +44,7 @@ from open_atp.harness._numina import _DEFAULT_HELPER_ENV_KEYS, NuminaHarness
 from open_atp.harness._paths import _vendor_numina_dir
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver
-from open_atp.provers.base import GenerationTimeout, ProofResult, compose_prompt
+from open_atp.provers.base import GenerationTimeout, ProofResult, _compose_prompt
 from open_atp.provers.numina_tracker import StatementTracker
 
 log = logging.getLogger("open_atp")
@@ -79,7 +79,7 @@ def _coordinator_prompt() -> str:
     The coordinator scaffold is a vendored asset (``vendor/numina/prompts``); the
     session-control protocol is appended so the round loop can tell "done" from "out
     of budget". This is the *prover* prompt -- the task's optional ``user_prompt`` is
-    layered on top by :func:`~open_atp.provers.base.compose_prompt`.
+    layered on top of it.
     """
     main_entry = _vendor_numina_dir() / "prompts" / "main_entry.md"
     return main_entry.read_text() + _END_REASON_PROTOCOL
@@ -100,24 +100,21 @@ _MIN_ROUND_S = 60
 
 # Helper-LLM usage ledger: ``discussion_partner.py`` appends one JSON record per
 # Gemini/GPT call here (workdir-relative, under ``.claude/`` next to ``cli.log``).
-# ``prove()`` reads it after the run, prices the tokens, and bills the result into
-# the run's ``cost_usd`` so discussion-partner spend is not lost. The path is the
-# host-side mirror of the default in ``discussion_partner._record_usage``.
+# Read after the run and priced into the run's ``cost_usd``, so discussion-partner
+# spend is not lost. The path is the host-side mirror of the default in
+# ``discussion_partner._record_usage``.
 _HELPER_USAGE_FILE = Path(".claude") / "helper_usage.jsonl"
 
 
 class NuminaProver(AgentProver):
     """Run the Numina coordinator/subagent scaffold as an :class:`AgentProver`.
 
-    A specialization of :class:`AgentProver` wired to Numina's vendored scaffold
-    (coordinator prompt + skills + subagent prompts, staged by
-    :meth:`_stage_numina_assets`); generation and the shared
+    Numina's vendored scaffold -- coordinator prompt, skills, and subagent prompts --
+    is staged into the sandbox's ``.claude/`` tree; generation and the shared
     :class:`~open_atp.verify.Verifier` work exactly as in the base agent prover.
 
-    The harness is fixed to an internal ``NuminaHarness`` (Claude Code with no plugins,
-    since Numina ships its own scaffold) and is *not* configurable --
-    Numina is claude-CLI driven, and :meth:`_stage_numina_assets` mounts the vendored
-    scaffold straight into the known ``.claude/`` locations.
+    The harness is *not* configurable: Numina is claude-CLI driven and ships its own
+    scaffold in place of plugins.
 
     Parameters
     ----------
@@ -135,10 +132,10 @@ class NuminaProver(AgentProver):
     oauth_token : str, optional
         The ``CLAUDE_CODE_OAUTH_TOKEN`` to forward into the sandbox; ``None``
         (default) reads it from the host env var.
-    helper_env_keys : tuple[str, ...]
+    helper_env_keys : tuple[str, ...], optional
         Helper-skill credentials forwarded into the sandbox when present in the host
-        env; skills degrade/skip when their key is absent. Defaults to
-        :data:`_DEFAULT_HELPER_ENV_KEYS`.
+        env; skills degrade/skip when their key is absent. Defaults to the Leandex,
+        Gemini, OpenAI, and Anthropic key names.
     guard_statements : bool, default True
         Whether to snapshot the target theorems and reject runs that weaken or
         delete them.
@@ -244,7 +241,7 @@ class NuminaProver(AgentProver):
         harness.stage_wd(wd)
         self._stage_numina_assets(wd)
         harness.stage_skills(wd, [resolve_skill(s) for s in self.skills])
-        harness.write_prompt(wd, compose_prompt(self.prover_prompt, task.user_prompt))
+        harness.write_prompt(wd, _compose_prompt(self.prover_prompt, task.user_prompt))
         stdout_path = logs_dir / "stdout.txt"
 
         # 4. Statement-change guard: snapshot the target theorems before the run.

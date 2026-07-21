@@ -93,7 +93,7 @@ class LeanProject:
 
         Prefers the human-declared ``inputRev`` (e.g. ``v4.28.0``) so it is
         comparable to an :class:`~open_atp.images.Image`'s declared
-        :attr:`~open_atp.images.Image.mathlib_rev`, falling back to the resolved git
+        ``mathlib_rev``, falling back to the resolved git
         ``rev`` (a commit SHA) when no ``inputRev`` is recorded.
         """
         manifest = self.root / "lake-manifest.json"
@@ -125,16 +125,15 @@ class ProofTask:
     project : LeanProject
         The lake project to complete.
     name : str, default None
-        Task identifier, used to attribute log records to this task. Set by
-        :func:`~open_atp.benchmark.tasks_from_dir`; ``None`` for a one-off task.
+        Task identifier, used to attribute log records to this task. Populated when
+        tasks are loaded from a dataset directory; ``None`` for a one-off task.
     targets : tuple[Path, ...], default ()
         Explicit list of files (relative to ``project.root``) to focus on. When
         empty, every file containing ``sorry`` is fair game.
     user_prompt : str, default None
         Per-task guidance appended below the prover's own prompt under an
-        ``# Additional instructions`` heading (see
-        :func:`~open_atp.provers.base.compose_prompt`). ``None`` (the common case)
-        leaves the prover prompt untouched.
+        ``# Additional instructions`` heading. ``None`` (the common case) leaves the
+        prover prompt untouched.
     metadata : dict[str, str], optional
         Free-form metadata carried alongside the task. Defaults to an empty mapping.
     """
@@ -148,7 +147,7 @@ class ProofTask:
     def resolved_targets(self) -> list[Path]:
         """Absolute paths of the files to work on.
 
-        The explicit :attr:`targets` (resolved against ``project.root``) when given,
+        The explicit ``targets`` (resolved against ``project.root``) when given,
         else every file containing ``sorry``
         (:meth:`~open_atp.lean.LeanProject.files_with_sorry`).
         """

@@ -94,7 +94,7 @@ def compute_cost_usd(
         Total input (prompt) tokens.
     output_tokens : int
         Total output (completion) tokens.
-    cached_input_tokens : int, optional
+    cached_input_tokens : int, default 0
         The cache-hit *subset* of ``input_tokens``, if the harness reports it.
         If unreported, the whole input is billed as uncached, an upper bound.
 

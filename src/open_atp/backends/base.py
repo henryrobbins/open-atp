@@ -75,7 +75,7 @@ class CommandTimeout(Exception):
     ----------
     message : str
         Description of the command and the budget it blew through.
-    result : CommandResult, default None
+    result : CommandResult, optional
         The command's partial output captured before it was killed, when available.
     """
 
