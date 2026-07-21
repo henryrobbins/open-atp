@@ -347,6 +347,26 @@ class Harness(ABC):
         self._log_usage(result)
         return result
 
+    def check_auth(self, exit_code: int, stderr: str) -> None:
+        """Raise :class:`MissingCredentials` if a completed run signals an auth failure.
+
+        Called once after the agent command returns (never for a deadline kill). Most
+        harnesses resolve their credentials up front in :meth:`agent_auth`, so an
+        absent key raises before the run and the default is a no-op. A harness whose
+        credential is a file-stored OAuth token -- present at stage time but only
+        validated when the CLI actually runs, so an expired login surfaces only here --
+        overrides this to map its runtime auth-failure signature onto
+        :class:`MissingCredentials`, so the run is reported as an error rather than a
+        failed proof attempt.
+
+        Parameters
+        ----------
+        exit_code : int
+            The agent command's exit code.
+        stderr : str
+            The agent command's captured stderr.
+        """
+
     def _log_usage(self, result: HarnessRunResult) -> None:
         """Log a run's parsed token/cost totals at INFO.
 
