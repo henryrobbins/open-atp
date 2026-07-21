@@ -8,13 +8,13 @@ Use Moonshot AI's [Kimi Code](https://moonshotai.github.io/kimi-code/) CLI as an
 
 ## Authentication
 
-Kimi Code authenticates with a Moonshot account via a device-code flow. [Install](https://moonshotai.github.io/kimi-code/en/guides/getting-started) the Kimi Code CLI and log in once on the host:
+Kimi Code is included with every paid Kimi Code plan. [Choose a plan](https://www.kimi.com/code) and sign up if you don't already have an account. [Install](https://www.kimi.com/code) the Kimi Code CLI and generate an ephemeral API token once on the host:
 
 ```bash
 kimi login
 ```
 
-This writes an OAuth credential (plus provider config and a device id) under Kimi's data directory, `~/.kimi-code` (or `$KIMI_CODE_HOME`). Unlike the API-key harnesses, there is no env var to forward; the harness stages that directory into a workdir-local `KIMI_CODE_HOME` inside the sandbox so Kimi can refresh its access token mid-session. Point the harness at a different data directory to override:
+This writes OAuth credentials to `~/.kimi-code`. By default the harness reads that file; pass it explicitly to override:
 
 ```{testcode}
 from pathlib import Path
@@ -23,6 +23,8 @@ from open_atp.harness import KimiHarness
 
 KimiHarness(home_dir=Path("~/.kimi-code").expanduser())
 ```
+
+The harness mounts the credential into the sandbox at run time so Kimi Code can refresh its access token mid-session, billing against your Kimi Code subscription. See {ref}`tracking-cost-and-usage-kimi` for details.
 
 ## Using the prover
 
@@ -77,8 +79,8 @@ See the {doc}`/api/index` for all {class}`~open_atp.harness.kimi.KimiHarness` co
 
 By default, the Kimi Code harness is equipped with:
 
-- Official Lean skills {cite:p}`leanprover_skills`, staged into the user-scope skills directory under `KIMI_CODE_HOME`.
-- `lean-lsp-mcp` MCP server {cite:p}`lean_lsp_mcp`, wired in via a user-scope `mcp.json`.
+- Official Lean skills {cite:p}`leanprover_skills`.
+- `lean-lsp-mcp` MCP server {cite:p}`lean_lsp_mcp`.
 
 The agent prompt (below) is written into the working directory and read into `$PROMPT`. The Kimi CLI is then invoked in non-interactive mode with `$PROMPT` as the input. See the script below for the full Kimi CLI invocation.
 
