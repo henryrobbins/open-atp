@@ -362,11 +362,6 @@ class AgentProver(AutomatedProver):
         the command when it is exceeded. A multi-round caller passes the *remaining*
         budget so successive rounds share one sandbox lifetime.
 
-        A non-timeout exit is offered to :meth:`Harness.check_auth`, which raises
-        :class:`~open_atp.harness.MissingCredentials` if it recognizes a runtime
-        auth failure (e.g. a staged OAuth token that expired) -- surfacing it as an
-        error rather than a silent unverified run.
-
         Isolated (it owns credential resolution + the backend call) so tests can
         stand in a fake run -- write a solved file, return a captured stream --
         without Docker or credentials.
@@ -393,12 +388,6 @@ class AgentProver(AutomatedProver):
                 timed_out = True
                 result = exc.result or CommandResult(124, "", "", 0.0)
             self._log_agent_result(harness, result, lines)
-            if not timed_out:
-                # A clean (non-deadline) exit may still signal the agent never
-                # authenticated -- an OAuth token present at stage time but expired at
-                # run time. Let the harness map that onto MissingCredentials so the run
-                # is reported as an error, not a genuine unverified proof attempt.
-                harness.check_auth(result.exit_code, result.stderr)
         return lines, result.stderr, timed_out
 
     def _log_agent_result(

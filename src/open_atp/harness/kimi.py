@@ -135,17 +135,6 @@ class KimiHarness(Harness):
     def _agent_command(self) -> str:
         return self._render((_SCRIPTS / "kimi_agent.sh").read_text())
 
-    def check_auth(self, exit_code: int, stderr: str) -> None:
-        # The OAuth token lives in staged files, so an expired or absent login passes
-        # staging and only fails when `kimi -p` runs: it exits non-zero with an
-        # `auth.login_required` line ("requires login before it can be used").
-        if exit_code != 0 and "login_required" in stderr:
-            log.error("kimi login required", extra={"harness": self.name})
-            raise MissingCredentials(
-                "kimi harness requires a valid login; the OAuth token is expired or "
-                "missing (run `kimi login`)"
-            )
-
     def _sessions_dir(self, wd: Path) -> Path:
         """Where Kimi writes per-session logs under the workdir-local home."""
         return wd / self.KIMI_HOME_DIR / "sessions"

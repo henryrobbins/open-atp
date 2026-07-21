@@ -19,13 +19,10 @@ The live path (the real ``kimi`` CLI) lives in the single parametrized
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 import pytest
 
-from open_atp.backends.base import CommandHandle, CommandResult, ComputeSession
-from open_atp.backends.docker import DockerBackend
 from open_atp.harness import (
     _HARNESSES,
     Harness,
@@ -33,7 +30,6 @@ from open_atp.harness import (
     MissingCredentials,
     compute_cost_usd,
 )
-from open_atp.images import DEFAULT_IMAGE
 from open_atp.lean import LeanProject, ProofTask
 from open_atp.provers.agent_prover import AgentProver
 from open_atp.provers.base import ProofResult
@@ -112,75 +108,6 @@ def _write_wire_log(wd: Path, lines: list[str]) -> None:
     )
     sess.mkdir(parents=True, exist_ok=True)
     (sess / "wire.jsonl").write_text("\n".join(lines))
-
-
-class _AuthFailHandle(CommandHandle):
-    """A finished command reporting a fixed exit code and stderr, no stdout."""
-
-    def __init__(self, exit_code: int, stderr: str) -> None:
-        self._exit_code = exit_code
-        self._stderr = stderr
-
-    def stream(self) -> Iterator[str]:
-        return iter(())
-
-    def wait(self) -> CommandResult:
-        return CommandResult(
-            exit_code=self._exit_code, stdout="", stderr=self._stderr, duration_s=0.0
-        )
-
-
-class _AuthFailSession(ComputeSession):
-    """A session whose first exec (the agent) fails with the given exit + stderr.
-
-    Later execs (the in-session verify) succeed, so the agent's auth failure -- not the
-    compile check -- is what the test exercises.
-    """
-
-    def __init__(self, exit_code: int, stderr: str) -> None:
-        self._exit_code = exit_code
-        self._stderr = stderr
-        self._execs = 0
-
-    def exec(
-        self,
-        command: str,
-        *,
-        env: Mapping[str, str] | None = None,
-        timeout_s: int,
-    ) -> CommandHandle:
-        first, self._execs = self._execs == 0, self._execs + 1
-        if first:
-            return _AuthFailHandle(self._exit_code, self._stderr)
-        return _AuthFailHandle(0, "")
-
-    def sync_out(self) -> None:
-        pass
-
-    def sync_in(self) -> None:
-        pass
-
-    def close(self) -> None:
-        pass
-
-
-class _AuthFailBackend(DockerBackend):
-    """A DockerBackend whose session fails the agent exec with a given exit + stderr."""
-
-    def __init__(self, exit_code: int, stderr: str, **kwargs: object) -> None:
-        super().__init__(**kwargs)  # type: ignore[arg-type]
-        self._exit_code = exit_code
-        self._stderr = stderr
-
-    def session(
-        self,
-        workdir: Path,
-        *,
-        timeout_s: int,
-        env: Mapping[str, str] | None = None,
-        mounts: Sequence[tuple[str, str]] | None = None,
-    ) -> ComputeSession:
-        return _AuthFailSession(self._exit_code, self._stderr)
 
 
 @pytest.fixture
@@ -305,47 +232,6 @@ def test_parse_without_wire_log_leaves_tokens_zero(tmp_path: Path) -> None:
     assert result.cost_usd is None
     # The stream still yields the final assistant text.
     assert result.result_text == "Done. Replaced sorry with rw."
-
-
-# --- runtime auth failure --------------------------------------------------
-
-# A trimmed `kimi -p` stderr when the staged OAuth token is expired/absent: the CLI
-# refuses to run and exits non-zero.
-LOGIN_REQUIRED_STDERR = (
-    'auth.login_required: OAuth provider "managed:kimi-code" requires login before '
-    "it can be used.\nSee log: /workspace/wd/.kimi-home/logs/kimi-code.log"
-)
-
-
-def test_check_auth_raises_on_login_required() -> None:
-    # The token is only validated when `kimi -p` runs, so an expired login surfaces
-    # as a non-zero exit carrying `login_required` -- mapped onto MissingCredentials
-    # so the run is an error, not a genuine unverified miss.
-    with pytest.raises(MissingCredentials, match="login"):
-        KimiHarness().check_auth(1, LOGIN_REQUIRED_STDERR)
-
-
-def test_check_auth_ignores_clean_exit_and_unrelated_failures() -> None:
-    harness = KimiHarness()
-    # A clean exit is never an auth failure, whatever the stderr says.
-    harness.check_auth(0, LOGIN_REQUIRED_STDERR)
-    # A non-zero exit for some other reason is a real run failure, not missing creds.
-    harness.check_auth(1, "lake env lean failed: elaboration error")
-
-
-def test_runtime_auth_failure_raises_out_of_prove(tmp_path: Path) -> None:
-    """A login_required agent exit raises MissingCredentials out of prove().
-
-    Drives the real ``prove`` lifecycle over a session whose agent exec exits 1 with
-    the ``login_required`` stderr; the run is reported as an error (a re-raise), not a
-    silent unverified proof attempt.
-    """
-    harness = KimiHarness(home_dir=_fake_source_home(tmp_path))
-    backend = _AuthFailBackend(1, LOGIN_REQUIRED_STDERR, image=DEFAULT_IMAGE)
-    prover = AgentProver(harness=harness, backend=backend)
-
-    with pytest.raises(MissingCredentials, match="login"):
-        prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
 
 
 # --- prove() diff logic (no Docker) ----------------------------------------
