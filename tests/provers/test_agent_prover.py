@@ -33,6 +33,7 @@ from open_atp.harness import (
     Harness,
     MissingCredentials,
     compute_cost_usd,
+    is_auth_failure,
 )
 from open_atp.harness._catalog import resolve_plugin, resolve_skill
 from open_atp.harness._numina import NuminaHarness
@@ -450,6 +451,90 @@ def test_missing_credentials_raises_out_of_prove(
 
     # The run never completed, so no result record was written.
     assert not (out / "logs" / "result.json").exists()
+
+
+# One real auth-failure line per agent CLI, captured from
+# tests/harness/test_auth_failure.py (each CLI phrases a 401 differently, and some
+# report it only on stderr).
+REJECTED_OUTPUT = {
+    "claude_code": '{"type":"system","subtype":"api_retry","attempt":1,'
+    '"error_status":401,"error":"authentication_failed"}',
+    "codex": '{"type":"turn.failed","error":{"message":"unexpected status 401 '
+    'Unauthorized: Incorrect API key provided: sk-***tial."}}',
+    "opencode": '{"type":"error","error":{"name":"APIError","data":{"message":'
+    '"Authentication Fails, Your api key: ****tial is invalid","statusCode":401}}}',
+    "vibe": "Error: API error from mistral-testing (model: labs-leanstral-1-5): "
+    "Invalid API key. Please check your API key and try again.",
+    "axproverbase": "2026-07-21 05:30:02 - ERROR - [agent.py:575 - chat()] - Error: "
+    "Error code: 401 - 'type': 'error', 'error': 'type': 'authentication_error', "
+    "'message': 'invalid x-api-key'",
+    "kimi": "error: failed to run prompt: auth.login_required: OAuth provider "
+    '"managed:kimi-code" requires login before it can be used.',
+}
+
+
+@pytest.mark.parametrize("harness_name", sorted(REJECTED_OUTPUT))
+def test_rejected_credential_is_recognized(harness_name: str) -> None:
+    """Every CLI's real 401 phrasing is matched; ordinary agent output is not."""
+    assert is_auth_failure(REJECTED_OUTPUT[harness_name])
+    assert not is_auth_failure(
+        '{"type":"result","subtype":"success","result":"proved mul_comm_assoc"}'
+    )
+
+
+@pytest.mark.parametrize("on_stderr", [False, True])
+def test_rejected_credential_raises_out_of_prove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, on_stderr: bool
+) -> None:
+    """An agent whose credential was rejected raises, whatever its exit code.
+
+    Covers both places a CLI reports the 401 -- the stdout stream (Claude Code) and
+    stderr alone (Vibe) -- and an exit code of 0, which ax-prover's launch script
+    returns even when every target failed to authenticate.
+    """
+    output = REJECTED_OUTPUT["vibe" if on_stderr else "claude_code"]
+
+    def _rejected_run_agent(
+        self: AgentProver,
+        workdir: Path,
+        harness: Harness,
+        stdout_path: Path,
+        session: object | None = None,
+        timeout_s: int | None = None,
+    ) -> tuple[list[str], str, bool]:
+        return ([] if on_stderr else [output], output if on_stderr else "", False)
+
+    monkeypatch.setattr(AgentProver, "_run_agent", _rejected_run_agent)
+    prover = AgentProver(backend=_ExitCodeBackend(0, image=DEFAULT_IMAGE))
+
+    with pytest.raises(MissingCredentials, match="rejected"):
+        prover.prove(ProofTask(LeanProject(FIXTURE)), tmp_path / "out")
+
+
+def test_rejected_credential_ignored_when_the_agent_edited_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_prover: object
+) -> None:
+    """A 401 the agent recovered from is not a credential failure: it wrote a proof."""
+
+    def _recovered_run_agent(
+        self: AgentProver,
+        workdir: Path,
+        harness: Harness,
+        stdout_path: Path,
+        session: object | None = None,
+        timeout_s: int | None = None,
+    ) -> tuple[list[str], str, bool]:
+        (workdir / "MILExample.lean").write_text(SOLVED_FILE)
+        return (
+            [REJECTED_OUTPUT["claude_code"], *STREAM.read_text().splitlines()],
+            "",
+            False,
+        )
+
+    monkeypatch.setattr(AgentProver, "_run_agent", _recovered_run_agent)
+
+    result, _ = _run_generate(make_prover(), tmp_path)
+    assert list(result.completed_files) == ["MILExample.lean"]
 
 
 def test_codex_missing_auth_file_raises_out_of_prove(tmp_path: Path) -> None:

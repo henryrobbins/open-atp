@@ -30,7 +30,9 @@ from open_atp.backends.base import (
 from open_atp.harness import (
     ClaudeCodeHarness,
     Harness,
+    MissingCredentials,
     compute_cost_usd,
+    is_auth_failure,
 )
 from open_atp.harness._catalog import resolve_skill
 from open_atp.lean import LeanProject, ProofTask
@@ -239,6 +241,7 @@ class AgentProver(AutomatedProver):
             # _download_logs relocates them out.
             self._fill_result(result, harness, wd, original, lines, timed_out=timed_out)
             self._download_logs(harness, wd, logs_dir, stderr)
+            self._check_auth(harness, result, lines, stderr)
             result.verification = self.verifier.verify(LeanProject(wd), session=session)
 
         # A generation killed at its deadline that still didn't verify is a timeout,
@@ -324,6 +327,36 @@ class AgentProver(AutomatedProver):
             "output_tokens": parsed.output_tokens,
             "stop_reason": stop_reason,
         }
+
+    def _check_auth(
+        self, harness: Harness, result: ProofResult, lines: list[str], stderr: str
+    ) -> None:
+        """Raise when an agent that changed nothing was rejected by its provider.
+
+        The agent's *output*, not its exit status, is what separates a rejected
+        credential from a genuine miss: ax-prover's launch script keeps going past a
+        failed target and exits 0 either way, and a CLI can report the 401 on stdout
+        (Claude Code, OpenCode), stderr (Vibe, Kimi), or both (Codex).
+
+        Only checked when the agent left every ``.lean`` file untouched: a run that
+        edited files authenticated fine, whatever a transient 401 mid-run may have
+        logged.
+        """
+        if result.completed_files:
+            return
+        evidence = next(
+            (ln for ln in (*lines, *stderr.splitlines()) if is_auth_failure(ln)), None
+        )
+        if evidence is None:
+            return
+        log.error(
+            "agent credential rejected",
+            extra={"harness": harness.name, "evidence": evidence.strip()[:500]},
+        )
+        raise MissingCredentials(
+            f"the {harness.name} agent's credential was rejected by its provider; "
+            "no proof was attempted (see the run's logs)"
+        )
 
     def _auth(self, harness: Harness) -> tuple[dict[str, str], list[tuple[str, str]]]:
         """Map the harness's resolved :class:`AgentAuth` onto backend env + mounts."""

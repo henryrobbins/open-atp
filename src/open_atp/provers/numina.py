@@ -267,6 +267,7 @@ class NuminaProver(AgentProver):
             # is current before pricing + diffing.
             self._download_wd(wd, session=session)
             self._finalize(result, wd, logs_dir, harness, loop, original)
+            self._check_auth(harness, result, loop["lines"], loop["stderr"])
             result.verification = self.verifier.verify(LeanProject(wd), session=session)
 
         # The round loop stopped because it ran out of wall-clock, not because it
@@ -369,6 +370,7 @@ class NuminaProver(AgentProver):
         no-ops on bind-mounted Docker).
         """
         stderrs: list[str] = []
+        all_lines: list[str] = []
         round_history: list[dict[str, Any]] = []
         total_cost = 0.0
         input_tokens = 0
@@ -407,6 +409,7 @@ class NuminaProver(AgentProver):
             round_lines, round_stderr, _ = self._run_agent(
                 workdir, harness, stdout_path, session=session, timeout_s=int(remaining)
             )
+            all_lines.extend(round_lines)
             if round_stderr:
                 stderrs.append(round_stderr)
             # Pull the round's edits to the host so the statement tracker (and the
@@ -477,6 +480,7 @@ class NuminaProver(AgentProver):
 
         return {
             "stderr": "\n".join(stderrs),
+            "lines": all_lines,
             "round_history": round_history,
             "rounds": len(round_history),
             "total_cost_usd": total_cost,

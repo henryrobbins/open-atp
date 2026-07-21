@@ -1,6 +1,6 @@
 """Agent harnesses: the *agent* concern composed by ``AgentProver``.
 
-Each harness adapts one agent CLI (Claude Code / Codex / OpenCode / Vibe /
+leEach harness adapts one agent CLI (Claude Code / Codex / OpenCode / Vibe /
 ax-prover) to the sandbox: launch script, credential forwarding, and token/cost
 parsing. The *compute* concern (where the command runs, with Lean+Mathlib) lives
 in the injected :class:`~open_atp.backends.base.ComputeBackend`.
@@ -14,6 +14,7 @@ from open_atp.harness.base import (
     Harness,
     HarnessRunResult,
     MissingCredentials,
+    is_auth_failure,
 )
 from open_atp.harness.claude_code import ClaudeCodeHarness
 from open_atp.harness.codex import CodexHarness
@@ -41,6 +42,7 @@ __all__ = [
     "HarnessRunResult",
     "AgentAuth",
     "MissingCredentials",
+    "is_auth_failure",
     "SCRIPT_FILE",
     "PROMPT_FILE",
     "ClaudeCodeHarness",

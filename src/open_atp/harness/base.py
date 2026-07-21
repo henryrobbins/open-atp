@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import urllib.request
 from abc import ABC, abstractmethod
@@ -37,6 +38,54 @@ log = logging.getLogger("open_atp")
 
 class MissingCredentials(Exception):
     """A credential a prover needs to run is absent."""
+
+
+#: What a rejected credential looks like in an agent CLI's output. Every CLI reports a
+#: 401 differently -- ``authentication_failed`` (Claude Code), ``Incorrect API key``
+#: (Codex), ``Authentication Fails`` (OpenCode/DeepSeek), ``Invalid API key`` (Vibe),
+#: ``invalid x-api-key`` (ax-prover/Anthropic), ``auth.login_required`` (Kimi) -- and
+#: the bare status code is too common a substring to match on alone.
+_AUTH_FAILURE = re.compile(
+    "|".join(
+        (
+            r"authentication[ _]?(?:failed|error|fails)",
+            r"(?:invalid|incorrect|expired|missing)[ _-]"
+            r"(?:api[ _-]?key|x-api-key|bearer token|credentials?|token)",
+            r"401 unauthorized",
+            r"login[ ._]?required",
+            r"requires login",
+        )
+    ),
+    re.IGNORECASE,
+)
+
+
+def is_auth_failure(output: str) -> bool:
+    """Whether an agent CLI's output shows its credential was rejected.
+
+    Distinguishes a run that never authenticated from one that ran and simply failed
+    to find a proof. Matches the phrasings the supported CLIs emit on a rejected or
+    absent credential, case-insensitively.
+
+    Parameters
+    ----------
+    output : str
+        Text from the agent run -- its stdout, its stderr, or both.
+
+    Returns
+    -------
+    bool
+        ``True`` if the text carries an authentication failure.
+
+    Examples
+    --------
+    >>> from open_atp.harness import is_auth_failure
+    >>> is_auth_failure('{"error":"authentication_failed","error_status":401}')
+    True
+    >>> is_auth_failure("error: unsolved goals")
+    False
+    """
+    return bool(_AUTH_FAILURE.search(output))
 
 
 #: API key env vars used by providers used in standard provers

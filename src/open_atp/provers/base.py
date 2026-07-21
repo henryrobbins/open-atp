@@ -265,8 +265,9 @@ class AutomatedProver(abc.ABC):
             If the project records a Mathlib revision that differs from the backend
             image's. Checked up front, before any run starts.
         ~open_atp.harness.MissingCredentials
-            If a credential the run needs is absent. Surfaced while the run is coming
-            up, so it raises rather than returning an empty result.
+            If a credential the run needs is absent, or if the agent's provider
+            rejected the one it was given. Either way no proof was attempted, so this
+            raises rather than returning an empty result.
         ~open_atp.backends.base.ProvisionError
             If the compute sandbox fails to come up (daemon down, image missing,
             capacity). Raised before generation, so the run never started.
