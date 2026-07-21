@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping
-from typing import cast
+from typing import TypeVar, cast
 
 from open_atp.backends import _BACKENDS
 from open_atp.backends.base import ComputeBackend
@@ -41,10 +41,12 @@ from open_atp.harness import _HARNESSES, Harness
 from open_atp.provers import _PROVERS
 from open_atp.provers.base import AutomatedProver
 
+_T = TypeVar("_T")
 
-def _split[T](
-    registry: Mapping[str, type[T]], spec: Mapping[str, object], kind: str
-) -> tuple[type[T], dict[str, object]]:
+
+def _split(
+    registry: Mapping[str, type[_T]], spec: Mapping[str, object], kind: str
+) -> tuple[type[_T], dict[str, object]]:
     """Resolve ``spec["type"]`` to a class and return ``(cls, kwargs)``.
 
     ``kwargs`` is ``spec`` minus ``type``; any key that is not a constructor parameter
