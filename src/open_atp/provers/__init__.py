@@ -7,6 +7,7 @@ from open_atp.provers.base import (
     GenerationTimeout,
     ProofResult,
     ProofStatus,
+    ProverError,
 )
 from open_atp.provers.numina import NuminaProver
 
@@ -27,4 +28,5 @@ __all__ = [
     "NuminaProver",
     "ProofResult",
     "ProofStatus",
+    "ProverError",
 ]

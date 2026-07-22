@@ -46,6 +46,8 @@ from open_atp.lean import LeanProject, ProofTask, create_project
 from open_atp.provers.base import (
     AutomatedProver,
     ProofResult,
+    ProverError,
+    _log_failure,
     _status_for_exception,
 )
 
@@ -64,8 +66,13 @@ def _errored_result(prover: str, output_dir: Path, exc: BaseException) -> ProofR
     )
 
 
-class RunCeilingExceeded(Exception):
-    """The run exceeded the maximum allowed duration and is in an unhealthy state."""
+class RunCeilingExceeded(ProverError):
+    """The run exceeded the maximum allowed duration and is in an unhealthy state.
+
+    Distinct from a prover spending its own generation budget: the ceiling only fires
+    once a run has blown past every timeout meant to bound it, so the run is wedged
+    rather than merely out of time.
+    """
 
 
 @dataclass(frozen=True)
@@ -234,15 +241,12 @@ def run_benchmark(
             try:
                 result = _prove_bounded(prover, task, run_dir, prover.max_duration_s)
             except Exception as exc:
-                # A missing credential already logged itself, naming the source and
-                # what to run for one. Re-reporting it here would repeat that once
-                # per task x prover pair, and its traceback -- identical every time,
-                # from a run that never started -- buries the line worth reading.
+                # A missing credential already logged itself; don't duplicate.
                 if not isinstance(exc, MissingCredentials):
-                    log.exception(
+                    _log_failure(
                         "run failed",
+                        exc,
                         extra={"task": task_name, "prover": prover_name},
-                        exc_info=exc,
                     )
                 # prover.prove() only raises exceptions that prevent the run from
                 # starting (e.g., missing credentials), so synthesize a minimal

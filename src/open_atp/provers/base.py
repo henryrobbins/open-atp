@@ -31,7 +31,12 @@ from pathlib import Path
 import structlog
 
 from open_atp.auth import AuthState, AuthStatus
-from open_atp.backends.base import ComputeBackend, ProvisionError
+from open_atp.backends.base import (
+    CommandTimeout,
+    ComputeBackend,
+    ComputeError,
+    ProvisionError,
+)
 from open_atp.harness.base import MissingCredentials
 from open_atp.lean import ProofTask
 from open_atp.verify import VerificationReport, Verifier
@@ -42,7 +47,11 @@ log = logging.getLogger("open_atp")
 _ADDITIONAL_INSTRUCTIONS = "\n\n# Additional instructions\n\n{user_prompt}"
 
 
-class GenerationTimeout(Exception):
+class ProverError(Exception):
+    """Parent Exception class for prover-side failure the run anticipates."""
+
+
+class GenerationTimeout(ProverError):
     """The proof generation consumed its wall-clock budget before finishing."""
 
 
@@ -64,6 +73,32 @@ def _status_for_exception(exc: BaseException) -> ProofStatus:
     return (
         ProofStatus.TIMEOUT if isinstance(exc, GenerationTimeout) else ProofStatus.ERROR
     )
+
+
+#: Failures a run anticipates: each has a self-describing message that documents
+# the raise site so the caller doesn't need a full stack to act on it.
+_EXPECTED_FAILURES = (ProverError, ComputeError, CommandTimeout)
+
+
+def _log_failure(
+    event: str, exc: BaseException, extra: dict[str, object] | None = None
+) -> None:
+    """Log a failed run at the severity of its status, with a stack only if unexpected.
+
+    The exception class and message are logged as fields rather than left to a
+    traceback, so a record carries its own reason at every level.
+    """
+    fields: dict[str, object] = {
+        "error": type(exc).__name__,
+        "error_msg": str(exc),
+        **(extra or {}),
+    }
+    if not isinstance(exc, _EXPECTED_FAILURES):
+        log.exception(event, extra=fields, exc_info=exc)
+    elif _status_for_exception(exc) is ProofStatus.TIMEOUT:
+        log.warning(event, extra=fields)
+    else:
+        log.error(event, extra=fields)
 
 
 def _compose_prompt(prover_prompt: str, user_prompt: str | None) -> str:
@@ -323,18 +358,16 @@ class AutomatedProver(abc.ABC):
                     ProofStatus.VERIFIED if result.success else ProofStatus.UNVERIFIED
                 )
             except MissingCredentials:
-                # The run never started, and the message names the credential and
-                # what to run for one, so a stack adds nothing to act on. The CLI
-                # reports it; a caller holding the exception has it either way.
+                # A missing credential already logged itself; don't duplicate.
                 raise
-            except ProvisionError:
+            except ProvisionError as exc:
                 # The run never started; no partial results to return.
-                log.exception("prove could not start")
+                _log_failure("prove could not start", exc)
                 raise
             except Exception as exc:
                 # All other exceptions are from a started run with partial results
                 # so we return a result with the error status instead of raising.
-                log.exception("prove failed")
+                _log_failure("prove failed", exc)
                 result.status = _status_for_exception(exc)
                 result.error = type(exc).__name__
                 result.error_msg = str(exc)

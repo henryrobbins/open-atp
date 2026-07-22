@@ -32,6 +32,7 @@ from open_atp.provers.base import (
     AutomatedProver,
     GenerationTimeout,
     ProofResult,
+    ProverError,
     _compose_prompt,
 )
 
@@ -43,7 +44,7 @@ log = logging.getLogger("open_atp")
 _T = TypeVar("_T")
 
 
-class ServiceError(Exception):
+class ServiceError(ProverError):
     """The hosted Aristotle service produced no candidate to verify."""
 
 

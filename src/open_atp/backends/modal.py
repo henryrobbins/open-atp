@@ -699,7 +699,6 @@ class ModalBackend(ComputeBackend):
                     f"warm build (lake build) exited {warm_exit}; sandbox cache broken"
                 )
         except BaseException:
-            log.error("modal sandbox provisioning failed", exc_info=True)
             _terminate(sb)
             raise
         log.debug(
