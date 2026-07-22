@@ -418,9 +418,12 @@ def test_prove_rejects_an_unreadable_credential(
     monkeypatch.setattr(prover, "auth_status", boom)
     output = tmp_path / "run"
 
-    with pytest.raises(MissingCredentials, match="failed to read credential"):
+    # The underlying failure rides along: it is the only account of why the
+    # credential was unreadable, and nothing else reports it.
+    with pytest.raises(MissingCredentials, match="registry unreachable") as e:
         prover.prove(_task(), output)
 
+    assert isinstance(e.value.__cause__, OSError)
     assert not output.exists()
 
 

@@ -392,8 +392,11 @@ class AutomatedProver(abc.ABC):
         """Reject an unusable credential, and warn about one that expires mid-run."""
         try:
             status = self.auth_status()
-        except Exception:
-            raise MissingCredentials("failed to read credential for prover")
+        except Exception as exc:
+            log.error("missing credential", extra={"error": str(exc)})
+            raise MissingCredentials(
+                f"failed to read credential for prover: {exc}"
+            ) from exc
 
         state = status.state()
         if state is AuthState.OK:
