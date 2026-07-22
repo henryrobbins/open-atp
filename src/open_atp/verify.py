@@ -372,8 +372,10 @@ class Verifier:
         What is compiled is the file with the axiom probe appended, so one elaboration
         yields both the compile verdict and the axiom report. The probe is a suffix, so
         diagnostics keep the candidate's line numbers; ``sed`` restores its name. A
-        file whose imports can't support the probe fails to compile, and so fails the
-        verification -- an axiom check that cannot run must not read as a clean pass.
+        newline separates the two, so a candidate with no trailing newline doesn't run
+        its last line into the probe's first one. A file whose imports can't support
+        the probe fails to compile, and so fails the verification -- an axiom check
+        that cannot run must not read as a clean pass.
         """
         lines = [
             "fail=0",
@@ -384,7 +386,7 @@ class Verifier:
         for f in rel:
             lines += [
                 f'echo "=== FILE {f} ==="',
-                f'cat "{f}" {_PROBE} > {_PROBED}',
+                f'{{ cat "{f}"; echo; cat {_PROBE}; }} > {_PROBED}',
                 f'lake env lean {_PROBED} 2>&1 | sed "s|^{_PROBED}|{f}|"',
                 "rc=${PIPESTATUS[0]}",
                 'echo "=== EXIT $rc ==="',

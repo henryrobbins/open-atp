@@ -78,6 +78,24 @@ def test_foreign_axiom_is_not_verified(tmp_path: Path) -> None:
     assert not report.verified
 
 
+def test_file_without_trailing_newline_is_verified(tmp_path: Path) -> None:
+    """The axiom probe is appended, so the candidate's last line must stay its own.
+
+    The file ends on an identifier (``end MILExample``) with no newline: glued to the
+    probe's leading ``open``, that would tokenize as one name and fail to parse.
+    """
+    proj = _stage(tmp_path)
+    (proj / "MILExample.lean").write_text(
+        "import Mathlib\n\nnamespace MILExample\n\n" + SOLVED_PROOF + "\nend MILExample"
+    )
+
+    report = docker_verifier().verify(LeanProject(proj))
+
+    assert report.compiles, report.compile_log
+    assert report.verified
+    assert set(report.axioms) == STANDARD_AXIOMS
+
+
 # --- session primitive ------------------------------------------------------
 
 
