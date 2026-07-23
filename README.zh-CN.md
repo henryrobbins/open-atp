@@ -2,7 +2,7 @@
   <img src="docs/_static/logo_light.svg" alt="OpenATP" width="360">
 </p>
 
-[简体中文](README.zh-CN.md) | [日本語](README.ja.md)
+[English](README.md) | [日本語](README.ja.md)
 
 [![PyPI](https://img.shields.io/pypi/v/open-atp.svg)](https://pypi.org/project/open-atp/)
 [![Docs](https://readthedocs.org/projects/open-atp/badge/?version=latest)](https://open-atp.readthedocs.io/en/latest/)
@@ -12,40 +12,39 @@
 [![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-**OpenATP** is an open-source Python package providing a common interface for **Automated Theorem Proving (ATP)**. OpenATP focuses on recent **agentic ATP methods** that prove formal statements in [Lean](https://lean-lang.org/). Each method runs in an isolated sandbox, either locally with Docker or remotely with [Modal](https://modal.com/). OpenATP also provides benchmarking utilities to run methods on **common datasets**.
+**OpenATP** 是一个开源 Python 包，为**自动定理证明（Automated Theorem Proving，ATP）**提供统一接口。OpenATP 专注于近期的**智能体式 ATP 方法**，这些方法用于证明 [Lean](https://lean-lang.org/) 中的形式化命题。每种方法都在隔离的沙箱中运行：可以通过 Docker 在本地运行，也可以通过 [Modal](https://modal.com/) 远程运行。OpenATP 还提供基准测试工具，用于在**常用数据集**上运行这些方法。
 
 <div align="center">
   <img src="banner/banner.png" alt="OpenATP banner" width="80%">
 </div>
 
-## Installation
+## 安装
 
 ```bash
 pip install open-atp
 ```
 
-`OpenATP` runs each prover (e.g., Claude Code, Codex, OpenCode) in a
-Docker container. The image must be built before running any prover:
+`OpenATP` 会在 Docker 容器中运行每个证明器（例如 Claude Code、Codex、OpenCode）。运行任何证明器之前，必须先构建镜像：
 
 ```bash
 open-atp build-docker-image
 ```
 
-Each prover has its own authentication requirements. See each [prover](https://open-atp.readthedocs.io/en/latest/provers/index.html) page for its authentication instructions, and check what the host currently has with:
+每个证明器都有各自的身份验证要求。请参阅相应的[证明器](https://open-atp.readthedocs.io/en/latest/provers/index.html)页面了解身份验证说明，并使用以下命令检查主机当前的身份验证状态：
 
 ```bash
 open-atp auth-status
 ```
 
-## Quickstart
+## 快速开始
 
-Complete the `sorry`s in a lake project (or a `.lean` file) from the CLI:
+通过 CLI 补全 lake 项目（或 `.lean` 文件）中的 `sorry`：
 
 ```bash
 open-atp prove path/to/project runs/example claude
 ```
 
-Or programmatically, here on a simple example theorem:
+也可以通过编程方式完成。下面是一个简单的示例定理：
 
 ```python
 from open_atp import standard_prover
@@ -58,12 +57,12 @@ task = example_task(EXAMPLE.MUL_REORDER)
 result = prover.prove(task, output_dir="runs/example")
 ```
 
-## Available provers
+## 可用的证明器
 
-The `ID` is the standard prover name used by `standard_prover`, the CLI `prove` command's `prover` argument, and the `benchmark` command's `-p/--provers` option. Also see [Provers](https://open-atp.readthedocs.io/en/latest/provers/index.html).
+`ID` 是标准证明器名称，供 `standard_prover`、CLI `prove` 命令的 `prover` 参数以及 `benchmark` 命令的 `-p/--provers` 选项使用。另请参阅[证明器](https://open-atp.readthedocs.io/en/latest/provers/index.html)。
 
 <!-- BEGIN PROVER TABLE (generated from docs/provers.yaml) -->
-| Prover | ID | Skills | MCP | Paper | Source |
+| 证明器 | ID | 技能 | MCP | 论文 | 源代码 |
 | --- | --- | --- | --- | --- | --- |
 | [Claude Code](docs/provers/claude_code.md) | `claude` | [leanprover](https://github.com/leanprover/skills), [lean4](https://github.com/cameronfreer/lean4-skills) | ✓ | — | — |
 | [Codex](docs/provers/codex.md) | `codex` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/openai/codex) |
@@ -76,21 +75,21 @@ The `ID` is the standard prover name used by `standard_prover`, the CLI `prove` 
 | [Aristotle](docs/provers/aristotle.md) | `aristotle` | — | — | [Achim et al. 2025](https://arxiv.org/abs/2510.01346) | — |
 <!-- END PROVER TABLE -->
 
-## Download common datasets
+## 下载常用数据集
 
-OpenATP provides utilities to download common proof-synthesis benchmarks (see [Downloading a dataset](https://open-atp.readthedocs.io/en/latest/guides/benchmark.html#downloading-a-dataset)). The available datasets are listed in the `DATASET` enum.
+OpenATP 提供用于下载常用证明合成基准测试数据集的工具（请参阅[下载数据集](https://open-atp.readthedocs.io/en/latest/guides/benchmark.html#downloading-a-dataset)）。可用的数据集列在 `DATASET` 枚举中。
 
-| Benchmark | `DATASET` | Toolchain | Paper | Source |
+| 基准测试 | `DATASET` | 工具链 | 论文 | 来源 |
 | --- | --- | --- | --- | --- |
-| Examples | `EXAMPLES` | `v4.28.0` | — | [docs](https://open-atp.readthedocs.io/en/latest/examples.html) |
+| 示例 | `EXAMPLES` | `v4.28.0` | — | [文档](https://open-atp.readthedocs.io/en/latest/examples.html) |
 | PutnamBench | `PUTNAM` | `v4.27.0` | [Tsoukalas et al. 2024](https://arxiv.org/abs/2407.11214) | [trishullab/PutnamBench](https://github.com/trishullab/PutnamBench) |
 | FATE-H | `FATE_H` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-H](https://github.com/frenzymath/FATE-H) |
 | FATE-M | `FATE_M` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-M](https://github.com/frenzymath/FATE-M) |
 | FATE-X | `FATE_X` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-X](https://github.com/frenzymath/FATE-X) |
 
-## Citing
+## 引用
 
-If you use `OpenATP` in your work, please cite it:
+如果你在工作中使用了 `OpenATP`，请按以下方式引用：
 
 ```bibtex
 @software{openatp,
@@ -102,12 +101,12 @@ If you use `OpenATP` in your work, please cite it:
 }
 ```
 
-OpenATP includes provers with associated papers and bundles popular open-source tools for improving agentic theorem proving. Please see [Citations](https://open-atp.readthedocs.io/en/latest/citations.html) for a comprehensive list of references.
+OpenATP 包含带有相关论文的证明器，并集成了用于改进智能体式定理证明的常用开源工具。完整参考文献列表请参阅[引用](https://open-atp.readthedocs.io/en/latest/citations.html)。
 
-## Development
+## 开发
 
-See `AGENTS.md` for development information.
+开发信息请参阅 `AGENTS.md`。
 
-## License
+## 许可证
 
 [MIT](LICENSE)

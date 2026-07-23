@@ -2,7 +2,7 @@
   <img src="docs/_static/logo_light.svg" alt="OpenATP" width="360">
 </p>
 
-[简体中文](README.zh-CN.md) | [日本語](README.ja.md)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
 [![PyPI](https://img.shields.io/pypi/v/open-atp.svg)](https://pypi.org/project/open-atp/)
 [![Docs](https://readthedocs.org/projects/open-atp/badge/?version=latest)](https://open-atp.readthedocs.io/en/latest/)
@@ -12,40 +12,39 @@
 [![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-**OpenATP** is an open-source Python package providing a common interface for **Automated Theorem Proving (ATP)**. OpenATP focuses on recent **agentic ATP methods** that prove formal statements in [Lean](https://lean-lang.org/). Each method runs in an isolated sandbox, either locally with Docker or remotely with [Modal](https://modal.com/). OpenATP also provides benchmarking utilities to run methods on **common datasets**.
+**OpenATP** は、**自動定理証明（Automated Theorem Proving、ATP）**のための共通インターフェースを提供するオープンソースの Python パッケージです。OpenATP は、[Lean](https://lean-lang.org/) の形式的な命題を証明する近年の**エージェント型 ATP 手法**に重点を置いています。各手法は隔離されたサンドボックス内で実行され、Docker を使ってローカルで動かすことも、[Modal](https://modal.com/) を使ってリモートで動かすこともできます。また OpenATP は、**一般的なデータセット**上で手法を実行するためのベンチマークツールも提供します。
 
 <div align="center">
   <img src="banner/banner.png" alt="OpenATP banner" width="80%">
 </div>
 
-## Installation
+## インストール
 
 ```bash
 pip install open-atp
 ```
 
-`OpenATP` runs each prover (e.g., Claude Code, Codex, OpenCode) in a
-Docker container. The image must be built before running any prover:
+`OpenATP` は各証明器（Claude Code、Codex、OpenCode など）を Docker コンテナ内で実行します。証明器を実行する前にイメージをビルドする必要があります。
 
 ```bash
 open-atp build-docker-image
 ```
 
-Each prover has its own authentication requirements. See each [prover](https://open-atp.readthedocs.io/en/latest/provers/index.html) page for its authentication instructions, and check what the host currently has with:
+証明器ごとに認証要件が異なります。認証方法については各[証明器](https://open-atp.readthedocs.io/en/latest/provers/index.html)のページを参照し、ホストの現在の認証状態は次のコマンドで確認してください。
 
 ```bash
 open-atp auth-status
 ```
 
-## Quickstart
+## クイックスタート
 
-Complete the `sorry`s in a lake project (or a `.lean` file) from the CLI:
+CLI から lake プロジェクト（または `.lean` ファイル）内の `sorry` を補完します。
 
 ```bash
 open-atp prove path/to/project runs/example claude
 ```
 
-Or programmatically, here on a simple example theorem:
+プログラムから実行することもできます。以下は単純な定理の例です。
 
 ```python
 from open_atp import standard_prover
@@ -58,12 +57,12 @@ task = example_task(EXAMPLE.MUL_REORDER)
 result = prover.prove(task, output_dir="runs/example")
 ```
 
-## Available provers
+## 利用可能な証明器
 
-The `ID` is the standard prover name used by `standard_prover`, the CLI `prove` command's `prover` argument, and the `benchmark` command's `-p/--provers` option. Also see [Provers](https://open-atp.readthedocs.io/en/latest/provers/index.html).
+`ID` は、`standard_prover`、CLI の `prove` コマンドの `prover` 引数、および `benchmark` コマンドの `-p/--provers` オプションで使用する標準的な証明器名です。[証明器](https://open-atp.readthedocs.io/en/latest/provers/index.html)も参照してください。
 
 <!-- BEGIN PROVER TABLE (generated from docs/provers.yaml) -->
-| Prover | ID | Skills | MCP | Paper | Source |
+| 証明器 | ID | スキル | MCP | 論文 | ソース |
 | --- | --- | --- | --- | --- | --- |
 | [Claude Code](docs/provers/claude_code.md) | `claude` | [leanprover](https://github.com/leanprover/skills), [lean4](https://github.com/cameronfreer/lean4-skills) | ✓ | — | — |
 | [Codex](docs/provers/codex.md) | `codex` | [leanprover](https://github.com/leanprover/skills) | ✓ | — | [GitHub](https://github.com/openai/codex) |
@@ -76,21 +75,21 @@ The `ID` is the standard prover name used by `standard_prover`, the CLI `prove` 
 | [Aristotle](docs/provers/aristotle.md) | `aristotle` | — | — | [Achim et al. 2025](https://arxiv.org/abs/2510.01346) | — |
 <!-- END PROVER TABLE -->
 
-## Download common datasets
+## 一般的なデータセットのダウンロード
 
-OpenATP provides utilities to download common proof-synthesis benchmarks (see [Downloading a dataset](https://open-atp.readthedocs.io/en/latest/guides/benchmark.html#downloading-a-dataset)). The available datasets are listed in the `DATASET` enum.
+OpenATP は、一般的な証明合成ベンチマークをダウンロードするためのツールを提供します（[データセットのダウンロード](https://open-atp.readthedocs.io/en/latest/guides/benchmark.html#downloading-a-dataset)を参照）。利用可能なデータセットは `DATASET` 列挙型に定義されています。
 
-| Benchmark | `DATASET` | Toolchain | Paper | Source |
+| ベンチマーク | `DATASET` | ツールチェーン | 論文 | ソース |
 | --- | --- | --- | --- | --- |
-| Examples | `EXAMPLES` | `v4.28.0` | — | [docs](https://open-atp.readthedocs.io/en/latest/examples.html) |
+| 例 | `EXAMPLES` | `v4.28.0` | — | [ドキュメント](https://open-atp.readthedocs.io/en/latest/examples.html) |
 | PutnamBench | `PUTNAM` | `v4.27.0` | [Tsoukalas et al. 2024](https://arxiv.org/abs/2407.11214) | [trishullab/PutnamBench](https://github.com/trishullab/PutnamBench) |
 | FATE-H | `FATE_H` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-H](https://github.com/frenzymath/FATE-H) |
 | FATE-M | `FATE_M` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-M](https://github.com/frenzymath/FATE-M) |
 | FATE-X | `FATE_X` | `v4.28.0` | [Jiang et al. 2025](https://arxiv.org/abs/2511.02872) | [frenzymath/FATE-X](https://github.com/frenzymath/FATE-X) |
 
-## Citing
+## 引用
 
-If you use `OpenATP` in your work, please cite it:
+研究や開発で `OpenATP` を使用する場合は、次のように引用してください。
 
 ```bibtex
 @software{openatp,
@@ -102,12 +101,12 @@ If you use `OpenATP` in your work, please cite it:
 }
 ```
 
-OpenATP includes provers with associated papers and bundles popular open-source tools for improving agentic theorem proving. Please see [Citations](https://open-atp.readthedocs.io/en/latest/citations.html) for a comprehensive list of references.
+OpenATP には関連論文のある証明器が含まれており、エージェント型定理証明を改善するための一般的なオープンソースツールも同梱されています。参考文献の完全な一覧については、[引用](https://open-atp.readthedocs.io/en/latest/citations.html)を参照してください。
 
-## Development
+## 開発
 
-See `AGENTS.md` for development information.
+開発情報については `AGENTS.md` を参照してください。
 
-## License
+## ライセンス
 
 [MIT](LICENSE)
