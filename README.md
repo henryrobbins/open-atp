@@ -2,6 +2,8 @@
   <img src="docs/_static/logo_light.svg" alt="OpenATP" width="360">
 </p>
 
+[简体中文](README.zh-CN.md) | [日本語](README.ja.md)
+
 [![PyPI](https://img.shields.io/pypi/v/open-atp.svg)](https://pypi.org/project/open-atp/)
 [![Docs](https://readthedocs.org/projects/open-atp/badge/?version=latest)](https://open-atp.readthedocs.io/en/latest/)
 [![CI](https://github.com/henryrobbins/open-atp/actions/workflows/ci-python.yml/badge.svg)](https://github.com/henryrobbins/open-atp/actions/workflows/ci-python.yml)
