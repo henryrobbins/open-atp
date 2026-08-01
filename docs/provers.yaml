@@ -62,7 +62,7 @@ provers:
     id:   spark
     skills: [leanprover]
     mcp: true
-    company: { label: Meta, url: https://www.meta.ai }
+    company: { label: Meta, url: https://ai.meta.com }
     paper: null
     cite: null
     source: null

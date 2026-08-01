@@ -4,7 +4,7 @@
 :parser: myst
 ```
 
-Use Meta's [Muse Spark](https://dev.meta.ai/) as an automated theorem prover. This prover runs on the OpenCode harness pinned to `muse-spark-1.1`. See {doc}`/provers/opencode` for harness details.
+Use Meta's [Muse Spark](https://ai.meta.com/blog/introducing-muse-spark-meta-model-api/) as an automated theorem prover. This prover runs on the OpenCode harness pinned to `muse-spark-1.1`. See {doc}`/provers/opencode` for harness details.
 
 ## Authentication
 
