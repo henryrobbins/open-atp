@@ -137,6 +137,12 @@ PROVER_SPECS = [
         id="agent-grok",
     ),
     pytest.param(
+        "spark",
+        _need_env("META_MODEL_API_KEY"),
+        marks=pytest.mark.agent_api,
+        id="agent-spark",
+    ),
+    pytest.param(
         "axproverbase",
         _need_env("ANTHROPIC_API_KEY"),
         marks=pytest.mark.agent_api,

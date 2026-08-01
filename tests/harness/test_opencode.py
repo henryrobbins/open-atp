@@ -30,6 +30,15 @@ def test_provider_stored() -> None:
     assert harness.provider == "fireworks"
 
 
+def test_meta_config_preserves_reasoning_across_turns(tmp_path: Path) -> None:
+    harness = OpenCodeHarness(provider="meta", model="muse-spark-1.1", effort="xhigh")
+    harness.stage_wd(tmp_path)
+    config = json.loads((tmp_path / "opencode.json").read_text())
+    options = config["provider"]["meta"]["models"]["muse-spark-1.1"]["options"]
+    assert options["reasoningEffort"] == "xhigh"
+    assert options["include"] == ["reasoning.encrypted_content"]
+
+
 def test_invalid_auth_rejected() -> None:
     with pytest.raises(ValueError, match="unknown auth"):
         OpenCodeHarness(provider="deepseek", auth="oauth")

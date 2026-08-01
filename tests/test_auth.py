@@ -33,6 +33,7 @@ SOURCES = {
     "codex": ".codex/auth.json",
     "deepseek": "DEEPSEEK_API_KEY",
     "grok": "opencode/auth.json",
+    "spark": "META_MODEL_API_KEY",
     "leanstral": "MISTRAL_API_KEY",
     "axproverbase": "ANTHROPIC_API_KEY",
     "kimi": ".kimi-code/credentials",

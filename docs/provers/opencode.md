@@ -12,6 +12,7 @@ We recommend {doc}`/provers/claude_code` and {doc}`/provers/codex` prover over u
 
 deepseek
 grok
+spark
 ```
 
 (opencode-authentication)=

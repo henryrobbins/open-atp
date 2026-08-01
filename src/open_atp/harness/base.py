@@ -75,7 +75,7 @@ def _is_auth_failure(output: str) -> bool:
 
 
 #: API key env vars used by providers used in standard provers
-_PROVIDER_ENV = {"deepseek": "DEEPSEEK_API_KEY"}
+_PROVIDER_ENV = {"deepseek": "DEEPSEEK_API_KEY", "meta": "META_MODEL_API_KEY"}
 
 #: The registry opencode reads provider `env` arrays from to auto-detect keys.
 _MODELS_DEV_URL = "https://models.dev/api.json"
