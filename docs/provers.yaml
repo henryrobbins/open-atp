@@ -57,6 +57,16 @@ provers:
     cite: null
     source: null
 
+  - name: Muse Spark
+    page: spark
+    id:   spark
+    skills: [leanprover]
+    mcp: true
+    company: { label: Meta, url: https://www.meta.ai }
+    paper: null
+    cite: null
+    source: null
+
   - name: AxProverBase
     page: axproverbase
     id:   axproverbase

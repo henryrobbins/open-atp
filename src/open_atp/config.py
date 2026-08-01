@@ -130,6 +130,15 @@ STANDARD_PROVERS: dict[str, dict[str, object]] = {
             "auth": "login",
         },
     },
+    "spark": {
+        "type": "agent",
+        "harness": {
+            "type": "opencode",
+            "model": "muse-spark-1.1",
+            "provider": "meta",
+            "auth": "api_key",
+        },
+    },
     "leanstral": {"type": "agent", "harness": {"type": "vibe"}},
     "axproverbase": {"type": "agent", "harness": {"type": "axproverbase"}},
     "kimi": {"type": "agent", "harness": {"type": "kimi"}},

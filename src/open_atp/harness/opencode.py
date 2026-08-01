@@ -106,6 +106,15 @@ class OpenCodeHarness(Harness):
                 "thinking": {"type": "adaptive"},
                 "output_config": {"effort": self.effort},
             }
+        elif self.provider == "meta":
+            # Meta's models are served through the Responses API adapter, which drops
+            # reasoning between turns unless the encrypted trace is echoed back.
+            # https://dev.meta.ai/docs/coding-agents
+            options = {
+                "reasoningEffort": self.effort,
+                "reasoningSummary": "auto",
+                "include": ["reasoning.encrypted_content"],
+            }
         else:
             options = {"reasoningEffort": self.effort}
         return {

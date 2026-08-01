@@ -152,6 +152,12 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
     assert grok.harness.auth == "login"
     assert grok.harness.model == "grok-4.5"
 
+    spark = build("spark")
+    assert isinstance(spark.harness, OpenCodeHarness)
+    assert spark.harness.provider == "meta"
+    assert spark.harness.auth == "api_key"
+    assert spark.harness.model == "muse-spark-1.1"
+
     numina = build("numina")
     assert isinstance(numina, NuminaProver)
 
