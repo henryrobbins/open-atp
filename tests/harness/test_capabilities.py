@@ -1,11 +1,12 @@
 """End-to-end capability probes: does each agent CLI have what it needs?
 
 Ported from milp_flare's ``test_docker.py`` harness suite. Each test drives a real
-agent (``claude_code`` / ``codex`` / ``opencode`` / ``vibe`` / ``kimi``) through a
-real compute backend (``docker`` / ``modal``) with a "make exactly one tool call then
-stop" prompt, then inspects the streamed JSON event stream to confirm the capability
-actually works inside the sandbox -- not merely that the harness *configured* it
-(that is covered by the no-creds unit tests in ``test_agent_prover.py``).
+agent (``claude_code`` / ``codex`` / ``opencode`` / ``vibe`` / ``kimi`` / ``muse``)
+through a real compute backend (``docker`` / ``modal``) with a "make exactly one
+tool call then stop" prompt, then inspects the streamed JSON event stream to
+confirm the capability actually works inside the sandbox -- not merely that the
+harness *configured* it (that is covered by the no-creds unit tests in
+``test_agent_prover.py``).
 
 The four capabilities the :class:`AgentProver` design depends on:
 
@@ -17,10 +18,10 @@ The four capabilities the :class:`AgentProver` design depends on:
 * **edit sync-back** -- a file the agent writes lands on the *host* workdir after
   the run completes (Docker bind-mounts it live; Modal pulls it on completion).
 
-All four harnesses, ``vibe`` included, mount the ``probe-skill`` fixture (a no-op
-skill, in place of the default bundle's skills) and run every probe; vibe stages
+Every harness, ``vibe`` included, mounts the ``probe-skill`` fixture (a no-op
+skill, in place of the default bundle's skills) and runs every probe; vibe stages
 it under ``VIBE_HOME/skills`` (its trust-independent user skills dir) rather than
-the project ``.agents/skills`` the others use.
+the project ``.agents/skills`` that muse, codex and opencode use.
 
 Every test is marked ``agent_api`` (billable, needs agent creds) and excluded by
 default via ``addopts``; the backend dimension carries the ``docker`` / ``modal``
@@ -35,6 +36,7 @@ Prerequisites:
   - vibe: ``MISTRAL_API_KEY`` in env, with Labs access to the builtin ``lean``
     agent (pins Leanstral 1.5)
   - kimi: ``~/.kimi-code`` (or ``$KIMI_CODE_HOME``) from ``kimi login``
+  - muse: ``META_MODEL_API_KEY`` in env (tests use the discounted contributor tier)
   - docker backend: docker on PATH + the ``open-atp:latest`` image
   - modal backend: ``MODAL_TOKEN_*`` env or ``~/.modal.toml`` + the published image
 """
@@ -92,7 +94,7 @@ Rules:
 - Do not summarize. Make the one call, then stop.
 """
 
-HARNESS_NAMES = ["claude_code", "codex", "opencode", "vibe", "kimi"]
+HARNESS_NAMES = ["claude_code", "codex", "opencode", "vibe", "kimi", "muse"]
 
 #: Cheap models per agent to keep the (billable) integration run inexpensive.
 _MODELS = {
@@ -109,6 +111,9 @@ _MODELS = {
     # Kimi bills a flat subscription rate (no per-token USD), so the model choice
     # is about capability, not cost; the default coding model.
     "kimi": "kimi-code/kimi-for-coding",
+    # The contributor tier is ~12x cheaper than standard Muse Spark, which is what
+    # these throwaway probe prompts want; nothing proprietary is sent.
+    "muse": "muse-spark-1.2-contributor",
 }
 
 # Backend dimension: each value carries its own opt-out marker so a run can pick
@@ -136,6 +141,8 @@ def _agent_available(harness: str) -> bool:
         # File-stored OAuth from `kimi login`; the harness stages it into the sandbox.
         home = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
         return (home / "credentials").is_dir()
+    if harness == "muse":
+        return bool(os.environ.get("META_MODEL_API_KEY"))
     return False
 
 
@@ -500,6 +507,75 @@ def _kimi_classify(
     return "missing", "no tool result for id"
 
 
+def _muse_tool_payload(chunks: list[str]) -> dict:
+    """Normalise a muse tool task's output chunks into a dict for the matcher.
+
+    Muse streams a tool's result as one or more ``output`` chunks. The bash tool's
+    is a JSON object (``command`` / ``exit_code`` / ``output``); every other tool's
+    is free text, which is wrapped so matchers can read it uniformly.
+    """
+    text = "".join(chunks)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {"output": text}
+    return payload if isinstance(payload, dict) else {"output": text}
+
+
+def _muse_classify(
+    events: list[dict],
+    tool_name: str,
+    matches: Callable[[dict], bool] = lambda _: True,
+) -> tuple[str, str]:
+    """Classify muse JSONL events (tool calls modelled as lifecycle *tasks*).
+
+    Muse has no assistant/tool message pair. Every tool call is a task: a
+    ``task.lifecycle.proposed`` names it as ``tool.<name>`` (MCP tools keep the
+    ``mcp__<server>__<tool>`` form), ``task.lifecycle.output`` chunks carry the
+    result, and a terminal ``completed``/``failed``/``rejected`` says how it ended.
+    Success is a matching task that completed, with a zero bash exit code.
+    """
+    outputs: dict[str, list[str]] = {}
+    terminals: dict[str, str] = {}
+    candidates: list[str] = []
+    for ev in events:
+        if not str(ev.get("payload_type", "")).startswith("task.lifecycle."):
+            continue
+        event = (ev.get("payload") or {}).get("event") or {}
+        task_id, kind = event.get("task_id"), event.get("kind")
+        if not isinstance(task_id, str):
+            continue
+        if kind == "proposed" and event.get("task_kind") == f"tool.{tool_name}":
+            candidates.append(task_id)
+        elif kind == "output":
+            outputs.setdefault(task_id, []).append(str(event.get("chunk") or ""))
+        elif kind in ("completed", "failed", "rejected"):
+            terminals[task_id] = kind
+
+    if not candidates:
+        return "missing", f"no tool task for `{tool_name}`"
+    for task_id in candidates:
+        payload = _muse_tool_payload(outputs.get(task_id, []))
+        if not matches(payload):
+            continue
+        exit_code = payload.get("exit_code")
+        if isinstance(exit_code, int) and exit_code != 0:
+            return "error", f"exit_code={exit_code}"
+        # Muse's managed bash hands a slow command to the background and returns
+        # `background_running` straight away, so the task carries no terminal event
+        # within a probe that stops after the one call. The process was accepted and
+        # started in the sandbox -- which is the shell capability under test -- but
+        # its exit status is genuinely unknown here, so this probe cannot vouch for
+        # it the way the synchronous harnesses' can.
+        if payload.get("execution_state") == "background_running":
+            return "success", "tool task started (managed bash backgrounded it)"
+        terminal = terminals.get(task_id)
+        if terminal != "completed":
+            return "error", f"task terminal={terminal!r}"
+        return "success", "tool task completed"
+    return "missing", f"no matching `{tool_name}` task output"
+
+
 def _codex_skill_classify(
     events: list[dict],
     _tool: str | None,
@@ -573,6 +649,14 @@ def _bash_check(harness: str, command: str):
             "Bash",
             lambda inp: command in (inp.get("command") or ""),
         )
+    if harness == "muse":
+        # Muse's bash result is a JSON chunk echoing the `command` it ran.
+        return (
+            f"Use the bash tool to run exactly: `{command}`.",
+            _muse_classify,
+            "bash",
+            lambda out: command in str(out.get("command") or ""),
+        )
     raise AssertionError(harness)
 
 
@@ -613,6 +697,18 @@ def _skill_check(harness: str, skill_name: str):
             "Skill",
             lambda inp: skill_name in str(inp.get("skill") or inp.get("name") or inp),
         )
+    if harness == "muse":
+        # Muse loads a skill with `read_skill`, whose result is a
+        # `<read-skill-result name="..." status="ok">` document rather than JSON.
+        return (
+            f"Use the read_skill tool to load the `{skill_name}` skill.",
+            _muse_classify,
+            "read_skill",
+            lambda out: (
+                f'name="{skill_name}"' in str(out.get("output") or "")
+                and 'status="ok"' in str(out.get("output") or "")
+            ),
+        )
     raise AssertionError(harness)
 
 
@@ -652,6 +748,17 @@ def _lean_lsp_check(harness: str, file_rel: str):
         # Kimi qualifies MCP tools as `mcp__<server>__<tool>` (the Claude form), so
         # the shared `mcp__lean-lsp__*` prompt and tool name apply unchanged.
         return prompt, _kimi_classify, tool, lambda _: True
+    if harness == "muse":
+        # Muse qualifies MCP tools as `mcp__<server>__<tool>` like Claude, but
+        # sanitizes the server id first, so the `lean-lsp` server the harness
+        # configures is exposed as `lean_lsp`. The prompt keeps the hyphenated
+        # name (as the shared prover prompt does) -- the agent resolves it.
+        return (
+            prompt,
+            _muse_classify,
+            "mcp__lean_lsp__lean_diagnostic_messages",
+            lambda _: True,
+        )
     raise AssertionError(harness)
 
 

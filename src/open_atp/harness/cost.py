@@ -75,6 +75,12 @@ COST_PER_MTOK: dict[str, ModelPrice] = {
     "kimi-code/kimi-for-coding": ModelPrice(0.95, 4.0, 0.19),
     "kimi-code/kimi-for-coding-highspeed": ModelPrice(1.90, 8.0, 0.38),
     "kimi-code/k3": ModelPrice(3.0, 15.0, 0.30),
+    # Meta Muse Spark (https://dev.meta.ai/docs/pricing-rate-limits.md). The
+    # contributor tier is heavily discounted in exchange for Meta training future
+    # models on the run's prompts and completions.
+    "muse-spark-1.2": ModelPrice(1.25, 4.25, 0.15),
+    "muse-spark-1.1": ModelPrice(1.25, 4.25, 0.15),
+    "muse-spark-1.2-contributor": ModelPrice(0.10, 0.20, 0.002),
 }
 
 

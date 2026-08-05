@@ -219,7 +219,7 @@ copy, so a token it refreshes there dies with the container.
 - `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` — `axproverbase` (raw provider key matching
   the configured `model`); `TAVILY_API_KEY` optional (ax-prover web search)
 - `DEEPSEEK_API_KEY` — the `deepseek` prover (opencode harness, `auth="api_key"`)
-- `META_MODEL_API_KEY` — the `spark` prover (opencode harness, `auth="api_key"`)
+- `META_MODEL_API_KEY` — the `muse` prover (muse harness; forwarded as `META_API_KEY`)
 - `opencode auth login` -> xAI (writes an `xai` entry to opencode's `auth.json`) —
   the `grok` prover (opencode harness, `auth="login"`); that entry is mounted into the
   sandbox (no API key), so runs bill against your xAI plan

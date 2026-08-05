@@ -104,4 +104,15 @@ RUN printf '%s\n' \
  && uv run --no-project /tmp/warm_skills.py \
  && rm /tmp/warm_skills.py
 
+# Muse Code (`muse`), the CLI the MuseHarness drives. https://dev.meta.ai/docs/muse-code
+# The installer lays down a launcher shim and has it download the real binary next to
+# itself, so the image carries a pinned version rather than downloading one on the
+# first proof; neither step needs credentials. Runs as `agent`, so the binary lands in
+# this user's ~/.local/bin (already on PATH above). At run time MUSE_NO_AUTO_UPDATE=1
+# keeps the sandbox on the baked version. Placed after the Mathlib cache layer, like
+# the uv warm-up above, so a muse version bump never invalidates that expensive build
+# step. Keep in sync with the Modal image in src/open_atp/__main__.py.
+RUN curl -fsSL https://dev.meta.ai/install.sh | MUSE_NO_MODIFY_PATH=1 bash \
+ && muse --version
+
 CMD ["bash"]

@@ -662,6 +662,18 @@ def _build_modal_image(args: argparse.Namespace) -> int:
             "\"anthropic\"]' '# ///' 'print(\"warmed\")' > /tmp/warm_skills.py "
             "&& uv run --no-project /tmp/warm_skills.py && rm /tmp/warm_skills.py"
         )
+        # Muse Code (`muse`), the CLI the MuseHarness drives. The installer lays down a
+        # launcher shim and has it download the real binary next to itself, pinning a
+        # version into the image; neither step needs credentials. MUSE_INSTALL_DIR puts
+        # both on the explicit PATH set above (this image runs as root, whose
+        # ~/.local/bin is not on it). Placed after the Mathlib layers, like the uv
+        # warm-up, so a muse version bump never invalidates that expensive build step.
+        # Keep in sync with images/Dockerfile.
+        .run_commands(
+            "curl -fsSL https://dev.meta.ai/install.sh | "
+            "MUSE_INSTALL_DIR=/usr/local/bin MUSE_NO_MODIFY_PATH=1 bash "
+            "&& muse --version"
+        )
         # No ENTRYPOINT: the ModalBackend execs the wrapped command directly after
         # pushing the workdir.
     )
