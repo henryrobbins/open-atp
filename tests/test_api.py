@@ -39,6 +39,7 @@ from open_atp.config import standard_prover, standard_provers
 from open_atp.harness import (
     ClaudeCodeHarness,
     CodexHarness,
+    MuseHarness,
     OpenCodeHarness,
 )
 from open_atp.harness.base import MissingCredentials
@@ -152,11 +153,9 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
     assert grok.harness.auth == "login"
     assert grok.harness.model == "grok-4.5"
 
-    spark = build("spark")
-    assert isinstance(spark.harness, OpenCodeHarness)
-    assert spark.harness.provider == "meta"
-    assert spark.harness.auth == "api_key"
-    assert spark.harness.model == "muse-spark-1.1"
+    muse = build("muse")
+    assert isinstance(muse.harness, MuseHarness)
+    assert muse.harness.model == "muse-spark-1.2-contributor"
 
     numina = build("numina")
     assert isinstance(numina, NuminaProver)

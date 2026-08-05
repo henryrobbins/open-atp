@@ -57,9 +57,9 @@ provers:
     cite: null
     source: null
 
-  - name: Muse Spark
-    page: spark
-    id:   spark
+  - name: Muse Code
+    page: muse
+    id:   muse
     skills: [leanprover]
     mcp: true
     company: { label: Meta, url: https://ai.meta.com }

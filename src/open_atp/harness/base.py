@@ -45,8 +45,9 @@ class MissingCredentials(Exception):
 #: What a rejected credential looks like in an agent CLI's output. Every CLI reports a
 #: 401 differently -- ``authentication_failed`` (Claude Code), ``Incorrect API key``
 #: (Codex), ``Authentication Fails`` (OpenCode/DeepSeek), ``Invalid API key`` (Vibe),
-#: ``invalid x-api-key`` (ax-prover/Anthropic), ``auth.login_required`` (Kimi) -- and
-#: the bare status code is too common a substring to match on alone.
+#: ``invalid x-api-key`` (ax-prover/Anthropic), ``auth.login_required`` (Kimi),
+#: ``your API key from META_API_KEY was rejected`` (Muse) -- and the bare status code
+#: is too common a substring to match on alone.
 #:
 #: An OAuth login can also fail at the *refresh* step rather than on the request: the
 #: provider answers the refresh with an ``invalid_grant`` error (RFC 6749) and the CLI
@@ -63,6 +64,8 @@ _AUTH_FAILURE = re.compile(
             r"invalid_grant",
             r"token[ _]refresh[ _]failed",
             r"(?:api[ _-]?key|token|credentials?) (?:h(?:as|ave) )?(?:been )?revoked",
+            # Muse names the source env var between the noun and the verb.
+            r"(?:api[ _-]?key|token|credentials?)[^.]{0,60}\b(?:was|were) rejected",
         )
     ),
     re.IGNORECASE,

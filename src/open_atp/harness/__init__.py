@@ -19,6 +19,7 @@ from open_atp.harness.claude_code import ClaudeCodeHarness
 from open_atp.harness.codex import CodexHarness
 from open_atp.harness.cost import COST_PER_MTOK, ModelPrice, compute_cost_usd
 from open_atp.harness.kimi import KimiHarness
+from open_atp.harness.muse import MuseHarness
 from open_atp.harness.opencode import OpenCodeHarness
 from open_atp.harness.vibe import VibeHarness
 
@@ -33,6 +34,7 @@ _HARNESSES: dict[str, type[Harness]] = {
         VibeHarness,
         AxProverBaseHarness,
         KimiHarness,
+        MuseHarness,
     )
 }
 
@@ -49,6 +51,7 @@ __all__ = [
     "VibeHarness",
     "AxProverBaseHarness",
     "KimiHarness",
+    "MuseHarness",
     "compute_cost_usd",
     "COST_PER_MTOK",
     "ModelPrice",

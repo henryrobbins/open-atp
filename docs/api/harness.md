@@ -56,6 +56,10 @@ Each harness adapts one agent CLI and is a
 .. autoclass:: open_atp.harness.kimi.KimiHarness
    :show-inheritance:
    :exclude-members: stage_wd, parse_result, collect_logs
+
+.. autoclass:: open_atp.harness.muse.MuseHarness
+   :show-inheritance:
+   :exclude-members: stage_wd, parse_result, collect_logs
 ```
 
 ## Pricing

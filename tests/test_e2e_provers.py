@@ -137,10 +137,10 @@ PROVER_SPECS = [
         id="agent-grok",
     ),
     pytest.param(
-        "spark",
+        "muse",
         _need_env("META_MODEL_API_KEY"),
         marks=pytest.mark.agent_api,
-        id="agent-spark",
+        id="agent-muse",
     ),
     pytest.param(
         "axproverbase",
