@@ -56,7 +56,7 @@ class AxProverBaseHarness(Harness):
 
     Parameters
     ----------
-    model : str, default "claude-opus-4-8"
+    model : str, default "claude-opus-5-5"
         Model id the agent runs, mapped to ax-prover's ``provider:model`` string.
     effort : str, default "high"
         Reasoning-effort level, mapped to each provider's knob.
@@ -78,7 +78,7 @@ class AxProverBaseHarness(Harness):
     >>> harness.name
     'axproverbase'
     >>> harness.model
-    'claude-opus-4-8'
+    'claude-opus-5-5'
 
     With the provider key supplied explicitly, :meth:`agent_auth` forwards it under
     the provider's canonical env var without reading the host environment:
@@ -109,7 +109,7 @@ class AxProverBaseHarness(Harness):
     def __init__(
         self,
         *,
-        model: str = "claude-opus-4-8",
+        model: str = "claude-opus-5-5",
         effort: str = "high",
         max_iterations: int | None = None,
         provider_api_key: str | None = None,

@@ -40,8 +40,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # @moonshot-ai/kimi-code provides the `kimi` CLI the KimiHarness drives.
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
- && npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai \
-    @moonshot-ai/kimi-code \
+ && npm install -g @anthropic-ai/claude-code@2.1.293 @openai/codex@0.161.0 \
+    opencode-ai@1.18.35 @moonshot-ai/kimi-code@2.1.1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Non-root user (matches milp_flare; Lean's elan lives under this user's HOME and

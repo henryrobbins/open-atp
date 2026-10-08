@@ -163,12 +163,12 @@ provers:
   - type: agent
     harness:
       type: claude_code
-      model: claude-opus-4-8
+      model: claude-opus-5-5
       effort: medium
   - type: agent
     harness:
       type: codex
-      model: gpt-5.5
+      model: gpt-6.1-sol
       effort: medium
   - deepseek
 ```

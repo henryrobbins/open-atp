@@ -299,7 +299,7 @@ def test_generate_reports_files_the_agent_changed(
     # Cost + token metadata flowed through from the parsed stream.
     assert result.cost_usd == pytest.approx(0.4231)
     assert result.metadata["harness"] == "claude_code"
-    assert result.metadata["model"] == "claude-opus-4-8"
+    assert result.metadata["model"] == "claude-opus-5-5"
     assert result.metadata["input_tokens"] == 18432 + 512 + 12000
     assert result.metadata["cached_input_tokens"] == 12000
 

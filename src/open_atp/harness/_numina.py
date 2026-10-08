@@ -37,7 +37,7 @@ class NuminaHarness(ClaudeCodeHarness):
 
     Parameters
     ----------
-    model : str, default "claude-opus-4-8"
+    model : str, default "claude-opus-5-5"
         Model id the agent runs.
     effort : str, default "high"
         Reasoning-effort level.
@@ -58,7 +58,7 @@ class NuminaHarness(ClaudeCodeHarness):
     def __init__(
         self,
         *,
-        model: str = "claude-opus-4-8",
+        model: str = "claude-opus-5-5",
         effort: str = "high",
         oauth_token: str | None = None,
         helper_env_keys: tuple[str, ...] = _DEFAULT_HELPER_ENV_KEYS,

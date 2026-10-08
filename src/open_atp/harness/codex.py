@@ -42,11 +42,11 @@ class CodexHarness(Harness):
     """Codex CLI, authenticated by a mounted ``auth.json`` credential.
 
     Codex authenticates via ChatGPT/OpenAI, so it must run an OpenAI model; ``model``
-    defaults to ``gpt-5.5`` rather than the Anthropic base default.
+    defaults to ``gpt-6.1-sol`` rather than the Anthropic base default.
 
     Parameters
     ----------
-    model : str, default "gpt-5.5"
+    model : str, default "gpt-6.1-sol"
         Model id the agent runs; must be an OpenAI model.
     effort : str, default "high"
         Reasoning-effort level.
@@ -64,7 +64,7 @@ class CodexHarness(Harness):
     >>> harness.name
     'codex'
     >>> harness.model
-    'gpt-5.5'
+    'gpt-6.1-sol'
     """
 
     name = "codex"
@@ -78,7 +78,7 @@ class CodexHarness(Harness):
     def __init__(
         self,
         *,
-        model: str = "gpt-5.5",
+        model: str = "gpt-6.1-sol",
         effort: str = "high",
         auth_file: Path | None = None,
     ) -> None:

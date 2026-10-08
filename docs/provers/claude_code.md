@@ -65,7 +65,7 @@ open-atp prove path/to/task.lean output_dir claude
 
 ### Customizing the prover
 
-To override knobs like `model` and `effort`, construct the class directly. In this example, we use the `claude-opus-4-8` model with `high` effort:
+To override knobs like `model` and `effort`, construct the class directly. In this example, we use the `claude-opus-5-5` model with `high` effort:
 
 ```{testcode}
 from pathlib import Path
@@ -78,7 +78,7 @@ from open_atp.provers import AgentProver
 
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
-    harness=ClaudeCodeHarness(model="claude-opus-4-8", effort="high"),
+    harness=ClaudeCodeHarness(model="claude-opus-5-5", effort="high"),
     backend=DockerBackend(image=DEFAULT_IMAGE),
 )
 result = prover.prove(task, output_dir=Path("demo"))

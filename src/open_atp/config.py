@@ -164,7 +164,7 @@ def standard_prover(name: str, *, backend: ComputeBackend) -> AutomatedProver:
     >>> from open_atp.backends.docker import DockerBackend
     >>> prover = standard_prover("claude", backend=DockerBackend())
     >>> prover.harness.model
-    'claude-opus-4-8'
+    'claude-opus-5-5'
     """
     if name not in STANDARD_PROVERS:
         raise ValueError(f"unknown prover {name!r}; choose from {standard_provers()}")

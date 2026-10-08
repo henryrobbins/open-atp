@@ -171,7 +171,7 @@ class Harness(ABC):
 
     Parameters
     ----------
-    model : str, default "claude-opus-4-8"
+    model : str, default "claude-opus-5-5"
         Model id the agent runs. Subclasses override the default with the model
         their CLI drives.
     effort : str, default "high"
@@ -188,7 +188,7 @@ class Harness(ABC):
     def __init__(
         self,
         *,
-        model: str = "claude-opus-4-8",
+        model: str = "claude-opus-5-5",
         effort: str = "high",
     ) -> None:
         self.model = model

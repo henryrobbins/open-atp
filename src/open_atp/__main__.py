@@ -611,8 +611,8 @@ def _build_modal_image(args: argparse.Namespace) -> int:
         .run_commands(
             "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - "
             "&& apt-get install -y --no-install-recommends nodejs "
-            "&& npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai "
-            "@moonshot-ai/kimi-code "
+            "&& npm install -g @anthropic-ai/claude-code@2.1.293 @openai/codex@0.161.0 "
+            "opencode-ai@1.18.35 @moonshot-ai/kimi-code@2.1.1 "
             "&& rm -rf /var/lib/apt/lists/*"
         )
         # elan + Lean toolchain in a global ELAN_HOME so `lake`/`lean` are on root's
