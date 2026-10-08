@@ -150,7 +150,7 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
     assert isinstance(grok.harness, OpenCodeHarness)
     assert grok.harness.provider == "xai"
     assert grok.harness.auth == "login"
-    assert grok.harness.model == "grok-4.5"
+    assert grok.harness.model == "grok-4.7"
 
     spark = build("spark")
     assert isinstance(spark.harness, OpenCodeHarness)

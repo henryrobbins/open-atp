@@ -4,10 +4,10 @@
 :parser: myst
 ```
 
-Use xAI's [Grok](https://x.ai/) as an automated theorem prover. This prover runs on the OpenCode harness pinned to `grok-4.5`. See {doc}`/provers/opencode` for harness details.
+Use xAI's [Grok](https://x.ai/) as an automated theorem prover. This prover runs on the OpenCode harness pinned to `grok-4.7`. See {doc}`/provers/opencode` for harness details.
 
 :::{warning}
-The `grok-4.5` model is geo-gated: requests are refused with `403 permission-denied` from some countries. On the {class}`~open_atp.backends.modal.ModalBackend`, the default region is `us` to ensure availability when using Modal compute. If you configure Modal to use non-US regions, the Grok prover may fail.
+The `grok-4.7` model is geo-gated: requests are refused with `403 permission-denied` from some countries. On the {class}`~open_atp.backends.modal.ModalBackend`, the default region is `us` to ensure availability when using Modal compute. If you configure Modal to use non-US regions, the Grok prover may fail.
 :::
 
 ## Authentication
@@ -29,7 +29,7 @@ Alternatively, pass the key to the harness explicitly:
 ```{testcode}
 from open_atp.harness import OpenCodeHarness
 
-OpenCodeHarness(provider="xai", model="grok-4.5", api_key="sk-...")
+OpenCodeHarness(provider="xai", model="grok-4.7", api_key="sk-...")
 ```
 
 (opencode-grok-login)=
@@ -44,7 +44,7 @@ You can then use the harness with the `auth="login"` argument to forward the xAI
 ```{testcode}
 from open_atp.harness import OpenCodeHarness
 
-OpenCodeHarness(provider="xai", model="grok-4.5", auth="login")
+OpenCodeHarness(provider="xai", model="grok-4.7", auth="login")
 ```
 
 Check you are properly authenticated with:
@@ -61,7 +61,7 @@ open-atp auth-status grok
 
 ### Standard prover via Python API
 
-The simplest way to run the prover is through {func}`~open_atp.config.standard_prover`, which pins the `grok-4.5` model on the OpenCode harness. The standard prover uses the {ref}`opencode-grok-login` authentication method.
+The simplest way to run the prover is through {func}`~open_atp.config.standard_prover`, which pins the `grok-4.7` model on the OpenCode harness. The standard prover uses the {ref}`opencode-grok-login` authentication method.
 
 Here, we prove the {ref}`MUL_REORDER` example theorem:
 
@@ -101,7 +101,7 @@ from open_atp.provers import AgentProver
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
     harness=OpenCodeHarness(
-        provider="xai", model="grok-4.5", auth="login", effort="medium"
+        provider="xai", model="grok-4.7", auth="login", effort="medium"
     ),
     backend=DockerBackend(image=DEFAULT_IMAGE),
 )

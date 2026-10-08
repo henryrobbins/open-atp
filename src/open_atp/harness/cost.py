@@ -79,6 +79,8 @@ COST_PER_MTOK: dict[str, ModelPrice] = {
     "deepseek-v4-flash": ModelPrice(0.14, 0.28, 0.0028),
     # xAI Grok (https://docs.x.ai/docs/models), at the <200k-token prompt rate;
     # a prompt at or above that threshold bills every token at 2x.
+    "grok-4.7": ModelPrice(2.0, 6.0, 0.50),
+    "grok-4.6": ModelPrice(2.0, 6.0, 0.50),
     "grok-4.5": ModelPrice(2.0, 6.0, 0.30),
     "grok-build-0.1": ModelPrice(1.0, 2.0, 0.20),
     "grok-4.3": ModelPrice(1.25, 2.5, 0.20),

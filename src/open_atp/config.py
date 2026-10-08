@@ -125,7 +125,7 @@ STANDARD_PROVERS: dict[str, dict[str, object]] = {
         "type": "agent",
         "harness": {
             "type": "opencode",
-            "model": "grok-4.5",
+            "model": "grok-4.7",
             "provider": "xai",
             "auth": "login",
         },
