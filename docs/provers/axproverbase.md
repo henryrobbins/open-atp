@@ -34,7 +34,7 @@ The provider is inferred from the model prefix, and the harness forwards the key
 
 ### Standard prover via Python API
 
-The simplest way to run the prover is through {func}`~open_atp.config.standard_prover` which uses a standard configuration pointing at the `claude-opus-4-8` model. Either set `ANTHROPIC_API_KEY` in the host environment or pass it explicitly to the harness. Here, we prove the {ref}`MUL_REORDER` example theorem:
+The simplest way to run the prover is through {func}`~open_atp.config.standard_prover` which uses a standard configuration pointing at the `claude-opus-5-5` model. Either set `ANTHROPIC_API_KEY` in the host environment or pass it explicitly to the harness. Here, we prove the {ref}`MUL_REORDER` example theorem:
 
 ```{testcode}
 from pathlib import Path
@@ -72,7 +72,7 @@ from open_atp.provers import AgentProver
 task = example_task(EXAMPLE.MUL_REORDER)
 prover = AgentProver(
     harness=AxProverBaseHarness(
-        model="claude-opus-4-8",
+        model="claude-opus-5-5",
         effort="high",
         max_iterations=None,  # None keeps ax-prover's own default of 50; set an int to cap
     ),

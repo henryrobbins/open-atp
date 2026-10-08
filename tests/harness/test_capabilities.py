@@ -99,7 +99,7 @@ _MODELS = {
     "claude_code": "claude-haiku-4-5",
     # ChatGPT-subscription auth (the path these tests use) accepts the codex
     # defaults; an API-key-only mini model would 400 on the first turn.
-    "codex": "gpt-5.5",
+    "codex": "gpt-6.1-sol",
     # deepseek-chat keeps cost low and exercises OpenCode's non-anthropic branch
     # (provider is inferred from the model prefix in the harness).
     "opencode": "deepseek-chat",

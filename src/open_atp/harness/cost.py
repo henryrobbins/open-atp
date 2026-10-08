@@ -4,7 +4,7 @@ Estimates a run's USD cost from token counts when the harness does not report
 cost directly. This is a fallback and will go stale; see the provider pricing
 pages linked per section below for current numbers.
 
-Last Updated: 2026-07-20
+Last Updated: 2026-10-07
 """
 
 from __future__ import annotations
@@ -35,18 +35,30 @@ class ModelPrice:
 #: Price per million tokens, keyed by the model id a harness reports.
 COST_PER_MTOK: dict[str, ModelPrice] = {
     # Anthropic (https://platform.claude.com/docs/en/about-claude/pricing).
-    # Cache reads are 0.1x input; cache writes (1.25x input) are not modeled.
+    # Cache reads are 0.1x input (0.05x on Opus/Sonnet 5.5, 0.025x on Fable 5.1);
+    # cache writes (1.25x input) are not modeled.
+    "claude-fable-5-1": ModelPrice(10.0, 50.0, 0.25),
     "claude-fable-5": ModelPrice(10.0, 50.0, 1.0),
+    "claude-opus-5-5": ModelPrice(4.0, 20.0, 0.20),
+    "claude-opus-5": ModelPrice(5.0, 25.0, 0.50),
     "claude-opus-4-8": ModelPrice(5.0, 25.0, 0.50),
     "claude-opus-4-7": ModelPrice(5.0, 25.0, 0.50),
     "claude-opus-4-6": ModelPrice(5.0, 25.0, 0.50),
+    "claude-sonnet-5-5": ModelPrice(2.0, 10.0, 0.10),
+    "claude-sonnet-5": ModelPrice(2.0, 10.0, 0.20),
     "claude-sonnet-4-6": ModelPrice(3.0, 15.0, 0.30),
     "claude-sonnet-4-5": ModelPrice(3.0, 15.0, 0.30),
+    # Haiku 5.5 at the <=100k-token prompt rate; longer prompts bill at 5x.
+    "claude-haiku-5-5": ModelPrice(0.10, 0.50, 0.01),
     "claude-haiku-4-5": ModelPrice(1.0, 5.0, 0.10),
     # OpenAI (https://developers.openai.com/api/docs/pricing).
-    "gpt-5.6-sol": ModelPrice(5.0, 30.0, 0.50),
-    "gpt-5.6-terra": ModelPrice(2.5, 15.0, 0.25),
-    "gpt-5.6-luna": ModelPrice(1.0, 6.0, 0.10),
+    "gpt-6-astra": ModelPrice(10.0, 50.0, 1.0),
+    "gpt-6.1-sol": ModelPrice(2.0, 10.0, 0.10),
+    "gpt-6-sol": ModelPrice(2.0, 10.0, 0.20),
+    "gpt-6-luna": ModelPrice(0.10, 0.50, 0.01),
+    "gpt-5.6-sol": ModelPrice(4.0, 20.0, 0.40),
+    "gpt-5.6-terra": ModelPrice(2.0, 12.0, 0.20),
+    "gpt-5.6-luna": ModelPrice(0.20, 1.2, 0.02),
     "gpt-5.5": ModelPrice(5.0, 30.0, 0.50),
     "gpt-5.4": ModelPrice(2.5, 15.0, 0.25),
     "gpt-5.4-mini": ModelPrice(0.75, 4.5, 0.075),
@@ -67,6 +79,8 @@ COST_PER_MTOK: dict[str, ModelPrice] = {
     "deepseek-v4-flash": ModelPrice(0.14, 0.28, 0.0028),
     # xAI Grok (https://docs.x.ai/docs/models), at the <200k-token prompt rate;
     # a prompt at or above that threshold bills every token at 2x.
+    "grok-4.7": ModelPrice(2.0, 6.0, 0.50),
+    "grok-4.6": ModelPrice(2.0, 6.0, 0.50),
     "grok-4.5": ModelPrice(2.0, 6.0, 0.30),
     "grok-build-0.1": ModelPrice(1.0, 2.0, 0.20),
     "grok-4.3": ModelPrice(1.25, 2.5, 0.20),

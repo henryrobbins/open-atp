@@ -24,7 +24,7 @@ class ClaudeCodeHarness(Harness):
 
     Parameters
     ----------
-    model : str, default "claude-opus-4-8"
+    model : str, default "claude-opus-5-5"
         Model id the agent runs.
     effort : str, default "high"
         Reasoning-effort level.
@@ -68,7 +68,7 @@ class ClaudeCodeHarness(Harness):
     def __init__(
         self,
         *,
-        model: str = "claude-opus-4-8",
+        model: str = "claude-opus-5-5",
         effort: str = "high",
         plugins: list[str] | None = None,
         oauth_token: str | None = None,

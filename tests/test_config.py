@@ -39,7 +39,7 @@ def test_agentic_entries_are_one_prover_on_different_harnesses() -> None:
     assert isinstance(claude, AgentProver) and isinstance(codex, AgentProver)
     assert isinstance(claude.harness, ClaudeCodeHarness)
     assert isinstance(codex.harness, CodexHarness)
-    assert codex.harness.model == "gpt-5.5"  # the harness's baked-in default
+    assert codex.harness.model == "gpt-6.1-sol"  # the harness's baked-in default
 
 
 def test_standalone_provers_are_their_own_classes() -> None:

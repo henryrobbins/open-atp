@@ -50,7 +50,7 @@ Here's the output for the example above:
 >>> result.duration_s
 68.33680745901074
 >>> result.metadata
-{'harness': 'claude_code', 'model': 'claude-opus-4-8', 'effort': 'high',
+{'harness': 'claude_code', 'model': 'claude-opus-5-5', 'effort': 'high',
  'input_tokens': 5701, 'output_tokens': 882, 'stop_reason': 'end_turn'}
 ```
 

@@ -148,7 +148,7 @@ class AgentProver(AutomatedProver):
     >>> backend = DockerBackend()
     >>> prover = AgentProver(harness=CodexHarness(effort="high"), backend=backend)
     >>> prover.harness.model
-    'gpt-5.5'
+    'gpt-6.1-sol'
 
     Or build the same prover from the standard catalog by name, taking its
     baked-in defaults (see :func:`~open_atp.config.standard_prover`):

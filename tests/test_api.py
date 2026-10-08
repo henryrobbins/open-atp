@@ -138,7 +138,7 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
     codex = build("codex")
     assert isinstance(codex, AgentProver)
     assert isinstance(codex.harness, CodexHarness)
-    assert codex.harness.model == "gpt-5.5"
+    assert codex.harness.model == "gpt-6.1-sol"
 
     deepseek = build("deepseek")
     assert isinstance(deepseek.harness, OpenCodeHarness)
@@ -150,7 +150,7 @@ def test_standard_prover_constructs_each_catalog_prover() -> None:
     assert isinstance(grok.harness, OpenCodeHarness)
     assert grok.harness.provider == "xai"
     assert grok.harness.auth == "login"
-    assert grok.harness.model == "grok-4.5"
+    assert grok.harness.model == "grok-4.7"
 
     spark = build("spark")
     assert isinstance(spark.harness, OpenCodeHarness)
@@ -196,7 +196,7 @@ def test_standard_prover_uses_one_backend_for_generation_and_verify() -> None:
 
     assert isinstance(agent, AgentProver)
     # The catalog builds the name's defaults; there is no override surface.
-    assert agent.harness.model == "claude-opus-4-8"
+    assert agent.harness.model == "claude-opus-5-5"
     # One backend: generation runs in a live session over it and verification reuses
     # that same hot sandbox.
     assert agent.verifier.backend is backend

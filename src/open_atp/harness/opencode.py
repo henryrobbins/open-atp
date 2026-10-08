@@ -59,7 +59,7 @@ class OpenCodeHarness(Harness):
     the value from the host environment.
 
     >>> from open_atp.harness import OpenCodeHarness
-    >>> harness = OpenCodeHarness(provider="openai", model="gpt-5.5")
+    >>> harness = OpenCodeHarness(provider="openai", model="gpt-6.1-sol")
     >>> harness.name
     'opencode'
     >>> harness.provider
